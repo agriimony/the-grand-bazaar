@@ -9,9 +9,9 @@ export const metadata = {
   description: 'P2P swap bazaar for Farcaster + Base',
   other: {
     'fc:frame': 'vNext',
-    'fc:frame:image': 'https://example.com/og.png',
+    'fc:frame:image': 'https://the-grand-bazaar.vercel.app/og.svg',
     'fc:frame:button:1': 'Open Bazaar',
-    'fc:frame:post_url': 'https://example.com/api/frame',
+    'fc:frame:post_url': 'https://the-grand-bazaar.vercel.app/api/frame',
   },
 };
 

@@ -7,11 +7,11 @@
   "frame": {
     "version": "1",
     "name": "The Grand Bazaar",
-    "iconUrl": "https://example.com/icon.png",
-    "homeUrl": "https://example.com",
-    "imageUrl": "https://example.com/og.png",
+    "iconUrl": "https://the-grand-bazaar.vercel.app/icon.svg",
+    "homeUrl": "https://the-grand-bazaar.vercel.app/",
+    "imageUrl": "https://the-grand-bazaar.vercel.app/og.svg",
     "buttonTitle": "Open Bazaar",
-    "splashImageUrl": "https://example.com/splash.png",
+    "splashImageUrl": "https://the-grand-bazaar.vercel.app/splash.svg",
     "splashBackgroundColor": "#111111"
   }
 }

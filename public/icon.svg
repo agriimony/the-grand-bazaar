@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1f1d1a"/>
+  <rect x="24" y="24" width="464" height="464" fill="#6d5f4d" stroke="#2f271d" stroke-width="16"/>
+  <text x="256" y="280" text-anchor="middle" font-family="monospace" font-size="72" fill="#f0c46e">BAZAAR</text>
+</svg>
