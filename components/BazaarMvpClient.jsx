@@ -185,6 +185,22 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
     };
   }, [orderData]);
 
+  useEffect(() => {
+    let mounted = true;
+    async function signalReady() {
+      try {
+        const mod = await import('@farcaster/frame-sdk');
+        const sdk = mod?.sdk || mod?.default || mod;
+        await sdk?.actions?.ready?.();
+        if (mounted) setStatus((s) => (s === 'ready' ? s : 'app ready'));
+      } catch {
+        // no-op outside farcaster clients
+      }
+    }
+    signalReady();
+    return () => { mounted = false; };
+  }, []);
+
   async function connectWallet() {
     try {
       setStatus('connecting wallet');
