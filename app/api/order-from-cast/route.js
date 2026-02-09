@@ -18,8 +18,8 @@ export async function GET(req) {
     }
 
     const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
-    let apiKey = '';
-    if (fs.existsSync(credPath)) {
+    let apiKey = process.env.NEYNAR_API_KEY || '';
+    if (!apiKey && fs.existsSync(credPath)) {
       const raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
       apiKey = raw?.apiKey || '';
     }
