@@ -440,8 +440,6 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
 
           <div className="rs-center">
             <div className="rs-btn-stack">
-              <button className="rs-btn" onClick={runChecks}>Check Offer</button>
-              <button className="rs-btn" onClick={applyDemoValues}>Demo Fill</button>
               <button className="rs-btn" onClick={onPrimaryAction}>{primaryLabel}</button>
               <button className="rs-btn decline" disabled>Decline</button>
             </div>
