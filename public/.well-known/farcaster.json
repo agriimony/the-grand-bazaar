@@ -1,0 +1,17 @@
+{
+  "accountAssociation": {
+    "header": "REPLACE_ME",
+    "payload": "REPLACE_ME",
+    "signature": "REPLACE_ME"
+  },
+  "frame": {
+    "version": "1",
+    "name": "The Grand Bazaar",
+    "iconUrl": "https://example.com/icon.png",
+    "homeUrl": "https://example.com",
+    "imageUrl": "https://example.com/og.png",
+    "buttonTitle": "Open Bazaar",
+    "splashImageUrl": "https://example.com/splash.png",
+    "splashBackgroundColor": "#111111"
+  }
+}
