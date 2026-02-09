@@ -1,11 +1,12 @@
 import BazaarMvpClient from '../components/BazaarMvpClient';
+import AutoFitTitle from '../components/AutoFitTitle';
 
 export default function Home({ searchParams }) {
   const compressed = searchParams?.order || '';
 
   return (
     <main className="bazaar-shell">
-      <h1 className="app-title">The Grand Bazaar</h1>
+      <AutoFitTitle text="The Grand Bazaar" />
       <BazaarMvpClient initialCompressed={compressed} />
     </main>
   );
