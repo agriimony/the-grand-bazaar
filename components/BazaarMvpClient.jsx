@@ -141,7 +141,7 @@ function tokenIconUrl(chainId, token) {
   return '';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '' }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '' }) {
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
     if (!initialCompressed) return null;
@@ -157,6 +157,29 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
+
+  useEffect(() => {
+    async function loadFromCastHash() {
+      if (initialCompressed || !initialCastHash) return;
+      try {
+        setStatus('loading order from cast hash');
+        const r = await fetch(`/api/order-from-cast?castHash=${encodeURIComponent(initialCastHash)}`);
+        const d = await r.json();
+        if (!r.ok || !d?.compressedOrder) {
+          setStatus(`cast decode error: ${d?.error || 'order not found'}`);
+          return;
+        }
+        const decoded = decodeCompressedOrder(d.compressedOrder);
+        setCompressed(d.compressedOrder);
+        setOrderData(decoded);
+        setChecks(null);
+        setStatus('order loaded from cast');
+      } catch {
+        setStatus('cast decode error: failed to load from cast hash');
+      }
+    }
+    loadFromCastHash();
+  }, [initialCastHash, initialCompressed]);
 
   useEffect(() => {
     async function resolveName() {
@@ -300,6 +323,11 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
       const makerApprovalOk = signerAllow >= BigInt(parsed.signerAmount);
       const makerAccepted = makerBalanceOk && makerApprovalOk;
 
+      const protocolFee = BigInt(protocolFeeOnchain.toString());
+      const senderAmount = BigInt(parsed.senderAmount);
+      const feeAmount = (senderAmount * protocolFee) / 10000n;
+      const totalRequired = senderAmount + feeAmount;
+
       const [signerUsdValue, senderUsdValue] = await Promise.all([
         quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
         quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
@@ -309,11 +337,6 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
       let takerAllowance = 0n;
       let takerBalanceOk = false;
       let takerApprovalOk = false;
-
-      const protocolFee = BigInt(protocolFeeOnchain.toString());
-      const senderAmount = BigInt(parsed.senderAmount);
-      const feeAmount = (senderAmount * protocolFee) / 10000n;
-      const totalRequired = senderAmount + feeAmount;
 
       if (provider && address) {
         const senderTokenW = new ethers.Contract(parsed.senderToken, ERC20_ABI, provider);
