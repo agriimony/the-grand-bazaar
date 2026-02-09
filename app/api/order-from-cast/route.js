@@ -1,4 +1,7 @@
 import fs from 'fs';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 import os from 'os';
 import path from 'path';
 
