@@ -156,6 +156,7 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
   const [status, setStatus] = useState('ready');
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
+  const [autoConnectTried, setAutoConnectTried] = useState(false);
 
   useEffect(() => {
     async function resolveName() {
@@ -221,6 +222,26 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
       setStatus(`connect error: ${e.message}`);
     }
   }
+
+  useEffect(() => {
+    async function autoConnectIfMiniApp() {
+      if (autoConnectTried || address) return;
+      try {
+        const mod = await import('@farcaster/miniapp-sdk');
+        const sdk = mod?.sdk || mod?.default || mod;
+        const inMiniApp = await sdk?.isInMiniApp?.();
+        if (inMiniApp) {
+          setAutoConnectTried(true);
+          await connectWallet();
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      setAutoConnectTried(true);
+    }
+    autoConnectIfMiniApp();
+  }, [autoConnectTried, address]);
 
   function buildOrderForCall(requiredSenderKind) {
     if (!parsed) throw new Error('No order loaded');

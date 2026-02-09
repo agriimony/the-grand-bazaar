@@ -193,10 +193,8 @@ p, li, label, textarea, button {
 h1 { font-size: 46px; margin: 0 0 10px 0; }
 
 .app-title {
-  font-size: clamp(34px, 10vw, 72px);
+  font-size: clamp(20px, 8.2vw, 72px);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1;
 }
 p, li, label, button { font-size: 38px; line-height: 1; transform: scaleY(0.9); transform-origin: left top; }
