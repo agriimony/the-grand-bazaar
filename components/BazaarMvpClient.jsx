@@ -189,7 +189,7 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
     let mounted = true;
     async function signalReady() {
       try {
-        const mod = await import('@farcaster/frame-sdk');
+        const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
         await sdk?.actions?.ready?.();
         if (mounted) setStatus((s) => (s === 'ready' ? s : 'app ready'));
@@ -204,7 +204,7 @@ export default function BazaarMvpClient({ initialCompressed = '' }) {
   async function connectWallet() {
     try {
       setStatus('connecting wallet');
-      const mod = await import('@farcaster/frame-sdk');
+      const mod = await import('@farcaster/miniapp-sdk');
       const sdk = mod?.sdk || mod?.default || mod;
       let eip1193 = null;
       const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;

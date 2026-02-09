@@ -19,7 +19,7 @@ export default function FarcasterWalletPanel() {
 
     async function init() {
       try {
-        const mod = await import('@farcaster/frame-sdk');
+        const mod = await import('@farcaster/miniapp-sdk');
         const fcSdk = mod?.sdk || mod?.default || mod;
         if (!mounted) return;
         setSdk(fcSdk);
