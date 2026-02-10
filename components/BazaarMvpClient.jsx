@@ -567,20 +567,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('sending swap tx');
       let gasLimit;
+      let estimatedGas;
       try {
-        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
-        const gasLimitCap = 400000n;
-        if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
-        gasLimit = (estimatedGas * 120n) / 100n;
+        estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
       } catch (e) {
         const msg = errText(e);
-        if (/missing revert data|over rate limit/i.test(msg)) {
-          dbg(`estimateGas soft-fail: ${msg}`);
-          gasLimit = 300000n;
-        } else {
-          throw e;
-        }
+        dbg(`wallet estimateGas failed: ${msg}`);
+        // Fallback estimate using public Base RPC
+        const publicProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+        const swapRead = new ethers.Contract(parsed.swapContract, SWAP_ABI, publicProvider);
+        estimatedGas = await swapRead.swap.estimateGas(address, 0, orderForCall);
       }
+
+      const gasLimitCap = 900000n;
+      if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
+      gasLimit = (estimatedGas * 150n) / 100n;
+      dbg(`gas estimated=${estimatedGas.toString()} limit=${gasLimit.toString()}`);
+
       const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
