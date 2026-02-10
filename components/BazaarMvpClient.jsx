@@ -629,6 +629,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'Accept'
     : 'Approve';
 
+  const isErrorState = isExpired || /error|expired/i.test(status || '');
+
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
   const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : 0n;
@@ -675,7 +677,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
           <div className="rs-center">
             <div className="rs-btn-stack">
-              <button className="rs-btn" onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
+              <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
               <button className="rs-btn decline" disabled>Decline</button>
             </div>
           </div>

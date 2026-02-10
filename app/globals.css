@@ -181,6 +181,7 @@ html, body {
 
 .rs-footer-ok {
   margin-top: 10px;
+  margin-bottom: 0;
   color: #b9ff9d;
 }
 
@@ -203,6 +204,12 @@ html, body {
 }
 
 .rs-btn.decline { color: #ff7b7b; }
+
+.rs-btn-error {
+  border-color: #8a2525;
+  background: linear-gradient(180deg, #3a1717 0%, #2a1111 100%);
+  color: #ff6b6b;
+}
 
 .meta-block {
   margin-top: 26px;
