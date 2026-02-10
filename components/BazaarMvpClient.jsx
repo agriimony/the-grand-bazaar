@@ -506,8 +506,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       if (!latestChecks.takerApprovalOk) {
         try {
+          setStatus('simulating approve');
+          await senderToken.approve.staticCall(parsed.swapContract, latestChecks.totalRequired).catch(() => {});
+
           setStatus('sending approve tx');
-          const tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
+          let tx;
+          try {
+            tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
+          } catch (firstErr) {
+            // Some tokens require allowance reset to zero before setting a new value.
+            setStatus('approve retry: resetting allowance to 0');
+            const tx0 = await senderToken.approve(parsed.swapContract, 0n);
+            await tx0.wait();
+            setStatus('approve retry: setting target allowance');
+            tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
+          }
+
           await tx.wait();
           setStatus(`approve confirmed: ${tx.hash.slice(0, 10)}...`);
           await runChecks();
