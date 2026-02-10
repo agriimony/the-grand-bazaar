@@ -162,32 +162,39 @@ function tokenIconUrl(chainId, token) {
   return '';
 }
 
-async function readTokenBatch(token, owner, spender) {
+async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
   try {
-    const qs = new URLSearchParams({ token: canonAddr(token), owner: canonAddr(owner), spender: canonAddr(spender), t: String(Date.now()) });
+    const qs = new URLSearchParams({
+      signerToken: canonAddr(signerToken),
+      signerOwner: canonAddr(signerOwner),
+      senderToken: canonAddr(senderToken),
+      senderOwner: canonAddr(senderOwner),
+      spender: canonAddr(spender),
+      t: String(Date.now()),
+    });
     const r = await fetch(`/api/token-batch?${qs.toString()}`, { cache: 'no-store' });
     const d = await r.json();
-    if (!r.ok || !d?.ok) throw new Error(d?.error || 'token batch failed');
-    return {
+    if (!r.ok || !d?.ok) throw new Error(d?.error || 'pair batch failed');
+
+    const toPart = (part, token) => ({
       rpc: d.rpc || 'none',
       mode: d.mode || 'unknown',
-      symbol: d.symbol || guessSymbol(token),
-      decimals: Number(d.decimals ?? guessDecimals(token)),
-      balance: BigInt(d.balance || '0'),
-      allowance: BigInt(d.allowance || '0'),
-      raw: d.raw || [],
-      debug: d.debug || {},
+      symbol: part?.symbol || guessSymbol(token),
+      decimals: Number(part?.decimals ?? guessDecimals(token)),
+      balance: BigInt(part?.balance || '0'),
+      allowance: BigInt(part?.allowance || '0'),
+      raw: part?.raw || [],
+      debug: { ...(d.debug || {}), version: d.version || 'n/a' },
+    });
+
+    return {
+      signer: toPart(d.signer, signerToken),
+      sender: toPart(d.sender, senderToken),
     };
   } catch (e) {
     return {
-      rpc: 'none',
-      mode: 'fallback',
-      symbol: guessSymbol(token),
-      decimals: guessDecimals(token),
-      balance: 0n,
-      allowance: 0n,
-      raw: [],
-      debug: { error: e?.message || 'readTokenBatch failed' },
+      signer: { rpc: 'none', mode: 'fallback', symbol: guessSymbol(signerToken), decimals: guessDecimals(signerToken), balance: 0n, allowance: 0n, raw: [], debug: { error: e?.message || 'readPairBatch failed' } },
+      sender: { rpc: 'none', mode: 'fallback', symbol: guessSymbol(senderToken), decimals: guessDecimals(senderToken), balance: 0n, allowance: 0n, raw: [], debug: { error: e?.message || 'readPairBatch failed' } },
     };
   }
 }
@@ -393,9 +400,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         swap.protocolFee(),
       ]);
 
-      const signerRead = await readTokenBatch(parsed.signerToken, parsed.signerWallet, parsed.swapContract);
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
-      const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
+      const pairRead = await readPairBatch({
+        signerToken: parsed.signerToken,
+        signerOwner: parsed.signerWallet,
+        senderToken: parsed.senderToken,
+        senderOwner,
+        spender: parsed.swapContract,
+      });
+      const signerRead = pairRead.signer;
+      const senderRead = pairRead.sender;
       dbg(`rpc signer=${signerRead.rpc}(${signerRead.mode}) sender=${senderRead.rpc}(${senderRead.mode})`);
       dbg(`api signerVer=${signerRead?.debug?.version || 'n/a'} senderVer=${senderRead?.debug?.version || 'n/a'}`);
       dbg(`tokens signer=[${parsed.signerToken}] dec=${signerRead.decimals} sender=[${parsed.senderToken}] dec=${senderRead.decimals}`);

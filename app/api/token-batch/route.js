@@ -66,12 +66,68 @@ function decode(results, fn, idx, fallback) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
+
+    const signerTokenIn = searchParams.get('signerToken') || '';
+    const signerOwnerIn = searchParams.get('signerOwner') || '';
+    const senderTokenIn = searchParams.get('senderToken') || '';
+    const senderOwnerIn = searchParams.get('senderOwner') || '';
+    const spenderIn = searchParams.get('spender') || '';
+
+    // Combined mode: fetch signer+sender token data in one RPC batch request
+    if (signerTokenIn && signerOwnerIn && senderTokenIn && senderOwnerIn && spenderIn) {
+      const signerToken = canonAddr(signerTokenIn);
+      const signerOwner = canonAddr(signerOwnerIn);
+      const senderToken = canonAddr(senderTokenIn);
+      const senderOwner = canonAddr(senderOwnerIn);
+      const spender = canonAddr(spenderIn);
+
+      const calls = [
+        { to: signerToken, data: IFACE.encodeFunctionData('symbol', []) },
+        { to: signerToken, data: IFACE.encodeFunctionData('decimals', []) },
+        { to: signerToken, data: IFACE.encodeFunctionData('balanceOf', [signerOwner]) },
+        { to: signerToken, data: IFACE.encodeFunctionData('allowance', [signerOwner, spender]) },
+        { to: senderToken, data: IFACE.encodeFunctionData('symbol', []) },
+        { to: senderToken, data: IFACE.encodeFunctionData('decimals', []) },
+        { to: senderToken, data: IFACE.encodeFunctionData('balanceOf', [senderOwner]) },
+        { to: senderToken, data: IFACE.encodeFunctionData('allowance', [senderOwner, spender]) },
+      ];
+
+      const batch = await rpcBatchCall(calls);
+      if (batch) {
+        const { rpc, results, mode } = batch;
+        return Response.json({
+          ok: true,
+          rpc,
+          mode,
+          version: API_VERSION,
+          signer: {
+            symbol: String(decode(results, 'symbol', 0, '???')),
+            decimals: Number(decode(results, 'decimals', 1, 18)),
+            balance: decode(results, 'balanceOf', 2, 0n).toString(),
+            allowance: decode(results, 'allowance', 3, 0n).toString(),
+          },
+          sender: {
+            symbol: String(decode(results, 'symbol', 4, '???')),
+            decimals: Number(decode(results, 'decimals', 5, 18)),
+            balance: decode(results, 'balanceOf', 6, 0n).toString(),
+            allowance: decode(results, 'allowance', 7, 0n).toString(),
+          },
+          debug: { signerTokenIn, signerOwnerIn, senderTokenIn, senderOwnerIn, spenderIn, signerToken, signerOwner, senderToken, senderOwner, spender },
+        });
+      }
+
+      const signerDirect = await rpcDirectRead(signerToken, signerOwner, spender);
+      const senderDirect = await rpcDirectRead(senderToken, senderOwner, spender);
+      return Response.json({ ok: true, rpc: signerDirect.rpc || senderDirect.rpc, mode: 'direct', version: API_VERSION, signer: signerDirect, sender: senderDirect });
+    }
+
+    // Legacy single-token mode
     const tokenIn = searchParams.get('token') || '';
     const ownerIn = searchParams.get('owner') || '';
-    const spenderIn = searchParams.get('spender') || '';
+    const spenderInLegacy = searchParams.get('spender') || '';
     const token = canonAddr(tokenIn);
     const owner = canonAddr(ownerIn);
-    const spender = canonAddr(spenderIn);
+    const spender = canonAddr(spenderInLegacy);
     if (!token || !owner || !spender) {
       return Response.json({ ok: false, error: 'missing params', version: API_VERSION }, { status: 400 });
     }
@@ -83,25 +139,24 @@ export async function GET(req) {
       { to: token, data: IFACE.encodeFunctionData('allowance', [owner, spender]) },
     ];
 
-    const debugBase = { version: API_VERSION, tokenIn, ownerIn, spenderIn, token, owner, spender };
-
+    const debugBase = { version: API_VERSION, tokenIn, ownerIn, spenderIn: spenderInLegacy, token, owner, spender };
     const batch = await rpcBatchCall(calls);
     if (batch) {
       const { rpc, results, mode } = batch;
-      const symbol = String(decode(results, 'symbol', 0, '???'));
-      const decimals = Number(decode(results, 'decimals', 1, 18));
-      const balance = decode(results, 'balanceOf', 2, 0n).toString();
-      const allowance = decode(results, 'allowance', 3, 0n).toString();
-
-      const looksBad = token.toLowerCase() === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' && Number(decimals) !== 6;
-      if (!looksBad) {
-        console.log('[token-batch]', { ...debugBase, rpc, mode, symbol, decimals, balance, allowance });
-        return Response.json({ ok: true, rpc, mode, symbol, decimals, balance, allowance, raw: results, debug: debugBase });
-      }
+      return Response.json({
+        ok: true,
+        rpc,
+        mode,
+        symbol: String(decode(results, 'symbol', 0, '???')),
+        decimals: Number(decode(results, 'decimals', 1, 18)),
+        balance: decode(results, 'balanceOf', 2, 0n).toString(),
+        allowance: decode(results, 'allowance', 3, 0n).toString(),
+        raw: results,
+        debug: debugBase,
+      });
     }
 
     const direct = await rpcDirectRead(token, owner, spender);
-    console.log('[token-batch-direct]', { ...debugBase, ...direct });
     return Response.json({ ok: true, ...direct, debug: debugBase });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || 'token batch failed', version: API_VERSION }, { status: 500 });
