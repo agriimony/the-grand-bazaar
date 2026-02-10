@@ -1,5 +1,7 @@
 import { ethers } from 'ethers';
 
+export const dynamic = 'force-dynamic';
+
 const ERC20_ABI = [
   'function allowance(address owner,address spender) view returns (uint256)',
   'function balanceOf(address owner) view returns (uint256)',
@@ -74,6 +76,7 @@ export async function GET(req) {
     const spenderIn = searchParams.get('spender') || '';
 
     if (!(signerTokenIn && signerOwnerIn && senderTokenIn && senderOwnerIn && spenderIn)) {
+      console.log('[token-batch][bad-request]', { version: API_VERSION, signerTokenIn, signerOwnerIn, senderTokenIn, senderOwnerIn, spenderIn });
       return Response.json({
         ok: false,
         error: 'missing required params for pair mode',
@@ -99,32 +102,50 @@ export async function GET(req) {
       { to: senderToken, data: IFACE.encodeFunctionData('allowance', [senderOwner, spender]) },
     ];
 
+    console.log('[token-batch][request]', {
+      version: API_VERSION,
+      signerTokenIn,
+      signerOwnerIn,
+      senderTokenIn,
+      senderOwnerIn,
+      spenderIn,
+      signerToken,
+      signerOwner,
+      senderToken,
+      senderOwner,
+      spender,
+    });
+
     const batch = await rpcBatchCall(calls);
     if (batch) {
       const { rpc, results, mode } = batch;
+      const signerOut = {
+        symbol: String(decode(results, 'symbol', 0, '???')),
+        decimals: Number(decode(results, 'decimals', 1, 18)),
+        balance: decode(results, 'balanceOf', 2, 0n).toString(),
+        allowance: decode(results, 'allowance', 3, 0n).toString(),
+      };
+      const senderOut = {
+        symbol: String(decode(results, 'symbol', 4, '???')),
+        decimals: Number(decode(results, 'decimals', 5, 18)),
+        balance: decode(results, 'balanceOf', 6, 0n).toString(),
+        allowance: decode(results, 'allowance', 7, 0n).toString(),
+      };
+      console.log('[token-batch][batch-result]', { version: API_VERSION, rpc, mode, signerOut, senderOut });
       return Response.json({
         ok: true,
         rpc,
         mode,
         version: API_VERSION,
-        signer: {
-          symbol: String(decode(results, 'symbol', 0, '???')),
-          decimals: Number(decode(results, 'decimals', 1, 18)),
-          balance: decode(results, 'balanceOf', 2, 0n).toString(),
-          allowance: decode(results, 'allowance', 3, 0n).toString(),
-        },
-        sender: {
-          symbol: String(decode(results, 'symbol', 4, '???')),
-          decimals: Number(decode(results, 'decimals', 5, 18)),
-          balance: decode(results, 'balanceOf', 6, 0n).toString(),
-          allowance: decode(results, 'allowance', 7, 0n).toString(),
-        },
+        signer: signerOut,
+        sender: senderOut,
         debug: { signerToken, signerOwner, senderToken, senderOwner, spender },
       });
     }
 
     const signerDirect = await rpcDirectRead(signerToken, signerOwner, spender);
     const senderDirect = await rpcDirectRead(senderToken, senderOwner, spender);
+    console.log('[token-batch][direct-result]', { version: API_VERSION, signerDirect, senderDirect });
     return Response.json({
       ok: true,
       rpc: signerDirect.rpc || senderDirect.rpc,
@@ -135,6 +156,7 @@ export async function GET(req) {
       debug: { signerToken, signerOwner, senderToken, senderOwner, spender },
     });
   } catch (e) {
+    console.log('[token-batch][error]', { version: API_VERSION, error: e?.message || 'token batch failed' });
     return Response.json({ ok: false, error: e?.message || 'token batch failed', version: API_VERSION }, { status: 500 });
   }
 }
