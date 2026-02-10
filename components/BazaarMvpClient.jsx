@@ -208,6 +208,26 @@ function normalizeAddr(a = '') {
   }
 }
 
+async function waitForTxConfirmation({ provider, walletProvider, txHash, timeoutMs = 180000, pollMs = 1500 }) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      if (walletProvider?.request) {
+        const rc = await walletProvider.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
+        if (rc && rc.blockNumber) return rc;
+      }
+    } catch {}
+
+    try {
+      const rc2 = await provider.getTransactionReceipt(txHash);
+      if (rc2 && rc2.blockNumber) return rc2;
+    } catch {}
+
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error('tx confirmation timeout');
+}
+
 function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
@@ -544,7 +564,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               method: 'eth_sendTransaction',
               params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
             });
-            await provider.waitForTransaction(tx0Hash);
+            await waitForTxConfirmation({ provider, walletProvider, txHash: tx0Hash });
             setStatus(`approving ${approveSymbol}: setting allowance`);
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
@@ -553,7 +573,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
 
           setStatus(`approving ${approveSymbol}: confirming`);
-          await provider.waitForTransaction(txHash);
+          await waitForTxConfirmation({ provider, walletProvider, txHash });
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
           await runChecks();
         } catch (e) {
@@ -594,7 +614,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         }
       }
       const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
-      await tx.wait();
+      await waitForTxConfirmation({ provider, walletProvider, txHash: tx.hash });
       setLastSwapTxHash(tx.hash);
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
