@@ -139,8 +139,9 @@ html, body {
   z-index: 2;
   color: #ffe19c;
   font-size: 32px;
+  font-weight: 900;
   line-height: 1;
-  text-shadow: 1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.9);
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
 }
 
 .rs-symbol-overlay {
@@ -150,8 +151,9 @@ html, body {
   z-index: 2;
   color: #ffe19c;
   font-size: 24px;
+  font-weight: 900;
   line-height: 1;
-  text-shadow: 1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.9);
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
 }
 
 .amt-sfx {
