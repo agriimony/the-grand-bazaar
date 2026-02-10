@@ -402,6 +402,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         swap.protocolFee(),
       ]);
 
+      if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
+        setStatus('order expired');
+      }
+
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const pairRead = await readPairBatch({
         signerToken: parsed.signerToken,
@@ -482,6 +486,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('no order loaded');
       return;
     }
+    if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
+      setStatus('order expired');
+      return;
+    }
 
     let latestChecks = checks;
     if (!latestChecks) {
@@ -534,6 +542,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
 
           await provider.waitForTransaction(txHash);
+          setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
           await runChecks();
         } catch (e) {
@@ -606,8 +615,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setStatus('demo values loaded');
   }
 
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expirySec = parsed ? Number(parsed.expiry) : 0;
+  const isExpired = Boolean(parsed) && Number.isFinite(expirySec) && expirySec <= nowSec;
+
   const primaryLabel = !address
     ? 'Connect'
+    : isExpired
+    ? 'Expired'
     : checks?.takerBalanceOk === false
     ? 'Insufficient Balance'
     : checks?.takerApprovalOk
@@ -660,7 +675,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
           <div className="rs-center">
             <div className="rs-btn-stack">
-              <button className="rs-btn" onClick={onPrimaryAction}>{primaryLabel}</button>
+              <button className="rs-btn" onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
               <button className="rs-btn decline" disabled>Decline</button>
             </div>
           </div>
