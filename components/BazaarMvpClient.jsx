@@ -266,6 +266,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     autoConnectIfMiniApp();
   }, [autoConnectTried, address]);
 
+  useEffect(() => {
+    if (!parsed) return;
+    runChecks();
+  }, [parsed, provider, address]);
+
   function buildOrderForCall(requiredSenderKind) {
     if (!parsed) throw new Error('No order loaded');
     return {
