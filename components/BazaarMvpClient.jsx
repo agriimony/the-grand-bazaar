@@ -695,8 +695,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'checking wallets'
     : /approving/i.test(status)
     ? status
+    : /simulating swap|sending swap tx|swap confirmed/i.test(status)
+    ? 'swapping'
     : '';
-  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving/i.test(status));
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving|simulating swap|sending swap tx|swapping/i.test(status));
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
