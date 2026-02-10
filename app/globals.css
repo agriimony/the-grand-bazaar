@@ -90,7 +90,12 @@ html, body {
   align-items: center;
   justify-content: flex-start;
   padding-left: 16px;
+}
+
+.rs-token-wrap {
   position: relative;
+  width: 92px;
+  height: 92px;
 }
 
 .rs-token-link {
@@ -260,6 +265,11 @@ textarea { width: 100%; font-size: 42px; }
 
   .rs-asset-stage {
     min-height: 92px;
+  }
+
+  .rs-token-wrap {
+    width: 72px;
+    height: 72px;
   }
 
   .rs-token-art {
