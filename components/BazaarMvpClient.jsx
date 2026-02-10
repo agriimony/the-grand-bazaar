@@ -11,6 +11,8 @@ const ERC20_ABI = [
   'function symbol() view returns (string)',
   'function approve(address spender,uint256 amount) returns (bool)',
 ];
+const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
+const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 
 const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
@@ -151,6 +153,50 @@ function tokenIconUrl(chainId, token) {
     }
   } catch {}
   return '';
+}
+
+async function rpcBatchCall(calls) {
+  for (const rpc of BASE_RPCS) {
+    try {
+      const body = calls.map((c, i) => ({ jsonrpc: '2.0', id: i + 1, method: 'eth_call', params: [{ to: c.to, data: c.data }, 'latest'] }));
+      const r = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const out = await r.json();
+      if (!Array.isArray(out)) continue;
+      const byId = new Map(out.map((x) => [x.id, x]));
+      return calls.map((_, i) => byId.get(i + 1));
+    } catch {
+      // try next rpc
+    }
+  }
+  return calls.map(() => ({ error: { message: 'all rpc failed' } }));
+}
+
+async function readTokenBatch(token, owner, spender) {
+  const calls = [
+    { to: token, data: ERC20_IFACE.encodeFunctionData('symbol', []) },
+    { to: token, data: ERC20_IFACE.encodeFunctionData('decimals', []) },
+    { to: token, data: ERC20_IFACE.encodeFunctionData('balanceOf', [owner]) },
+    { to: token, data: ERC20_IFACE.encodeFunctionData('allowance', [owner, spender]) },
+  ];
+  const res = await rpcBatchCall(calls);
+
+  const safeDecode = (idx, fn, fallback) => {
+    try {
+      const hex = res[idx]?.result;
+      if (!hex) return fallback;
+      const d = ERC20_IFACE.decodeFunctionResult(fn, hex);
+      return d?.[0] ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  return {
+    symbol: String(safeDecode(0, 'symbol', guessSymbol(token))),
+    decimals: Number(safeDecode(1, 'decimals', guessDecimals(token))),
+    balance: BigInt(safeDecode(2, 'balanceOf', 0n).toString()),
+    allowance: BigInt(safeDecode(3, 'allowance', 0n).toString()),
+  };
 }
 
 function errText(e) {
@@ -341,19 +387,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         swap.protocolFee(),
       ]);
 
-      const signerToken = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
-      const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+      const signerRead = await readTokenBatch(parsed.signerToken, parsed.signerWallet, parsed.swapContract);
+      const senderOwner = address || ethers.ZeroAddress;
+      const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
 
-      const signerSymbol = await signerToken.symbol().catch(() => guessSymbol(parsed.signerToken));
-      const signerDecimals = await signerToken.decimals().catch(() => guessDecimals(parsed.signerToken));
-      const senderSymbol = await senderToken.symbol().catch(() => guessSymbol(parsed.senderToken));
-      const senderDecimals = await senderToken.decimals().catch(() => guessDecimals(parsed.senderToken));
+      const signerSymbol = signerRead.symbol;
+      const signerDecimals = signerRead.decimals;
+      const senderSymbol = senderRead.symbol;
+      const senderDecimals = senderRead.decimals;
 
-      const signerBal = await signerToken.balanceOf(parsed.signerWallet).catch(() => 0n);
-      const signerAllow = await signerToken.allowance(parsed.signerWallet, parsed.swapContract).catch(() => 0n);
-
-      const makerBalanceOk = signerBal >= BigInt(parsed.signerAmount);
-      const makerApprovalOk = signerAllow >= BigInt(parsed.signerAmount);
+      const makerBalanceOk = signerRead.balance >= BigInt(parsed.signerAmount);
+      const makerApprovalOk = signerRead.allowance >= BigInt(parsed.signerAmount);
       const makerAccepted = makerBalanceOk && makerApprovalOk;
 
       const protocolFee = BigInt(protocolFeeOnchain.toString());
@@ -366,18 +410,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
       ]);
 
-      let takerBalance = 0n;
-      let takerAllowance = 0n;
-      let takerBalanceOk = false;
-      let takerApprovalOk = false;
-
-      if (provider && address) {
-        const senderTokenW = new ethers.Contract(parsed.senderToken, ERC20_ABI, provider);
-        takerBalance = await senderTokenW.balanceOf(address).catch(() => 0n);
-        takerAllowance = await senderTokenW.allowance(address, parsed.swapContract).catch(() => 0n);
-        takerBalanceOk = takerBalance >= totalRequired;
-        takerApprovalOk = takerAllowance >= totalRequired;
-      }
+      const takerBalance = provider && address ? senderRead.balance : 0n;
+      const takerAllowance = provider && address ? senderRead.allowance : 0n;
+      const takerBalanceOk = provider && address ? takerBalance >= totalRequired : false;
+      const takerApprovalOk = provider && address ? takerAllowance >= totalRequired : false;
 
       const nextChecks = {
         requiredSenderKind,
