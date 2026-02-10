@@ -35,9 +35,9 @@ function fitName(v = '', max = 22) {
   return v.length > max ? `${v.slice(0, max - 1)}…` : v;
 }
 
-function fitOfferName(v = '', max = 14) {
-  if (!v) return 'Counterparty';
-  const clean = v.replace(/^@/, '');
+function fitOfferName(v = '', max = 15) {
+  if (!v) return '@counterparty';
+  const clean = v.startsWith('@') ? v : `@${v}`;
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
@@ -163,6 +163,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
+  const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
 
   const dbg = (msg) => {
@@ -203,6 +204,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     async function resolveName() {
       if (!orderData?.signerWallet) {
         setCounterpartyName('Counterparty');
+        setCounterpartyProfileUrl('');
         return;
       }
       try {
@@ -210,8 +212,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const d = await r.json();
         const label = d?.name ? fitName(`@${d.name.replace(/^@/, '')}`) : (d?.fallback || short(orderData.signerWallet));
         setCounterpartyName(label || short(orderData.signerWallet));
+        setCounterpartyProfileUrl(d?.profileUrl || '');
       } catch {
         setCounterpartyName(short(orderData.signerWallet));
+        setCounterpartyProfileUrl('');
       }
     }
     resolveName();
@@ -536,6 +540,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
           <TradePanel
             title={`${fitOfferName(counterpartyName)}'s Offer`}
+            titleLink={counterpartyProfileUrl}
             amount={counterpartyAmountDisplay}
             symbol={signerSymbolDisplay}
             tokenAddress={parsed?.signerToken}
@@ -568,14 +573,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, amount, symbol, footer, feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const amountMatch = String(amount).match(/^(-?\d+)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+)([kMBTQ]?)$/);
 
   return (
     <div className="rs-panel">
-      <div className="rs-panel-title">{title}</div>
+      <div className="rs-panel-title">{titleLink ? <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link">{title}</a> : title}</div>
       <div className={`rs-box ${danger ? 'rs-danger' : ''}`}>
         <p className="rs-value">
           {valueMatch ? (

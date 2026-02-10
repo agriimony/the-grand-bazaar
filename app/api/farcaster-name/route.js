@@ -10,7 +10,7 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const address = (searchParams.get('address') || '').trim();
-    if (!address) return Response.json({ name: '', fallback: '' });
+    if (!address) return Response.json({ name: '', fallback: '', profileUrl: '' });
 
     const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
     let apiKey = process.env.NEYNAR_API_KEY || '';
@@ -20,7 +20,7 @@ export async function GET(req) {
     }
 
     if (!apiKey) {
-      return Response.json({ name: '', fallback: truncateAddress(address) });
+      return Response.json({ name: '', fallback: truncateAddress(address), profileUrl: '' });
     }
 
     const addrTypes = ['verified_address', 'custody_address'];
@@ -44,8 +44,9 @@ export async function GET(req) {
       if (name) break;
     }
 
-    return Response.json({ name, fallback: truncateAddress(address) });
+    const profileUrl = name ? `https://warpcast.com/${String(name).replace(/^@/, '')}` : '';
+    return Response.json({ name, fallback: truncateAddress(address), profileUrl });
   } catch {
-    return Response.json({ name: '', fallback: '' });
+    return Response.json({ name: '', fallback: '', profileUrl: '' });
   }
 }
