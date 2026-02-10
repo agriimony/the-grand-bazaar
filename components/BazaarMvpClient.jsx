@@ -569,7 +569,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   async function onPrimaryAction() {
-    if (!provider || !address) {
+    if (!address) {
       await connectWallet();
       return;
     }
@@ -593,10 +593,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     try {
-      const signer = await provider.getSigner();
-      const net = await provider.getNetwork();
-      if (Number(net.chainId) !== 8453) {
-        setStatus(`wrong network: switch wallet to Base (8453), current ${net.chainId}`);
+      const currentChainId = provider
+        ? Number((await provider.getNetwork()).chainId)
+        : Number(publicClient?.chain?.id || 0);
+      if (currentChainId !== 8453) {
+        setStatus(`wrong network: switch wallet to Base (8453), current ${currentChainId || 'unknown'}`);
         return;
       }
 
@@ -605,7 +606,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
 
       if (!latestChecks.takerBalanceOk) {
         setStatus('insufficient balance');
@@ -652,7 +654,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('sending swap tx');
       let gasLimit;
       try {
-        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
+        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall, { from: address });
         const gasLimitCap = 900000n;
         if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
         gasLimit = (estimatedGas * 150n) / 100n;
