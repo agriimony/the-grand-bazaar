@@ -101,7 +101,7 @@ function formatSmallWithSubscript(n) {
   const m = frac.match(/^(0+)(\d+)/);
   if (!m) return `${sign}${s}`;
   const zeroCount = m[1].length;
-  const sig = (m[2] || '').slice(0, 3).replace(/0+$/, '') || '0';
+  const sig = (m[2] || '').slice(0, 2).replace(/0+$/, '') || '0';
   return `${sign}0.0${toSubscriptDigits(String(zeroCount))}${sig}`;
 }
 
