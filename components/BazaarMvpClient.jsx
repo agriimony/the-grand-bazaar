@@ -547,6 +547,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setAddress(txFrom);
 
       const requiredSenderAddr = normalizeAddr(parsed.senderWallet);
+      dbg(`tx sender=${txFrom} order.sender=${requiredSenderAddr} recipient=${txFrom}`);
       if (requiredSenderAddr && requiredSenderAddr !== normalizeAddr(ethers.ZeroAddress) && txFrom !== requiredSenderAddr) {
         setStatus(`action error: SenderInvalid expected ${short(requiredSenderAddr)} got ${short(txFrom)}`);
         return;
@@ -596,6 +597,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
+      dbg(`swap payload nonce=${orderForCall.nonce.toString()} expiry=${orderForCall.expiry.toString()} sender.wallet=${orderForCall.sender.wallet} sender.token=${orderForCall.sender.token} sender.amount=${orderForCall.sender.amount.toString()} signer.wallet=${orderForCall.signer.wallet} signer.token=${orderForCall.signer.token} signer.amount=${orderForCall.signer.amount.toString()} v=${orderForCall.v}`);
       try {
         await swap.swap.staticCall(txFrom, 0, orderForCall);
       } catch (e) {
@@ -628,6 +630,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       dbg(`gas estimated=${estimatedGas.toString()} limit=${gasLimit.toString()}`);
 
       const tx = await swap.swap(txFrom, 0, orderForCall, { gasLimit });
+      dbg(`swap tx hash=${tx.hash} gasLimit=${gasLimit.toString()} txFrom=${txFrom}`);
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       await runChecks();
