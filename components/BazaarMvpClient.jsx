@@ -649,10 +649,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : checks?.takerBalanceOk === false
     ? 'Insufficient Balance'
     : checks?.takerApprovalOk
-    ? 'Accept'
+    ? 'Swap'
     : 'Approve';
 
   const isErrorState = isExpired || /error|expired/i.test(status || '');
+
+  const loadingStage = /connecting wallet/i.test(status)
+    ? 'connecting wallet'
+    : /loading order|cast/i.test(status)
+    ? 'loading order'
+    : /checking order|checks not ready|running preflight/i.test(status)
+    ? 'checking wallets'
+    : '';
+  const showLoadingBar = Boolean(loadingStage) && !checks;
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
@@ -699,10 +708,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           />
 
           <div className="rs-center">
-            <div className="rs-btn-stack">
-              <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
-              <button className="rs-btn decline" disabled>Decline</button>
-            </div>
+            {showLoadingBar ? (
+              <div className="rs-loading-wrap">
+                <div className="rs-loading-label">{loadingStage}</div>
+                <div className="rs-loading-track">
+                  <div className="rs-loading-fill" />
+                </div>
+              </div>
+            ) : (
+              <div className="rs-btn-stack">
+                <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
+                <button className="rs-btn decline" disabled>Decline</button>
+              </div>
+            )}
           </div>
 
           <TradePanel
