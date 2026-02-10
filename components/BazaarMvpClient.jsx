@@ -539,11 +539,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
 
-      let txFrom = normalizeAddr(await signer.getAddress());
+      const signerAddrRaw = await signer.getAddress();
+      let txFrom = normalizeAddr(signerAddrRaw);
+      let walletAccounts = [];
       if (walletProvider?.request) {
-        const accounts = await walletProvider.request({ method: 'eth_requestAccounts' }).catch(() => []);
-        if (Array.isArray(accounts) && accounts[0]) txFrom = normalizeAddr(accounts[0]);
+        walletAccounts = await walletProvider.request({ method: 'eth_requestAccounts' }).catch(() => []);
+        if (Array.isArray(walletAccounts) && walletAccounts[0]) txFrom = normalizeAddr(walletAccounts[0]);
       }
+      dbg(`identity signer.getAddress=${normalizeAddr(signerAddrRaw)} wallet.accounts=${Array.isArray(walletAccounts) ? walletAccounts.map((a) => normalizeAddr(a)).join('|') : 'none'} chosenFrom=${txFrom}`);
       setAddress(txFrom);
 
       const requiredSenderAddr = normalizeAddr(parsed.senderWallet);
@@ -585,6 +588,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             });
           }
 
+          const approveOnchain = await provider.getTransaction(txHash).catch(() => null);
+          if (approveOnchain?.from) dbg(`approve tx onchain.from=${normalizeAddr(approveOnchain.from)}`);
           await provider.waitForTransaction(txHash);
           setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
@@ -631,6 +636,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const tx = await swap.swap(txFrom, 0, orderForCall, { gasLimit });
       dbg(`swap tx hash=${tx.hash} gasLimit=${gasLimit.toString()} txFrom=${txFrom}`);
+      const txOnchain = await provider.getTransaction(tx.hash).catch(() => null);
+      if (txOnchain?.from) dbg(`swap tx onchain.from=${normalizeAddr(txOnchain.from)}`);
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       await runChecks();
