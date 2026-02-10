@@ -101,7 +101,7 @@ function guessSymbol(addr = '') {
   const a = (addr || '').toLowerCase();
   if (a === BASE_USDC.toLowerCase()) return 'USDC';
   if (a === '0x4200000000000000000000000000000000000006') return 'WETH';
-  return 'TOKEN';
+  return '???';
 }
 
 function guessDecimals(addr = '') {
@@ -588,20 +588,21 @@ function TradePanel({ title, titleLink, amount, symbol, footer, feeText, tokenAd
           ) : valueText}
         </p>
         <div className="rs-asset-stage">
-          <div className="rs-item rs-item-overlay">
+          <div className="rs-amount-overlay">
             {amountMatch ? (
-              <>{amountMatch[1]}<span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span> {symbol}</>
+              <>{amountMatch[1]}<span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></>
             ) : (
-              <>{amount} {symbol}</>
+              <>{amount}</>
             )}
           </div>
+          <div className="rs-symbol-overlay">{symbol || '???'}</div>
           <a
             href={tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
             target="_blank"
             rel="noreferrer"
             className="rs-token-link"
           >
-            {icon ? <img src={icon} alt={symbol} className="rs-token-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="rs-token-art rs-token-fallback">{symbol}</div>}
+            {icon ? <img src={icon} alt={symbol} className="rs-token-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="rs-token-art rs-token-fallback">{symbol || '???'}</div>}
           </a>
         </div>
         {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
