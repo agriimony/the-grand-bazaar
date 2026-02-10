@@ -163,12 +163,12 @@ async function rpcBatchCall(calls) {
       const out = await r.json();
       if (!Array.isArray(out)) continue;
       const byId = new Map(out.map((x) => [x.id, x]));
-      return calls.map((_, i) => byId.get(i + 1));
+      return { rpc, results: calls.map((_, i) => byId.get(i + 1)) };
     } catch {
       // try next rpc
     }
   }
-  return calls.map(() => ({ error: { message: 'all rpc failed' } }));
+  return { rpc: 'none', results: calls.map(() => ({ error: { message: 'all rpc failed' } })) };
 }
 
 async function readTokenBatch(token, owner, spender) {
@@ -178,11 +178,11 @@ async function readTokenBatch(token, owner, spender) {
     { to: token, data: ERC20_IFACE.encodeFunctionData('balanceOf', [owner]) },
     { to: token, data: ERC20_IFACE.encodeFunctionData('allowance', [owner, spender]) },
   ];
-  const res = await rpcBatchCall(calls);
+  const { rpc, results } = await rpcBatchCall(calls);
 
   const safeDecode = (idx, fn, fallback) => {
     try {
-      const hex = res[idx]?.result;
+      const hex = results[idx]?.result;
       if (!hex) return fallback;
       const d = ERC20_IFACE.decodeFunctionResult(fn, hex);
       return d?.[0] ?? fallback;
@@ -192,10 +192,12 @@ async function readTokenBatch(token, owner, spender) {
   };
 
   return {
+    rpc,
     symbol: String(safeDecode(0, 'symbol', guessSymbol(token))),
     decimals: Number(safeDecode(1, 'decimals', guessDecimals(token))),
     balance: BigInt(safeDecode(2, 'balanceOf', 0n).toString()),
     allowance: BigInt(safeDecode(3, 'allowance', 0n).toString()),
+    raw: results,
   };
 }
 
@@ -390,6 +392,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerRead = await readTokenBatch(parsed.signerToken, parsed.signerWallet, parsed.swapContract);
       const senderOwner = address || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
+      dbg(`rpc signer=${signerRead.rpc} sender=${senderRead.rpc}`);
 
       const signerSymbol = signerRead.symbol;
       const signerDecimals = signerRead.decimals;
@@ -414,6 +417,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerAllowance = provider && address ? senderRead.allowance : 0n;
       const takerBalanceOk = provider && address ? takerBalance >= totalRequired : false;
       const takerApprovalOk = provider && address ? takerAllowance >= totalRequired : false;
+      dbg(`preflight owner=${senderOwner.slice(0, 6)}... bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)}`);
 
       const nextChecks = {
         requiredSenderKind,
