@@ -8,6 +8,15 @@ const ERC20_ABI = [
 ];
 const IFACE = new ethers.Interface(ERC20_ABI);
 const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
+const API_VERSION = 'token-batch-v2';
+
+function canonAddr(addr = '') {
+  try {
+    return ethers.getAddress(String(addr || '').trim());
+  } catch {
+    return String(addr || '').trim();
+  }
+}
 
 async function rpcBatchCall(calls) {
   for (const rpc of BASE_RPCS) {
@@ -57,11 +66,14 @@ function decode(results, fn, idx, fallback) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const token = searchParams.get('token') || '';
-    const owner = searchParams.get('owner') || '';
-    const spender = searchParams.get('spender') || '';
+    const tokenIn = searchParams.get('token') || '';
+    const ownerIn = searchParams.get('owner') || '';
+    const spenderIn = searchParams.get('spender') || '';
+    const token = canonAddr(tokenIn);
+    const owner = canonAddr(ownerIn);
+    const spender = canonAddr(spenderIn);
     if (!token || !owner || !spender) {
-      return Response.json({ ok: false, error: 'missing params' }, { status: 400 });
+      return Response.json({ ok: false, error: 'missing params', version: API_VERSION }, { status: 400 });
     }
 
     const calls = [
@@ -70,6 +82,8 @@ export async function GET(req) {
       { to: token, data: IFACE.encodeFunctionData('balanceOf', [owner]) },
       { to: token, data: IFACE.encodeFunctionData('allowance', [owner, spender]) },
     ];
+
+    const debugBase = { version: API_VERSION, tokenIn, ownerIn, spenderIn, token, owner, spender };
 
     const batch = await rpcBatchCall(calls);
     if (batch) {
@@ -81,13 +95,15 @@ export async function GET(req) {
 
       const looksBad = token.toLowerCase() === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' && Number(decimals) !== 6;
       if (!looksBad) {
-        return Response.json({ ok: true, rpc, mode, symbol, decimals, balance, allowance, raw: results });
+        console.log('[token-batch]', { ...debugBase, rpc, mode, symbol, decimals, balance, allowance });
+        return Response.json({ ok: true, rpc, mode, symbol, decimals, balance, allowance, raw: results, debug: debugBase });
       }
     }
 
     const direct = await rpcDirectRead(token, owner, spender);
-    return Response.json({ ok: true, ...direct });
+    console.log('[token-batch-direct]', { ...debugBase, ...direct });
+    return Response.json({ ok: true, ...direct, debug: debugBase });
   } catch (e) {
-    return Response.json({ ok: false, error: e?.message || 'token batch failed' }, { status: 500 });
+    return Response.json({ ok: false, error: e?.message || 'token batch failed', version: API_VERSION }, { status: 500 });
   }
 }

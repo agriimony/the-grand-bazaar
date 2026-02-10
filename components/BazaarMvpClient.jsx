@@ -176,8 +176,9 @@ async function readTokenBatch(token, owner, spender) {
       balance: BigInt(d.balance || '0'),
       allowance: BigInt(d.allowance || '0'),
       raw: d.raw || [],
+      debug: d.debug || {},
     };
-  } catch {
+  } catch (e) {
     return {
       rpc: 'none',
       mode: 'fallback',
@@ -186,6 +187,7 @@ async function readTokenBatch(token, owner, spender) {
       balance: 0n,
       allowance: 0n,
       raw: [],
+      debug: { error: e?.message || 'readTokenBatch failed' },
     };
   }
 }
@@ -395,6 +397,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
       dbg(`rpc signer=${signerRead.rpc}(${signerRead.mode}) sender=${senderRead.rpc}(${senderRead.mode})`);
+      dbg(`api signerVer=${signerRead?.debug?.version || 'n/a'} senderVer=${senderRead?.debug?.version || 'n/a'}`);
       dbg(`tokens signer=[${parsed.signerToken}] dec=${signerRead.decimals} sender=[${parsed.senderToken}] dec=${senderRead.decimals}`);
 
       const signerSymbol = signerRead.symbol;
