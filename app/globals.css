@@ -228,6 +228,22 @@ html, body {
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.9);
 }
 
+.rs-order-success {
+  color: #61ff8d;
+  text-align: center;
+  font-size: 42px;
+  line-height: 1;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.9);
+  display: grid;
+  gap: 12px;
+}
+
+.rs-order-success a {
+  color: #9efcb8;
+  font-size: 16px;
+  text-decoration: underline;
+}
+
 @keyframes rsLoad {
   from { transform: translateX(-70%); }
   to { transform: translateX(170%); }
@@ -350,8 +366,13 @@ textarea { width: 100%; font-size: 42px; }
     font-size: 14px;
   }
 
-  .rs-order-blocked {
+  .rs-order-blocked,
+  .rs-order-success {
     font-size: 28px;
+  }
+
+  .rs-order-success a {
+    font-size: 14px;
   }
 
   .rs-btn-stack {

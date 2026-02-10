@@ -767,7 +767,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           />
 
           <div className="rs-center">
-            {isExpired || isTaken ? (
+            {lastSwapTxHash ? (
+              <div className="rs-order-success">
+                <div>Swap Complete!</div>
+                <a href={`https://basescan.org/tx/${lastSwapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a>
+              </div>
+            ) : isExpired || isTaken ? (
               <div className="rs-order-blocked">
                 {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
               </div>
