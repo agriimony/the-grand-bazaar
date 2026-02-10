@@ -481,6 +481,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'Accept'
     : 'Approve';
 
+  const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
+  const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
+  const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : 0n;
+  const senderAmountFallback = parsed ? BigInt(parsed.senderAmount) : 0n;
+  const feeFallback = (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
+  const senderTotalFallback = senderAmountFallback + feeFallback;
+
+  const yourAmountDisplay = checks
+    ? formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals))
+    : parsed
+    ? formatTokenAmount(ethers.formatUnits(senderTotalFallback.toString(), senderDecimalsFallback))
+    : '—';
+
+  const counterpartyAmountDisplay = checks
+    ? formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals))
+    : parsed
+    ? formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback))
+    : '—';
+
+  const senderSymbolDisplay = checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
+  const signerSymbolDisplay = checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
+
   return (
     <>
       <section className="rs-window">
@@ -489,8 +511,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-grid">
           <TradePanel
             title="Your Offer"
-            amount={checks ? formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals)) : '—'}
-            symbol={checks?.senderSymbol || 'TOKEN'}
+            amount={yourAmountDisplay}
+            symbol={senderSymbolDisplay}
             tokenAddress={parsed?.senderToken}
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.takerBalanceOk)}
@@ -508,8 +530,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
           <TradePanel
             title="Counterparty Offer"
-            amount={checks ? formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals)) : '—'}
-            symbol={checks?.signerSymbol || 'TOKEN'}
+            amount={counterpartyAmountDisplay}
+            symbol={signerSymbolDisplay}
             tokenAddress={parsed?.signerToken}
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.makerBalanceOk)}
