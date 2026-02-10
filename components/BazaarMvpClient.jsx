@@ -12,7 +12,6 @@ const ERC20_ABI = [
   'function approve(address spender,uint256 amount) returns (bool)',
 ];
 const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
-const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 
 const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
@@ -155,50 +154,30 @@ function tokenIconUrl(chainId, token) {
   return '';
 }
 
-async function rpcBatchCall(calls) {
-  for (const rpc of BASE_RPCS) {
-    try {
-      const body = calls.map((c, i) => ({ jsonrpc: '2.0', id: i + 1, method: 'eth_call', params: [{ to: c.to, data: c.data }, 'latest'] }));
-      const r = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      const out = await r.json();
-      if (!Array.isArray(out)) continue;
-      const byId = new Map(out.map((x) => [x.id, x]));
-      return { rpc, results: calls.map((_, i) => byId.get(i + 1)) };
-    } catch {
-      // try next rpc
-    }
-  }
-  return { rpc: 'none', results: calls.map(() => ({ error: { message: 'all rpc failed' } })) };
-}
-
 async function readTokenBatch(token, owner, spender) {
-  const calls = [
-    { to: token, data: ERC20_IFACE.encodeFunctionData('symbol', []) },
-    { to: token, data: ERC20_IFACE.encodeFunctionData('decimals', []) },
-    { to: token, data: ERC20_IFACE.encodeFunctionData('balanceOf', [owner]) },
-    { to: token, data: ERC20_IFACE.encodeFunctionData('allowance', [owner, spender]) },
-  ];
-  const { rpc, results } = await rpcBatchCall(calls);
-
-  const safeDecode = (idx, fn, fallback) => {
-    try {
-      const hex = results[idx]?.result;
-      if (!hex) return fallback;
-      const d = ERC20_IFACE.decodeFunctionResult(fn, hex);
-      return d?.[0] ?? fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
-  return {
-    rpc,
-    symbol: String(safeDecode(0, 'symbol', guessSymbol(token))),
-    decimals: Number(safeDecode(1, 'decimals', guessDecimals(token))),
-    balance: BigInt(safeDecode(2, 'balanceOf', 0n).toString()),
-    allowance: BigInt(safeDecode(3, 'allowance', 0n).toString()),
-    raw: results,
-  };
+  try {
+    const qs = new URLSearchParams({ token, owner, spender });
+    const r = await fetch(`/api/token-batch?${qs.toString()}`);
+    const d = await r.json();
+    if (!r.ok || !d?.ok) throw new Error(d?.error || 'token batch failed');
+    return {
+      rpc: d.rpc || 'none',
+      symbol: d.symbol || guessSymbol(token),
+      decimals: Number(d.decimals ?? guessDecimals(token)),
+      balance: BigInt(d.balance || '0'),
+      allowance: BigInt(d.allowance || '0'),
+      raw: d.raw || [],
+    };
+  } catch {
+    return {
+      rpc: 'none',
+      symbol: guessSymbol(token),
+      decimals: guessDecimals(token),
+      balance: 0n,
+      allowance: 0n,
+      raw: [],
+    };
+  }
 }
 
 function normalizeAddr(a = '') {
