@@ -172,7 +172,8 @@ html, body {
 }
 
 .rs-fee-note {
-  margin-top: 12px;
+  margin-top: 8px;
+  margin-bottom: 0;
   color: #ffffff;
   text-align: center;
   font-size: 20px;
