@@ -156,6 +156,19 @@ html, body {
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
 }
 
+.rs-insufficient-mark {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  z-index: 4;
+  font-size: 44px;
+  line-height: 1;
+  color: #ff3b3b;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(255,0,0,0.7);
+  animation: rsFlashWarn 0.9s steps(2, end) infinite;
+  pointer-events: none;
+}
+
 .amt-sfx {
   margin-left: 1px;
 }
@@ -263,6 +276,11 @@ html, body {
 @keyframes rsLoad {
   from { transform: translateX(-70%); }
   to { transform: translateX(170%); }
+}
+
+@keyframes rsFlashWarn {
+  0%, 49% { opacity: 1; transform: scale(1); }
+  50%, 100% { opacity: 0.25; transform: scale(1.07); }
 }
 
 .rs-btn {

@@ -810,6 +810,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             tokenAddress={parsed?.senderToken}
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.takerBalanceOk)}
+            insufficientBalance={Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
             feeText={checks
               ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
@@ -863,6 +864,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             tokenAddress={parsed?.signerToken}
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.makerBalanceOk)}
+            insufficientBalance={Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
             footer={checks
               ? checks.makerAccepted
@@ -907,7 +909,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, tokenAddress, chainId, danger, insufficientBalance = false, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -931,6 +933,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
               )}
             </div>
             <div className="rs-symbol-overlay">{symbol || '???'}</div>
+            {insufficientBalance ? <div className="rs-insufficient-mark">❗</div> : null}
             <a
               href={tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
               target="_blank"
