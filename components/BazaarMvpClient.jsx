@@ -442,12 +442,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const protocolFeeMismatch = encodedProtocolFee !== onchainProtocolFee;
 
       if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
-        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: false }));
+        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: false, protocolFeeBps: encodedProtocolFee, protocolFeeMismatch: false }));
         setStatus('order expired');
         return null;
       }
       if (nonceUsed) {
-        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: true }));
+        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: true, protocolFeeBps: encodedProtocolFee, protocolFeeMismatch: false }));
         setStatus('order already taken');
         return null;
       }
@@ -833,7 +833,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
             feeText={checks?.protocolFeeMismatch
               ? 'Incorrect protocol fees'
-              : checks
+              : checks?.protocolFeeBps != null
               ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : parsed
               ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
