@@ -153,6 +153,10 @@ function tokenIconUrl(chainId, token) {
   return '';
 }
 
+function errText(e) {
+  return e?.shortMessage || e?.reason || e?.message || 'unknown error';
+}
+
 export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '' }) {
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -421,6 +425,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     try {
       const signer = await provider.getSigner();
+      const net = await provider.getNetwork();
+      if (Number(net.chainId) !== 8453) {
+        setStatus(`wrong network: switch wallet to Base (8453), current ${net.chainId}`);
+        return;
+      }
+
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
 
@@ -430,16 +440,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       if (!checks.takerApprovalOk) {
-        setStatus('sending approve tx');
-        const tx = await senderToken.approve(parsed.swapContract, checks.totalRequired);
-        await tx.wait();
-        setStatus(`approve confirmed: ${tx.hash.slice(0, 10)}...`);
-        await runChecks();
+        try {
+          setStatus('sending approve tx');
+          const tx = await senderToken.approve(parsed.swapContract, checks.totalRequired);
+          await tx.wait();
+          setStatus(`approve confirmed: ${tx.hash.slice(0, 10)}...`);
+          await runChecks();
+        } catch (e) {
+          setStatus(`approve error: ${errText(e)}`);
+        }
         return;
       }
 
-      setStatus('sending swap tx');
+      setStatus('simulating swap');
       const orderForCall = buildOrderForCall(checks.requiredSenderKind);
+      await swap.swap.staticCall(address, 0, orderForCall).catch((e) => {
+        throw new Error(`swap simulation failed: ${errText(e)}`);
+      });
+
+      setStatus('sending swap tx');
       const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
       const gasLimitCap = 400000n;
       if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
@@ -449,7 +468,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       await runChecks();
     } catch (e) {
-      setStatus(`action error: ${e.message}`);
+      setStatus(`action error: ${errText(e)}`);
     }
   }
 
