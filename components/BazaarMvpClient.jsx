@@ -99,20 +99,28 @@ function suffixClass(suffix = '') {
   return 'amt-n';
 }
 
+function canonAddr(addr = '') {
+  try {
+    return ethers.getAddress(String(addr || '').trim()).toLowerCase();
+  } catch {
+    return String(addr || '').trim().toLowerCase();
+  }
+}
+
 function isStableToken(addr = '') {
-  const a = (addr || '').toLowerCase();
+  const a = canonAddr(addr);
   return a === BASE_USDC.toLowerCase();
 }
 
 function guessSymbol(addr = '') {
-  const a = (addr || '').toLowerCase();
+  const a = canonAddr(addr);
   if (a === BASE_USDC.toLowerCase()) return 'USDC';
   if (a === '0x4200000000000000000000000000000000000006') return 'WETH';
   return '???';
 }
 
 function guessDecimals(addr = '') {
-  const a = (addr || '').toLowerCase();
+  const a = canonAddr(addr);
   if (a === BASE_USDC.toLowerCase()) return 6;
   return 18;
 }
@@ -156,8 +164,8 @@ function tokenIconUrl(chainId, token) {
 
 async function readTokenBatch(token, owner, spender) {
   try {
-    const qs = new URLSearchParams({ token, owner, spender });
-    const r = await fetch(`/api/token-batch?${qs.toString()}`);
+    const qs = new URLSearchParams({ token: canonAddr(token), owner: canonAddr(owner), spender: canonAddr(spender), t: String(Date.now()) });
+    const r = await fetch(`/api/token-batch?${qs.toString()}`, { cache: 'no-store' });
     const d = await r.json();
     if (!r.ok || !d?.ok) throw new Error(d?.error || 'token batch failed');
     return {
@@ -387,7 +395,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
       dbg(`rpc signer=${signerRead.rpc}(${signerRead.mode}) sender=${senderRead.rpc}(${senderRead.mode})`);
-      dbg(`tokens signer=${parsed.signerToken.slice(0, 10)} dec=${signerRead.decimals} sender=${parsed.senderToken.slice(0, 10)} dec=${senderRead.decimals}`);
+      dbg(`tokens signer=[${parsed.signerToken}] dec=${signerRead.decimals} sender=[${parsed.senderToken}] dec=${senderRead.decimals}`);
 
       const signerSymbol = signerRead.symbol;
       const signerDecimals = signerRead.decimals;
