@@ -17,12 +17,31 @@ async function rpcBatchCall(calls) {
       const out = await r.json();
       if (!Array.isArray(out)) continue;
       const byId = new Map(out.map((x) => [x.id, x]));
-      return { rpc, results: calls.map((_, i) => byId.get(i + 1)) };
+      return { rpc, results: calls.map((_, i) => byId.get(i + 1)), mode: 'batch' };
     } catch {
       // try next
     }
   }
-  return { rpc: 'none', results: calls.map(() => ({ error: { message: 'all rpc failed' } })) };
+  return null;
+}
+
+async function rpcDirectRead(token, owner, spender) {
+  for (const rpc of BASE_RPCS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpc);
+      const erc20 = new ethers.Contract(token, ERC20_ABI, provider);
+      const [symbol, decimals, balance, allowance] = await Promise.all([
+        erc20.symbol().catch(() => '???'),
+        erc20.decimals().catch(() => 18),
+        erc20.balanceOf(owner).catch(() => 0n),
+        erc20.allowance(owner, spender).catch(() => 0n),
+      ]);
+      return { rpc, mode: 'direct', symbol: String(symbol), decimals: Number(decimals), balance: BigInt(balance).toString(), allowance: BigInt(allowance).toString(), raw: [] };
+    } catch {
+      // try next
+    }
+  }
+  return { rpc: 'none', mode: 'direct', symbol: '???', decimals: 18, balance: '0', allowance: '0', raw: [] };
 }
 
 function decode(results, fn, idx, fallback) {
@@ -52,13 +71,22 @@ export async function GET(req) {
       { to: token, data: IFACE.encodeFunctionData('allowance', [owner, spender]) },
     ];
 
-    const { rpc, results } = await rpcBatchCall(calls);
-    const symbol = String(decode(results, 'symbol', 0, '???'));
-    const decimals = Number(decode(results, 'decimals', 1, 18));
-    const balance = decode(results, 'balanceOf', 2, 0n).toString();
-    const allowance = decode(results, 'allowance', 3, 0n).toString();
+    const batch = await rpcBatchCall(calls);
+    if (batch) {
+      const { rpc, results, mode } = batch;
+      const symbol = String(decode(results, 'symbol', 0, '???'));
+      const decimals = Number(decode(results, 'decimals', 1, 18));
+      const balance = decode(results, 'balanceOf', 2, 0n).toString();
+      const allowance = decode(results, 'allowance', 3, 0n).toString();
 
-    return Response.json({ ok: true, rpc, symbol, decimals, balance, allowance, raw: results });
+      const looksBad = token.toLowerCase() === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' && Number(decimals) !== 6;
+      if (!looksBad) {
+        return Response.json({ ok: true, rpc, mode, symbol, decimals, balance, allowance, raw: results });
+      }
+    }
+
+    const direct = await rpcDirectRead(token, owner, spender);
+    return Response.json({ ok: true, ...direct });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || 'token batch failed' }, { status: 500 });
   }

@@ -162,6 +162,7 @@ async function readTokenBatch(token, owner, spender) {
     if (!r.ok || !d?.ok) throw new Error(d?.error || 'token batch failed');
     return {
       rpc: d.rpc || 'none',
+      mode: d.mode || 'unknown',
       symbol: d.symbol || guessSymbol(token),
       decimals: Number(d.decimals ?? guessDecimals(token)),
       balance: BigInt(d.balance || '0'),
@@ -171,6 +172,7 @@ async function readTokenBatch(token, owner, spender) {
   } catch {
     return {
       rpc: 'none',
+      mode: 'fallback',
       symbol: guessSymbol(token),
       decimals: guessDecimals(token),
       balance: 0n,
@@ -384,7 +386,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerRead = await readTokenBatch(parsed.signerToken, parsed.signerWallet, parsed.swapContract);
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
-      dbg(`rpc signer=${signerRead.rpc} sender=${senderRead.rpc}`);
+      dbg(`rpc signer=${signerRead.rpc}(${signerRead.mode}) sender=${senderRead.rpc}(${senderRead.mode})`);
       dbg(`tokens signer=${parsed.signerToken.slice(0, 10)} dec=${signerRead.decimals} sender=${parsed.senderToken.slice(0, 10)} dec=${senderRead.decimals}`);
 
       const signerSymbol = signerRead.symbol;
