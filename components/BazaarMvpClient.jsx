@@ -552,9 +552,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
 
           await provider.waitForTransaction(txHash);
-          setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
-          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
-          await runChecks();
+          setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true, takerBalanceOk: true } : prev));
+          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}... ready to swap`);
+          // Refresh onchain view in background, but do not block immediate UI transition.
+          setTimeout(() => {
+            runChecks();
+          }, 1200);
         } catch (e) {
           setStatus(`approve error: ${errText(e)}`);
         }
