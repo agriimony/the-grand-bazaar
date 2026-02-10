@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
+import { useAccount, useConnect, usePublicClient, useSendTransaction } from 'wagmi';
 import { decodeCompressedOrder } from '../lib/orders';
 
 const ERC20_ABI = [
@@ -19,7 +20,9 @@ const SWAP_ABI = [
   'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
+const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
 
+// removed duplicate abi block
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const FEE_TIERS = [500, 3000, 10000];
@@ -208,24 +211,9 @@ function normalizeAddr(a = '') {
   }
 }
 
-async function waitForTxConfirmation({ provider, walletProvider, txHash, timeoutMs = 180000, pollMs = 1500 }) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      if (walletProvider?.request) {
-        const rc = await walletProvider.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
-        if (rc && rc.blockNumber) return rc;
-      }
-    } catch {}
-
-    try {
-      const rc2 = await provider.getTransactionReceipt(txHash);
-      if (rc2 && rc2.blockNumber) return rc2;
-    } catch {}
-
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  throw new Error('tx confirmation timeout');
+async function waitForTxConfirmation({ publicClient, txHash, timeoutMs = 180000 }) {
+  if (!publicClient) throw new Error('public client unavailable');
+  return publicClient.waitForTransactionReceipt({ hash: txHash, timeout: timeoutMs, confirmations: 1 });
 }
 
 function errText(e) {
@@ -245,6 +233,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [provider, setProvider] = useState(null);
   const [walletProvider, setWalletProvider] = useState(null);
   const [address, setAddress] = useState('');
+  const { address: wagmiAddress, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { sendTransactionAsync } = useSendTransaction();
+  const publicClient = usePublicClient();
   const [status, setStatus] = useState('ready');
   const [lastSwapTxHash, setLastSwapTxHash] = useState('');
   const [debugLog, setDebugLog] = useState([]);
@@ -337,6 +329,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   async function connectWallet() {
     try {
       setStatus('connecting wallet');
+      if (!isConnected && connectors?.[0]) {
+        try { await connect({ connector: connectors[0] }); } catch {}
+      }
       const mod = await import('@farcaster/miniapp-sdk');
       const sdk = mod?.sdk || mod?.default || mod;
       let eip1193 = null;
@@ -357,6 +352,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   useEffect(() => {
+    if (wagmiAddress && wagmiAddress !== address) setAddress(wagmiAddress);
+  }, [wagmiAddress]);
+
+  useEffect(() => {
     async function autoConnectIfMiniApp() {
       if (autoConnectTried || address) return;
       try {
@@ -364,6 +363,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const sdk = mod?.sdk || mod?.default || mod;
         const inMiniApp = await sdk?.isInMiniApp?.();
         if (inMiniApp) {
+          if (!isConnected && connectors?.[0]) {
+            try { await connect({ connector: connectors[0] }); } catch {}
+          }
           setAutoConnectTried(true);
           await connectWallet();
           return;
@@ -374,7 +376,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setAutoConnectTried(true);
     }
     autoConnectIfMiniApp();
-  }, [autoConnectTried, address]);
+  }, [autoConnectTried, address, isConnected, connectors, connect]);
 
   useEffect(() => {
     if (!parsed) return;
@@ -536,7 +538,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
+      if (!sendTransactionAsync || !publicClient) {
+        setStatus('wallet connector not ready');
+        return;
+      }
+
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
 
       if (!latestChecks.takerBalanceOk) {
@@ -546,34 +552,42 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       if (!latestChecks.takerApprovalOk) {
         try {
-          if (!walletProvider?.request) throw new Error('wallet provider unavailable');
           const approveSymbol = latestChecks.senderSymbol || 'token';
           setStatus(`approving ${approveSymbol}`);
           const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
           let txHash;
           try {
-            txHash = await walletProvider.request({
-              method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+            txHash = await sendTransactionAsync({
+              account: address,
+              chainId: 8453,
+              to: parsed.senderToken,
+              data: approveData,
+              value: 0n,
             });
           } catch {
             // Some tokens/wallets require reset to zero first.
             setStatus(`approving ${approveSymbol}: resetting allowance`);
             const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
-            const tx0Hash = await walletProvider.request({
-              method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
+            const tx0Hash = await sendTransactionAsync({
+              account: address,
+              chainId: 8453,
+              to: parsed.senderToken,
+              data: zeroData,
+              value: 0n,
             });
-            await waitForTxConfirmation({ provider, walletProvider, txHash: tx0Hash });
+            await waitForTxConfirmation({ publicClient, txHash: tx0Hash });
             setStatus(`approving ${approveSymbol}: setting allowance`);
-            txHash = await walletProvider.request({
-              method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+            txHash = await sendTransactionAsync({
+              account: address,
+              chainId: 8453,
+              to: parsed.senderToken,
+              data: approveData,
+              value: 0n,
             });
           }
 
           setStatus(`approving ${approveSymbol}: confirming`);
-          await waitForTxConfirmation({ provider, walletProvider, txHash });
+          await waitForTxConfirmation({ publicClient, txHash });
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
           await runChecks();
         } catch (e) {
@@ -613,10 +627,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           throw e;
         }
       }
-      const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
-      await waitForTxConfirmation({ provider, walletProvider, txHash: tx.hash });
-      setLastSwapTxHash(tx.hash);
-      setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
+      const swapData = SWAP_IFACE.encodeFunctionData('swap', [address, 0, orderForCall]);
+      const txHash = await sendTransactionAsync({
+        account: address,
+        chainId: 8453,
+        to: parsed.swapContract,
+        data: swapData,
+        gas: gasLimit,
+        value: 0n,
+      });
+      await waitForTxConfirmation({ publicClient, txHash });
+      setLastSwapTxHash(txHash);
+      setStatus(`swap confirmed: ${txHash.slice(0, 10)}...`);
       setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
       await runChecks();
     } catch (e) {
