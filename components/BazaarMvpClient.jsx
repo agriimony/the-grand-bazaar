@@ -553,15 +553,34 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
-      await swap.swap.staticCall(address, 0, orderForCall).catch((e) => {
-        throw new Error(`swap simulation failed: ${errText(e)}`);
-      });
+      try {
+        await swap.swap.staticCall(address, 0, orderForCall);
+      } catch (e) {
+        const msg = errText(e);
+        if (/missing revert data|over rate limit/i.test(msg)) {
+          dbg(`swap simulation soft-fail: ${msg}`);
+          setStatus('simulation unavailable, proceeding to submit');
+        } else {
+          throw new Error(`swap simulation failed: ${msg}`);
+        }
+      }
 
       setStatus('sending swap tx');
-      const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
-      const gasLimitCap = 400000n;
-      if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
-      const gasLimit = (estimatedGas * 120n) / 100n;
+      let gasLimit;
+      try {
+        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
+        const gasLimitCap = 400000n;
+        if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
+        gasLimit = (estimatedGas * 120n) / 100n;
+      } catch (e) {
+        const msg = errText(e);
+        if (/missing revert data|over rate limit/i.test(msg)) {
+          dbg(`estimateGas soft-fail: ${msg}`);
+          gasLimit = 300000n;
+        } else {
+          throw e;
+        }
+      }
       const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
