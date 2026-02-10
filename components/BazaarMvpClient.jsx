@@ -640,10 +640,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
       try {
-        await swap.swap.staticCall(address, 0, orderForCall);
+        await swap.swap.staticCall(address, 0, orderForCall, { from: address });
       } catch (e) {
         const msg = errText(e);
-        if (/missing revert data|over rate limit/i.test(msg)) {
+        if (/missing revert data|over rate limit|unknown custom error/i.test(msg)) {
           dbg(`swap simulation soft-fail: ${msg}`);
           setStatus('simulation unavailable, proceeding to submit');
         } else {
