@@ -222,6 +222,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   });
   const [provider, setProvider] = useState(null);
+  const [walletProvider, setWalletProvider] = useState(null);
   const [address, setAddress] = useState('');
   const [status, setStatus] = useState('ready');
   const [debugLog, setDebugLog] = useState([]);
@@ -325,6 +326,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signer = await bp.getSigner();
       setAddress(await signer.getAddress());
       setProvider(bp);
+      setWalletProvider(eip1193);
       setStatus('wallet connected');
       await sdk?.actions?.ready?.();
     } catch (e) {
@@ -506,24 +508,33 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       if (!latestChecks.takerApprovalOk) {
         try {
-          setStatus('simulating approve');
-          await senderToken.approve.staticCall(parsed.swapContract, latestChecks.totalRequired).catch(() => {});
-
+          if (!walletProvider?.request) throw new Error('wallet provider unavailable');
           setStatus('sending approve tx');
-          let tx;
+          const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
+          let txHash;
           try {
-            tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
-          } catch (firstErr) {
-            // Some tokens require allowance reset to zero before setting a new value.
+            txHash = await walletProvider.request({
+              method: 'eth_sendTransaction',
+              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+            });
+          } catch {
+            // Some tokens/wallets require reset to zero first.
             setStatus('approve retry: resetting allowance to 0');
-            const tx0 = await senderToken.approve(parsed.swapContract, 0n);
-            await tx0.wait();
+            const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
+            const tx0Hash = await walletProvider.request({
+              method: 'eth_sendTransaction',
+              params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
+            });
+            await provider.waitForTransaction(tx0Hash);
             setStatus('approve retry: setting target allowance');
-            tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
+            txHash = await walletProvider.request({
+              method: 'eth_sendTransaction',
+              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+            });
           }
 
-          await tx.wait();
-          setStatus(`approve confirmed: ${tx.hash.slice(0, 10)}...`);
+          await provider.waitForTransaction(txHash);
+          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
           await runChecks();
         } catch (e) {
           setStatus(`approve error: ${errText(e)}`);
