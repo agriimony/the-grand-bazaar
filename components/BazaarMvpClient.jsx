@@ -344,17 +344,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerToken = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
 
-      const [signerBal, signerAllow, signerSymbol, signerDecimals] = await Promise.all([
-        signerToken.balanceOf(parsed.signerWallet),
-        signerToken.allowance(parsed.signerWallet, parsed.swapContract),
-        signerToken.symbol().catch(() => 'TOKEN'),
-        signerToken.decimals().catch(() => 18),
-      ]);
+      const signerSymbol = await signerToken.symbol().catch(() => guessSymbol(parsed.signerToken));
+      const signerDecimals = await signerToken.decimals().catch(() => guessDecimals(parsed.signerToken));
+      const senderSymbol = await senderToken.symbol().catch(() => guessSymbol(parsed.senderToken));
+      const senderDecimals = await senderToken.decimals().catch(() => guessDecimals(parsed.senderToken));
 
-      const [senderSymbol, senderDecimals] = await Promise.all([
-        senderToken.symbol().catch(() => 'TOKEN'),
-        senderToken.decimals().catch(() => 18),
-      ]);
+      const signerBal = await signerToken.balanceOf(parsed.signerWallet).catch(() => 0n);
+      const signerAllow = await signerToken.allowance(parsed.signerWallet, parsed.swapContract).catch(() => 0n);
 
       const makerBalanceOk = signerBal >= BigInt(parsed.signerAmount);
       const makerApprovalOk = signerAllow >= BigInt(parsed.signerAmount);
