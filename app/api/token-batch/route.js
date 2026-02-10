@@ -27,8 +27,38 @@ async function rpcBatchCall(calls) {
       const r = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
       const out = await r.json();
       if (!Array.isArray(out)) continue;
-      const byId = new Map(out.map((x) => [x.id, x]));
-      return { rpc, results: calls.map((_, i) => byId.get(i + 1)), mode: 'batch' };
+
+      const byId = new Map(out.map((x) => [Number(x.id), x]));
+      let results = calls.map((_, i) => byId.get(i + 1));
+
+      // Some RPCs return partial batch arrays. Retry missing slots in a second pass.
+      const missing = [];
+      results.forEach((v, i) => {
+        if (!v || v.error || typeof v.result === 'undefined') missing.push(i);
+      });
+
+      if (missing.length > 0) {
+        const refillBody = missing.map((idx) => ({
+          jsonrpc: '2.0',
+          id: idx + 1,
+          method: 'eth_call',
+          params: [{ to: calls[idx].to, data: calls[idx].data }, 'latest'],
+        }));
+        const r2 = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(refillBody), cache: 'no-store' });
+        const out2 = await r2.json();
+        if (Array.isArray(out2)) {
+          const byId2 = new Map(out2.map((x) => [Number(x.id), x]));
+          results = results.map((v, i) => byId2.get(i + 1) || v);
+        }
+      }
+
+      const stillMissing = results.some((v) => !v || v.error || typeof v.result === 'undefined');
+      if (stillMissing) {
+        console.log('[token-batch][partial-batch]', { rpc, got: out.length, expected: calls.length });
+        continue;
+      }
+
+      return { rpc, results, mode: 'batch' };
     } catch {
       // try next
     }
