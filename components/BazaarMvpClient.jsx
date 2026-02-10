@@ -201,6 +201,14 @@ async function readTokenBatch(token, owner, spender) {
   };
 }
 
+function normalizeAddr(a = '') {
+  try {
+    return ethers.getAddress(a).toLowerCase();
+  } catch {
+    return String(a || '').toLowerCase();
+  }
+}
+
 function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
@@ -415,10 +423,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const takerBalance = senderRead.balance;
       const takerAllowance = senderRead.allowance;
-      const ownerMatches = provider && address ? address.toLowerCase() === senderOwner.toLowerCase() : false;
+      const connectedNorm = normalizeAddr(address);
+      const ownerNorm = normalizeAddr(senderOwner);
+      const ownerMatches = Boolean(connectedNorm) && connectedNorm === ownerNorm;
       const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
       const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
-      dbg(`preflight owner=${senderOwner.slice(0, 6)}... bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)} match=${ownerMatches}`);
+      dbg(`preflight connected=${connectedNorm ? connectedNorm.slice(0, 10) : 'none'} owner=${ownerNorm ? ownerNorm.slice(0, 10) : 'none'} bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)} match=${ownerMatches}`);
 
       const nextChecks = {
         requiredSenderKind,
