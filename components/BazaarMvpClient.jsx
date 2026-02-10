@@ -481,9 +481,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    setStatus('running preflight checks');
-    const latestChecks = (await runChecks()) || checks;
-    if (!latestChecks) return;
+    let latestChecks = checks;
+    if (!latestChecks) {
+      setStatus('running preflight checks');
+      latestChecks = await runChecks();
+      if (!latestChecks) return;
+    }
 
     try {
       const signer = await provider.getSigner();
