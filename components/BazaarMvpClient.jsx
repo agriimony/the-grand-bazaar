@@ -535,7 +535,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title={`${fitOfferName(counterpartyName)} Offer`}
+            title={`${fitOfferName(counterpartyName)}'s Offer`}
             amount={counterpartyAmountDisplay}
             symbol={signerSymbolDisplay}
             tokenAddress={parsed?.signerToken}
