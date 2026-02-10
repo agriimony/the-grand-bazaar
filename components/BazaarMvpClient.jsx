@@ -691,7 +691,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
-            footer={checks?.makerAccepted ? 'Counterparty has accepted' : ''}
+            footer={checks?.makerAccepted ? `${fitOfferName(counterpartyName)} accepted` : ''}
           />
         </div>
       </section>
