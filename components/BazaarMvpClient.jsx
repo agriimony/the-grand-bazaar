@@ -527,7 +527,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (!latestChecks.takerApprovalOk) {
         try {
           if (!walletProvider?.request) throw new Error('wallet provider unavailable');
-          setStatus('sending approve tx');
+          const approveSymbol = latestChecks.senderSymbol || 'token';
+          setStatus(`approving ${approveSymbol}`);
           const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
           let txHash;
           try {
@@ -537,27 +538,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             });
           } catch {
             // Some tokens/wallets require reset to zero first.
-            setStatus('approve retry: resetting allowance to 0');
+            setStatus(`approving ${approveSymbol}: resetting allowance`);
             const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
             const tx0Hash = await walletProvider.request({
               method: 'eth_sendTransaction',
               params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
             });
             await provider.waitForTransaction(tx0Hash);
-            setStatus('approve retry: setting target allowance');
+            setStatus(`approving ${approveSymbol}: setting allowance`);
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
               params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
             });
           }
 
+          setStatus(`approving ${approveSymbol}: confirming`);
           await provider.waitForTransaction(txHash);
-          setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true, takerBalanceOk: true } : prev));
-          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}... ready to swap`);
-          // Refresh onchain view in background, but do not block immediate UI transition.
-          setTimeout(() => {
-            runChecks();
-          }, 1200);
+          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
+          await runChecks();
         } catch (e) {
           setStatus(`approve error: ${errText(e)}`);
         }
@@ -675,8 +673,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'loading order'
     : /checking order|checks not ready|running preflight/i.test(status)
     ? 'checking wallets'
+    : /approving/i.test(status)
+    ? status
     : '';
-  const showLoadingBar = Boolean(loadingStage) && !checks;
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving/i.test(status));
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
