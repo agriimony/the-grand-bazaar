@@ -88,7 +88,28 @@ function formatTokenAmountParts(value) {
   return { number, suffix: suffixes[tier] };
 }
 
+function toSubscriptDigits(v = '') {
+  const map = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
+  return String(v).split('').map((c) => map[c] || c).join('');
+}
+
+function formatSmallWithSubscript(n) {
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  const s = abs.toFixed(12).replace(/0+$/, '');
+  const [, frac = ''] = s.split('.');
+  const m = frac.match(/^(0+)(\d+)/);
+  if (!m) return `${sign}${s}`;
+  const zeroCount = m[1].length;
+  const sig = (m[2] || '').slice(0, 3).replace(/0+$/, '') || '0';
+  return `${sign}0.0${toSubscriptDigits(String(zeroCount))}${sig}`;
+}
+
 function formatTokenAmount(value) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n !== 0 && Math.abs(n) < 0.001) {
+    return formatSmallWithSubscript(n);
+  }
   const p = formatTokenAmountParts(value);
   return `${p.number}${p.suffix}`;
 }
