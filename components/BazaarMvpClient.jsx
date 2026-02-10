@@ -373,8 +373,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       if (provider && address) {
         const senderTokenW = new ethers.Contract(parsed.senderToken, ERC20_ABI, provider);
-        takerBalance = await senderTokenW.balanceOf(address);
-        takerAllowance = await senderTokenW.allowance(address, parsed.swapContract);
+        takerBalance = await senderTokenW.balanceOf(address).catch(() => 0n);
+        takerAllowance = await senderTokenW.allowance(address, parsed.swapContract).catch(() => 0n);
         takerBalanceOk = takerBalance >= totalRequired;
         takerApprovalOk = takerAllowance >= totalRequired;
       }
