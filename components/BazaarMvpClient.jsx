@@ -358,6 +358,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   useEffect(() => {
     async function autoConnectIfMiniApp() {
       if (autoConnectTried || address) return;
+      if (!parsed) return;
+      if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
+        setAutoConnectTried(true);
+        return;
+      }
+      if (checks?.nonceUsed) {
+        setAutoConnectTried(true);
+        return;
+      }
       try {
         const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
@@ -376,13 +385,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setAutoConnectTried(true);
     }
     autoConnectIfMiniApp();
-  }, [autoConnectTried, address, isConnected, connectors, connect]);
+  }, [autoConnectTried, address, isConnected, connectors, connect, parsed, checks?.nonceUsed]);
 
   useEffect(() => {
     if (!parsed) return;
-    if (!address) return;
+    if (lastSwapTxHash) return;
     runChecks();
-  }, [parsed, provider, address]);
+  }, [parsed, provider, address, lastSwapTxHash]);
 
   function buildOrderForCall(requiredSenderKind) {
     if (!parsed) throw new Error('No order loaded');
@@ -416,6 +425,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('order not found');
       return null;
     }
+    if (lastSwapTxHash) return checks;
 
     try {
       setStatus('checking order');
