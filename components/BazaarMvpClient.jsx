@@ -470,14 +470,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return null;
       }
 
-      if (!provider) {
+      const currentChainId = provider
+        ? Number((await provider.getNetwork()).chainId)
+        : Number(publicClient?.chain?.id || 0);
+
+      if (!currentChainId) {
         setStatus('connecting wallet');
         return null;
       }
 
-      const net = await provider.getNetwork();
-      if (Number(net.chainId) !== 8453) {
-        setStatus(`wrong network: switch wallet to Base (8453), current ${net.chainId}`);
+      if (currentChainId !== 8453) {
+        setStatus(`wrong network: switch wallet to Base (8453), current ${currentChainId}`);
         return null;
       }
 
