@@ -193,6 +193,16 @@ html, body {
   font-size: 20px;
 }
 
+.rs-fee-note-bad {
+  margin-top: 8px;
+  margin-bottom: 0;
+  color: #ff5b5b;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 900;
+  text-shadow: 1px 1px 0 #000;
+}
+
 .rs-footer-ok {
   margin-top: 10px;
   margin-bottom: 0;

@@ -437,6 +437,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         swap.nonceUsed(parsed.signerWallet, parsed.nonce).catch(() => false),
       ]);
 
+      const encodedProtocolFee = BigInt(parsed.protocolFee || 0);
+      const onchainProtocolFee = BigInt(protocolFeeOnchain.toString());
+      const protocolFeeMismatch = encodedProtocolFee !== onchainProtocolFee;
+
       if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
         setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: false }));
         setStatus('order expired');
@@ -445,6 +449,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (nonceUsed) {
         setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: true }));
         setStatus('order already taken');
+        return null;
+      }
+
+      if (protocolFeeMismatch) {
+        setChecks((prev) => ({
+          ...(prev || {}),
+          requiredSenderKind,
+          nonceUsed: false,
+          protocolFeeMismatch: true,
+          protocolFeeBps: encodedProtocolFee,
+          onchainProtocolFeeBps: onchainProtocolFee,
+        }));
+        setStatus('incorrect protocol fees');
         return null;
       }
 
@@ -482,7 +499,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderSymbol = senderRead.symbol;
       const senderDecimals = senderRead.decimals;
 
-      const protocolFee = BigInt(protocolFeeOnchain.toString());
+      const protocolFee = onchainProtocolFee;
       const senderAmount = BigInt(parsed.senderAmount);
       const feeAmount = (senderAmount * protocolFee) / 10000n;
       const totalRequired = senderAmount + feeAmount;
@@ -502,6 +519,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const baseChecks = {
         requiredSenderKind,
         nonceUsed: false,
+        protocolFeeMismatch: false,
         signerSymbol,
         senderSymbol,
         signerDecimals,
@@ -750,7 +768,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : 'Approve';
 
   const isOrderNotFound = /order not found/i.test(status || '');
-  const isErrorState = isExpired || isTaken || isOrderNotFound || /error|expired|taken/i.test(status || '');
+  const isProtocolFeeMismatch = Boolean(checks?.protocolFeeMismatch) || /incorrect protocol fees/i.test(status || '');
+  const isErrorState = isExpired || isTaken || isOrderNotFound || isProtocolFeeMismatch || /error|expired|taken/i.test(status || '');
 
   const loadingStage = /loading order/i.test(status)
     ? 'loading order'
@@ -812,11 +831,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={Boolean(checks && !checks.takerBalanceOk)}
             insufficientBalance={Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
-            feeText={checks
+            feeText={checks?.protocolFeeMismatch
+              ? 'Incorrect protocol fees'
+              : checks
               ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : parsed
               ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : ''}
+            feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
             footer={checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
@@ -850,7 +872,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : (
               <div className="rs-btn-stack">
-                <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
+                <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
                 <button className="rs-btn decline" disabled>Decline</button>
               </div>
             )}
@@ -909,7 +931,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, tokenAddress, chainId, danger, insufficientBalance = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, insufficientBalance = false, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -944,7 +966,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
             </a>
           </div>
         </div>
-        {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
+        {feeText ? <p className={feeTone === 'bad' ? 'rs-fee-note-bad' : 'rs-fee-note'}>{feeText}</p> : null}
         {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
       </div>
     </div>
