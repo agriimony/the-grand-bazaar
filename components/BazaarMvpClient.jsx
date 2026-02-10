@@ -586,11 +586,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    let latestChecks = checks;
+    const latestChecks = checks;
     if (!latestChecks) {
-      setStatus('running preflight checks');
-      latestChecks = await runChecks();
-      if (!latestChecks) return;
+      setStatus('checks not ready');
+      return;
     }
 
     try {
@@ -618,36 +617,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const approveSymbol = latestChecks.senderSymbol || 'token';
           setStatus(`approving ${approveSymbol}`);
           const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
-          let txHash;
-          try {
-            txHash = await sendTransactionAsync({
-              account: address,
-              chainId: 8453,
-              to: parsed.senderToken,
-              data: approveData,
-              value: 0n,
-            });
-          } catch {
-            // Some tokens/wallets require reset to zero first.
-            setStatus(`approving ${approveSymbol}: resetting allowance`);
-            const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
-            const tx0Hash = await sendTransactionAsync({
-              account: address,
-              chainId: 8453,
-              to: parsed.senderToken,
-              data: zeroData,
-              value: 0n,
-            });
-            await waitForTxConfirmation({ publicClient, txHash: tx0Hash });
-            setStatus(`approving ${approveSymbol}: setting allowance`);
-            txHash = await sendTransactionAsync({
-              account: address,
-              chainId: 8453,
-              to: parsed.senderToken,
-              data: approveData,
-              value: 0n,
-            });
-          }
+          const txHash = await sendTransactionAsync({
+            account: address,
+            chainId: 8453,
+            to: parsed.senderToken,
+            data: approveData,
+            value: 0n,
+          });
 
           setStatus(`approving ${approveSymbol}: confirming`);
           await waitForTxConfirmation({ publicClient, txHash });
