@@ -409,7 +409,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       await connectWallet();
       return;
     }
-    if (!parsed || !checks) return;
+    if (!parsed) {
+      setStatus('no order loaded');
+      return;
+    }
+    if (!checks) {
+      setStatus('checks not ready, running checks');
+      await runChecks();
+      return;
+    }
 
     try {
       const signer = await provider.getSigner();
