@@ -764,13 +764,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const feeFallback = (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
   const senderTotalFallback = senderAmountFallback + feeFallback;
 
-  const yourAmountDisplay = checks
+  const hasCheckAmounts = Boolean(
+    checks
+    && checks.totalRequired != null
+    && checks.senderDecimals != null
+    && checks.signerAmount != null
+    && checks.signerDecimals != null
+  );
+
+  const yourAmountDisplay = hasCheckAmounts
     ? formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals))
     : parsed
     ? formatTokenAmount(ethers.formatUnits(senderTotalFallback.toString(), senderDecimalsFallback))
     : '—';
 
-  const counterpartyAmountDisplay = checks
+  const counterpartyAmountDisplay = hasCheckAmounts
     ? formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals))
     : parsed
     ? formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback))
