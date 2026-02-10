@@ -154,17 +154,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [provider, setProvider] = useState(null);
   const [address, setAddress] = useState('');
   const [status, setStatus] = useState('ready');
+  const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
 
+  const dbg = (msg) => {
+    setDebugLog((prev) => [...prev.slice(-7), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
+  };
+
   useEffect(() => {
     async function loadFromCastHash() {
-      if (initialCompressed || !initialCastHash) return;
+      if (initialCompressed || !initialCastHash) {
+        dbg(`skip cast load initialCompressed=${Boolean(initialCompressed)} castHash=${initialCastHash || 'none'}`);
+        return;
+      }
       try {
         setStatus('loading order from cast hash');
+        dbg(`fetch cast hash ${initialCastHash}`);
         const r = await fetch(`/api/order-from-cast?castHash=${encodeURIComponent(initialCastHash)}`);
         const d = await r.json();
+        dbg(`api status=${r.status} ok=${Boolean(d?.ok)} hasOrder=${Boolean(d?.compressedOrder)}`);
         if (!r.ok || !d?.compressedOrder) {
           setStatus(`cast decode error: ${d?.error || 'order not found'}`);
           return;
@@ -174,8 +184,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         setOrderData(decoded);
         setChecks(null);
         setStatus('order loaded from cast');
-      } catch {
+        dbg('cast order decoded and set');
+      } catch (e) {
         setStatus('cast decode error: failed to load from cast hash');
+        dbg(`cast load exception: ${e?.message || 'unknown'}`);
       }
     }
     loadFromCastHash();
@@ -515,6 +527,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         </div>
         <p>Status: {status}</p>
         <p>Wallet: {address ? short(address) : 'not connected'}</p>
+        {debugLog.length > 0 ? (
+          <div>
+            <p style={{ marginBottom: 6 }}>Debug log:</p>
+            <ul style={{ marginTop: 0 }}>
+              {debugLog.map((l, i) => <li key={`${i}-${l}`}>{l}</li>)}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </>
   );
