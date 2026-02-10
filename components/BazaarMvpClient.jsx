@@ -64,7 +64,7 @@ function formatTokenAmountParts(value) {
 
   let scaled = n / Math.pow(1000, tier);
 
-  // Prefer 4-digit integer style when possible, e.g. 1.234M -> 1234k
+  // Prefer 4-digit style on lower tier when possible, e.g. 1.234M -> 1234k
   if (Math.abs(scaled) < 1000 && tier > 0) {
     const downScaled = n / Math.pow(1000, tier - 1);
     if (Math.abs(downScaled) < 10000) {
@@ -73,8 +73,14 @@ function formatTokenAmountParts(value) {
     }
   }
 
-  const rounded = Math.round(scaled);
-  return { number: String(rounded), suffix: suffixes[tier] };
+  const absScaled = Math.abs(scaled);
+  let number;
+  if (absScaled >= 1000) number = scaled.toFixed(0);
+  else if (absScaled >= 100) number = scaled.toFixed(1);
+  else if (absScaled >= 10) number = scaled.toFixed(2);
+  else number = scaled.toFixed(3);
+
+  return { number, suffix: suffixes[tier] };
 }
 
 function formatTokenAmount(value) {
@@ -575,8 +581,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
 function TradePanel({ title, titleLink, amount, symbol, footer, feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
-  const amountMatch = String(amount).match(/^(-?\d+)([kMBTQ]?)$/);
-  const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+)([kMBTQ]?)$/);
+  const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
+  const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
 
   return (
     <div className="rs-panel">

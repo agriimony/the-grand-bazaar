@@ -134,19 +134,23 @@ html, body {
 
 .rs-amount-overlay {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 4px;
+  left: 4px;
   z-index: 2;
   color: #ffe19c;
+  font-size: 32px;
+  line-height: 1;
   text-shadow: 1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.9);
 }
 
 .rs-symbol-overlay {
   position: absolute;
-  right: 8px;
-  bottom: 6px;
+  right: 4px;
+  bottom: 4px;
   z-index: 2;
   color: #ffe19c;
+  font-size: 24px;
+  line-height: 1;
   text-shadow: 1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.9);
 }
 
@@ -279,6 +283,14 @@ textarea { width: 100%; font-size: 42px; }
 
   .rs-item {
     padding: 6px 8px;
+  }
+
+  .rs-amount-overlay {
+    font-size: 24px;
+  }
+
+  .rs-symbol-overlay {
+    font-size: 18px;
   }
 
   .rs-btn-stack {
