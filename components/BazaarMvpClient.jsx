@@ -534,9 +534,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
             feeText={checks
-              ? `Includes ${formatTokenAmount(ethers.formatUnits(checks.feeAmount, checks.senderDecimals))} ${checks.senderSymbol} protocol fee (${checks.protocolFeeBps.toString()} bps)`
+              ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : parsed
-              ? `Includes ${formatTokenAmount(ethers.formatUnits(feeFallback.toString(), senderDecimalsFallback))} ${senderSymbolDisplay} protocol fee (${protocolFeeBpsFallback.toString()} bps)`
+              ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : ''}
             footer={checks?.takerApprovalOk ? 'You have accepted' : ''}
           />
