@@ -18,21 +18,6 @@ const SWAP_ABI = [
   'function requiredSenderKind() view returns (bytes4)',
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
-const SWAP_ERR_IFACE = new ethers.Interface([
-  'error NonceAlreadyUsed(uint256)',
-  'error NonceTooLow()',
-  'error OrderExpired()',
-  'error SenderInvalid()',
-  'error SenderTokenInvalid()',
-  'error AffiliateAmountInvalid()',
-  'error SignatureInvalid()',
-  'error SignatoryInvalid()',
-  'error RoyaltyExceedsMax(uint256)',
-  'error TokenKindUnknown()',
-  'error TransferFailed(address,address)',
-  'error SignatoryUnauthorized()',
-  'error Unauthorized()'
-]);
 
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -222,22 +207,7 @@ function normalizeAddr(a = '') {
   }
 }
 
-function decodeSwapError(e) {
-  const data = e?.data || e?.error?.data || e?.info?.error?.data || null;
-  if (!data || typeof data !== 'string') return '';
-  try {
-    const decoded = SWAP_ERR_IFACE.parseError(data);
-    if (!decoded) return '';
-    const args = decoded.args ? ` ${decoded.args.toString()}` : '';
-    return `${decoded.name}${args}`.trim();
-  } catch {
-    return '';
-  }
-}
-
 function errText(e) {
-  const decoded = decodeSwapError(e);
-  if (decoded) return decoded;
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
@@ -539,23 +509,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
 
-      const signerAddrRaw = await signer.getAddress();
-      let txFrom = normalizeAddr(signerAddrRaw);
-      let walletAccounts = [];
-      if (walletProvider?.request) {
-        walletAccounts = await walletProvider.request({ method: 'eth_requestAccounts' }).catch(() => []);
-        if (Array.isArray(walletAccounts) && walletAccounts[0]) txFrom = normalizeAddr(walletAccounts[0]);
-      }
-      dbg(`identity signer.getAddress=${normalizeAddr(signerAddrRaw)} wallet.accounts=${Array.isArray(walletAccounts) ? walletAccounts.map((a) => normalizeAddr(a)).join('|') : 'none'} chosenFrom=${txFrom}`);
-      setAddress(txFrom);
-
-      const requiredSenderAddr = normalizeAddr(parsed.senderWallet);
-      dbg(`tx sender=${txFrom} order.sender=${requiredSenderAddr} recipient=${txFrom}`);
-      if (requiredSenderAddr && requiredSenderAddr !== normalizeAddr(ethers.ZeroAddress) && txFrom !== requiredSenderAddr) {
-        setStatus(`action error: SenderInvalid expected ${short(requiredSenderAddr)} got ${short(txFrom)}`);
-        return;
-      }
-
       if (!latestChecks.takerBalanceOk) {
         setStatus('insufficient balance');
         return;
@@ -570,7 +523,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           try {
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: txFrom, to: parsed.senderToken, data: approveData, value: '0x0' }],
+              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
             });
           } catch {
             // Some tokens/wallets require reset to zero first.
@@ -578,18 +531,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
             const tx0Hash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: txFrom, to: parsed.senderToken, data: zeroData, value: '0x0' }],
+              params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
             });
             await provider.waitForTransaction(tx0Hash);
             setStatus('approve retry: setting target allowance');
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: txFrom, to: parsed.senderToken, data: approveData, value: '0x0' }],
+              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
             });
           }
 
-          const approveOnchain = await provider.getTransaction(txHash).catch(() => null);
-          if (approveOnchain?.from) dbg(`approve tx onchain.from=${normalizeAddr(approveOnchain.from)}`);
           await provider.waitForTransaction(txHash);
           setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
@@ -602,9 +553,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
-      dbg(`swap payload nonce=${orderForCall.nonce.toString()} expiry=${orderForCall.expiry.toString()} sender.wallet=${orderForCall.sender.wallet} sender.token=${orderForCall.sender.token} sender.amount=${orderForCall.sender.amount.toString()} signer.wallet=${orderForCall.signer.wallet} signer.token=${orderForCall.signer.token} signer.amount=${orderForCall.signer.amount.toString()} v=${orderForCall.v}`);
       try {
-        await swap.swap.staticCall(txFrom, 0, orderForCall);
+        await swap.swap.staticCall(address, 0, orderForCall);
       } catch (e) {
         const msg = errText(e);
         if (/missing revert data|over rate limit/i.test(msg)) {
@@ -617,27 +567,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('sending swap tx');
       let gasLimit;
-      let estimatedGas;
       try {
-        estimatedGas = await swap.swap.estimateGas(txFrom, 0, orderForCall);
+        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
+        const gasLimitCap = 900000n;
+        if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
+        gasLimit = (estimatedGas * 150n) / 100n;
+        dbg(`gas estimated=${estimatedGas.toString()} gasLimit=${gasLimit.toString()}`);
       } catch (e) {
         const msg = errText(e);
-        dbg(`wallet estimateGas failed: ${msg}`);
-        // Fallback estimate using public Base RPC
-        const publicProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-        const swapRead = new ethers.Contract(parsed.swapContract, SWAP_ABI, publicProvider);
-        estimatedGas = await swapRead.swap.estimateGas(txFrom, 0, orderForCall);
+        if (/missing revert data|over rate limit/i.test(msg)) {
+          dbg(`estimateGas soft-fail: ${msg}`);
+          gasLimit = 650000n;
+        } else {
+          throw e;
+        }
       }
-
-      const gasLimitCap = 900000n;
-      if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
-      gasLimit = (estimatedGas * 150n) / 100n;
-      dbg(`gas estimated=${estimatedGas.toString()} limit=${gasLimit.toString()}`);
-
-      const tx = await swap.swap(txFrom, 0, orderForCall, { gasLimit });
-      dbg(`swap tx hash=${tx.hash} gasLimit=${gasLimit.toString()} txFrom=${txFrom}`);
-      const txOnchain = await provider.getTransaction(tx.hash).catch(() => null);
-      if (txOnchain?.from) dbg(`swap tx onchain.from=${normalizeAddr(txOnchain.from)}`);
+      const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       await runChecks();
