@@ -538,10 +538,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
-      const signerAddr = normalizeAddr(await signer.getAddress());
+
+      let txFrom = normalizeAddr(await signer.getAddress());
+      if (walletProvider?.request) {
+        const accounts = await walletProvider.request({ method: 'eth_requestAccounts' }).catch(() => []);
+        if (Array.isArray(accounts) && accounts[0]) txFrom = normalizeAddr(accounts[0]);
+      }
+      setAddress(txFrom);
+
       const requiredSenderAddr = normalizeAddr(parsed.senderWallet);
-      if (requiredSenderAddr && requiredSenderAddr !== normalizeAddr(ethers.ZeroAddress) && signerAddr !== requiredSenderAddr) {
-        setStatus(`action error: SenderInvalid expected ${short(requiredSenderAddr)} got ${short(signerAddr)}`);
+      if (requiredSenderAddr && requiredSenderAddr !== normalizeAddr(ethers.ZeroAddress) && txFrom !== requiredSenderAddr) {
+        setStatus(`action error: SenderInvalid expected ${short(requiredSenderAddr)} got ${short(txFrom)}`);
         return;
       }
 
@@ -559,7 +566,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           try {
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+              params: [{ from: txFrom, to: parsed.senderToken, data: approveData, value: '0x0' }],
             });
           } catch {
             // Some tokens/wallets require reset to zero first.
@@ -567,13 +574,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const zeroData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, 0n]);
             const tx0Hash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: zeroData, value: '0x0' }],
+              params: [{ from: txFrom, to: parsed.senderToken, data: zeroData, value: '0x0' }],
             });
             await provider.waitForTransaction(tx0Hash);
             setStatus('approve retry: setting target allowance');
             txHash = await walletProvider.request({
               method: 'eth_sendTransaction',
-              params: [{ from: address, to: parsed.senderToken, data: approveData, value: '0x0' }],
+              params: [{ from: txFrom, to: parsed.senderToken, data: approveData, value: '0x0' }],
             });
           }
 
@@ -590,7 +597,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
       try {
-        await swap.swap.staticCall(address, 0, orderForCall);
+        await swap.swap.staticCall(txFrom, 0, orderForCall);
       } catch (e) {
         const msg = errText(e);
         if (/missing revert data|over rate limit/i.test(msg)) {
@@ -605,14 +612,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let gasLimit;
       let estimatedGas;
       try {
-        estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall);
+        estimatedGas = await swap.swap.estimateGas(txFrom, 0, orderForCall);
       } catch (e) {
         const msg = errText(e);
         dbg(`wallet estimateGas failed: ${msg}`);
         // Fallback estimate using public Base RPC
         const publicProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
         const swapRead = new ethers.Contract(parsed.swapContract, SWAP_ABI, publicProvider);
-        estimatedGas = await swapRead.swap.estimateGas(address, 0, orderForCall);
+        estimatedGas = await swapRead.swap.estimateGas(txFrom, 0, orderForCall);
       }
 
       const gasLimitCap = 900000n;
@@ -620,7 +627,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       gasLimit = (estimatedGas * 150n) / 100n;
       dbg(`gas estimated=${estimatedGas.toString()} limit=${gasLimit.toString()}`);
 
-      const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
+      const tx = await swap.swap(txFrom, 0, orderForCall, { gasLimit });
       await tx.wait();
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
       await runChecks();
