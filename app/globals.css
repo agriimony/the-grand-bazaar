@@ -220,6 +220,14 @@ html, body {
   animation: rsLoad 1.2s ease-in-out infinite alternate;
 }
 
+.rs-order-blocked {
+  color: #ff4d4d;
+  text-align: center;
+  font-size: 42px;
+  line-height: 1;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.9);
+}
+
 @keyframes rsLoad {
   from { transform: translateX(-70%); }
   to { transform: translateX(170%); }
@@ -340,6 +348,10 @@ textarea { width: 100%; font-size: 42px; }
 
   .rs-fee-note {
     font-size: 14px;
+  }
+
+  .rs-order-blocked {
+    font-size: 28px;
   }
 
   .rs-btn-stack {

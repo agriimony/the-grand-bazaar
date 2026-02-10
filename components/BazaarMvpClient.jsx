@@ -720,7 +720,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           />
 
           <div className="rs-center">
-            {showLoadingBar ? (
+            {isExpired || isTaken ? (
+              <div className="rs-order-blocked">
+                {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
+              </div>
+            ) : showLoadingBar ? (
               <div className="rs-loading-wrap">
                 <div className="rs-loading-label">{loadingStage}</div>
                 <div className="rs-loading-track">
