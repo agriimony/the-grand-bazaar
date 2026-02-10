@@ -186,6 +186,15 @@ html, body {
   text-align: center;
 }
 
+.rs-footer-bad {
+  margin-top: 10px;
+  margin-bottom: 0;
+  color: #ff5b5b;
+  text-align: center;
+  font-weight: 900;
+  text-shadow: 1px 1px 0 #000;
+}
+
 .rs-btn-stack {
   width: 100%;
   display: grid;

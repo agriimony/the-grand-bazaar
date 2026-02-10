@@ -256,13 +256,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
       try {
-        setStatus('loading order from cast hash');
+        setStatus('loading order');
         dbg(`fetch cast hash ${initialCastHash}`);
         const r = await fetch(`/api/order-from-cast?castHash=${encodeURIComponent(initialCastHash)}`);
         const d = await r.json();
         dbg(`api status=${r.status} ok=${Boolean(d?.ok)} hasOrder=${Boolean(d?.compressedOrder)}`);
         if (!r.ok || !d?.compressedOrder) {
-          setStatus(`cast decode error: ${d?.error || 'order not found'}`);
+          setStatus('order not found');
           return;
         }
         const decoded = decodeCompressedOrder(d.compressedOrder);
@@ -272,7 +272,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         setStatus('order loaded from cast');
         dbg('cast order decoded and set');
       } catch (e) {
-        setStatus('cast decode error: failed to load from cast hash');
+        setStatus('order not found');
         dbg(`cast load exception: ${e?.message || 'unknown'}`);
       }
     }
@@ -412,11 +412,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   async function runChecks() {
-    if (!parsed) return null;
-    if (!address) {
-      setStatus('connect wallet to run preflight checks');
+    if (!parsed) {
+      setStatus('order not found');
       return null;
     }
+
     try {
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
@@ -428,10 +428,33 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ]);
 
       if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
+        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: false }));
         setStatus('order expired');
-      } else if (nonceUsed) {
-        setStatus('order already taken');
+        return null;
       }
+      if (nonceUsed) {
+        setChecks((prev) => ({ ...(prev || {}), requiredSenderKind, nonceUsed: true }));
+        setStatus('order already taken');
+        return null;
+      }
+
+      if (!address) {
+        setStatus('connecting wallet');
+        return null;
+      }
+
+      if (!provider) {
+        setStatus('connecting wallet');
+        return null;
+      }
+
+      const net = await provider.getNetwork();
+      if (Number(net.chainId) !== 8453) {
+        setStatus(`wrong network: switch wallet to Base (8453), current ${net.chainId}`);
+        return null;
+      }
+
+      setStatus('checking wallet');
 
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const pairRead = await readPairBatch({
@@ -443,28 +466,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       });
       const signerRead = pairRead.signer;
       const senderRead = pairRead.sender;
-      dbg(`rpc signer=${signerRead.rpc}(${signerRead.mode}) sender=${senderRead.rpc}(${senderRead.mode})`);
-      dbg(`api signerVer=${signerRead?.debug?.version || 'n/a'} senderVer=${senderRead?.debug?.version || 'n/a'}`);
-      dbg(`tokens signer=[${parsed.signerToken}] dec=${signerRead.decimals} sender=[${parsed.senderToken}] dec=${senderRead.decimals}`);
 
       const signerSymbol = signerRead.symbol;
       const signerDecimals = signerRead.decimals;
       const senderSymbol = senderRead.symbol;
       const senderDecimals = senderRead.decimals;
 
-      const makerBalanceOk = signerRead.balance >= BigInt(parsed.signerAmount);
-      const makerApprovalOk = signerRead.allowance >= BigInt(parsed.signerAmount);
-      const makerAccepted = makerBalanceOk && makerApprovalOk;
-
       const protocolFee = BigInt(protocolFeeOnchain.toString());
       const senderAmount = BigInt(parsed.senderAmount);
       const feeAmount = (senderAmount * protocolFee) / 10000n;
       const totalRequired = senderAmount + feeAmount;
 
-      const [signerUsdValue, senderUsdValue] = await Promise.all([
-        quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
-        quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
-      ]);
+      const makerBalanceOk = signerRead.balance >= BigInt(parsed.signerAmount);
+      const makerApprovalOk = signerRead.allowance >= BigInt(parsed.signerAmount);
+      const makerAccepted = makerBalanceOk && makerApprovalOk;
 
       const takerBalance = senderRead.balance;
       const takerAllowance = senderRead.allowance;
@@ -473,12 +488,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const ownerMatches = Boolean(connectedNorm) && connectedNorm === ownerNorm;
       const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
       const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
-      dbg(`preflight connected=${connectedNorm ? connectedNorm.slice(0, 10) : 'none'} owner=${ownerNorm ? ownerNorm.slice(0, 10) : 'none'} bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)} match=${ownerMatches}`);
-      dbg(`raw sender balance=${takerBalance.toString()} allowance=${takerAllowance.toString()} totalRequired=${totalRequired.toString()}`);
 
-      const nextChecks = {
+      const baseChecks = {
         requiredSenderKind,
-        nonceUsed: Boolean(nonceUsed),
+        nonceUsed: false,
         signerSymbol,
         senderSymbol,
         signerDecimals,
@@ -493,9 +506,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         protocolFeeBps: protocolFee,
         signerAmount: BigInt(parsed.signerAmount),
         senderAmount: BigInt(parsed.senderAmount),
-        signerUsdValue,
-        senderUsdValue,
+        signerUsdValue: null,
+        senderUsdValue: null,
       };
+
+      if (!makerAccepted) {
+        setChecks(baseChecks);
+        setStatus('checks complete');
+        return baseChecks;
+      }
+
+      if (!takerBalanceOk || !takerApprovalOk) {
+        setChecks(baseChecks);
+        setStatus('checks complete');
+        return baseChecks;
+      }
+
+      const [signerUsdValue, senderUsdValue] = await Promise.all([
+        quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
+        quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
+      ]);
+
+      const nextChecks = { ...baseChecks, signerUsdValue, senderUsdValue };
       setChecks(nextChecks);
       setStatus('checks complete');
       return nextChecks;
@@ -653,7 +685,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setChecks(null);
       setStatus('order loaded');
     } catch (e) {
-      setStatus(`decode error: ${e.message}`);
+      setStatus('order not found');
       setOrderData(null);
     }
   }
@@ -707,20 +739,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'Swap'
     : 'Approve';
 
-  const isErrorState = isExpired || isTaken || /error|expired|taken/i.test(status || '');
+  const isOrderNotFound = /order not found/i.test(status || '');
+  const isErrorState = isExpired || isTaken || isOrderNotFound || /error|expired|taken/i.test(status || '');
 
-  const loadingStage = /connecting wallet/i.test(status)
-    ? 'connecting wallet'
-    : /loading order|cast/i.test(status)
+  const loadingStage = /loading order/i.test(status)
     ? 'loading order'
-    : /checking order|checks not ready|running preflight/i.test(status)
-    ? 'checking wallets'
+    : /checking order|running preflight/i.test(status)
+    ? 'checking order'
+    : /connecting wallet/i.test(status)
+    ? 'connecting wallet'
+    : /checking wallet|checks not ready/i.test(status)
+    ? 'checking wallet'
     : /approving/i.test(status)
     ? status
-    : /simulating swap|sending swap tx|swap confirmed/i.test(status)
+    : /simulating swap|sending swap tx|swapping/i.test(status)
     ? 'swapping'
     : '';
-  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving|simulating swap|sending swap tx|swapping/i.test(status));
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
@@ -763,7 +798,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               : parsed
               ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : ''}
-            footer={checks?.takerApprovalOk ? 'You have accepted' : ''}
+            footer={checks
+              ? checks.takerBalanceOk && checks.takerApprovalOk
+                ? 'You have accepted'
+                : 'You have not yet accepted'
+              : ''}
+            footerTone={checks
+              ? checks.takerBalanceOk && checks.takerApprovalOk
+                ? 'ok'
+                : 'bad'
+              : 'ok'}
           />
 
           <div className="rs-center">
@@ -772,6 +816,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div>Swap Complete!</div>
                 <a href={`https://basescan.org/tx/${lastSwapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a>
               </div>
+            ) : isOrderNotFound ? (
+              <div className="rs-order-blocked">Order Not Found</div>
             ) : isExpired || isTaken ? (
               <div className="rs-order-blocked">
                 {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
@@ -785,7 +831,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : (
               <div className="rs-btn-stack">
-                <button className={`rs-btn ${primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
+                <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
                 <button className="rs-btn decline" disabled>Decline</button>
               </div>
             )}
@@ -800,7 +846,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             chainId={parsed?.chainId}
             danger={Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
-            footer={checks?.makerAccepted ? `${fitOfferName(counterpartyName)} accepted` : ''}
+            footer={checks
+              ? checks.makerAccepted
+                ? `${fitOfferName(counterpartyName)} accepted`
+                : `${fitOfferName(counterpartyName)} has not yet accepted`
+              : ''}
+            footerTone={checks
+              ? checks.makerAccepted
+                ? 'ok'
+                : 'bad'
+              : 'ok'}
           />
         </div>
       </section>
@@ -834,7 +889,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, tokenAddress, chainId, danger, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -869,7 +924,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, feeText, tokenAd
           </div>
         </div>
         {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
-        {footer ? <p className="rs-footer-ok">{footer}</p> : null}
+        {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
       </div>
     </div>
   );
