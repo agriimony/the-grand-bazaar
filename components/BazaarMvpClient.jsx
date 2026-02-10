@@ -225,6 +225,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [walletProvider, setWalletProvider] = useState(null);
   const [address, setAddress] = useState('');
   const [status, setStatus] = useState('ready');
+  const [lastSwapTxHash, setLastSwapTxHash] = useState('');
   const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
@@ -584,7 +585,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
       const tx = await swap.swap(address, 0, orderForCall, { gasLimit });
       await tx.wait();
+      setLastSwapTxHash(tx.hash);
       setStatus(`swap confirmed: ${tx.hash.slice(0, 10)}...`);
+      setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
       await runChecks();
     } catch (e) {
       setStatus(`action error: ${errText(e)}`);
@@ -723,6 +726,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           <button type="button" onClick={loadOrder}>Load into trade window</button>
         </div>
         <p>Status: {status}</p>
+        {lastSwapTxHash ? (
+          <p>
+            Last swap tx:{' '}
+            <a href={`https://basescan.org/tx/${lastSwapTxHash}`} target="_blank" rel="noreferrer">
+              {`${lastSwapTxHash.slice(0, 10)}...`}
+            </a>
+          </p>
+        ) : null}
         <p>Wallet: {address ? short(address) : 'not connected'}</p>
         {debugLog.length > 0 ? (
           <div>
