@@ -390,7 +390,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ]);
 
       const signerRead = await readTokenBatch(parsed.signerToken, parsed.signerWallet, parsed.swapContract);
-      const senderOwner = address || ethers.ZeroAddress;
+      const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
       dbg(`rpc signer=${signerRead.rpc} sender=${senderRead.rpc}`);
 
@@ -413,11 +413,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
       ]);
 
-      const takerBalance = provider && address ? senderRead.balance : 0n;
-      const takerAllowance = provider && address ? senderRead.allowance : 0n;
-      const takerBalanceOk = provider && address ? takerBalance >= totalRequired : false;
-      const takerApprovalOk = provider && address ? takerAllowance >= totalRequired : false;
-      dbg(`preflight owner=${senderOwner.slice(0, 6)}... bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)}`);
+      const takerBalance = senderRead.balance;
+      const takerAllowance = senderRead.allowance;
+      const ownerMatches = provider && address ? address.toLowerCase() === senderOwner.toLowerCase() : false;
+      const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
+      const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
+      dbg(`preflight owner=${senderOwner.slice(0, 6)}... bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)} match=${ownerMatches}`);
 
       const nextChecks = {
         requiredSenderKind,
