@@ -627,8 +627,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
           setStatus(`approving ${approveSymbol}: confirming`);
           await waitForTxConfirmation({ publicClient, txHash });
-          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
-          await runChecks();
+          setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
+          setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}... ready to swap`);
         } catch (e) {
           setStatus(`approve error: ${errText(e)}`);
         }
