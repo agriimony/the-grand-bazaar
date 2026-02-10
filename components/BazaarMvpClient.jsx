@@ -778,14 +778,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : showLoadingBar ? (
               <div className="rs-loading-wrap">
-                <div className="rs-loading-label">{loadingStage}</div>
                 <div className="rs-loading-track">
                   <div className="rs-loading-fill" />
+                  <div className="rs-loading-label">{loadingStage}</div>
                 </div>
               </div>
             ) : (
               <div className="rs-btn-stack">
-                <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
+                <button className={`rs-btn ${primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
                 <button className="rs-btn decline" disabled>Decline</button>
               </div>
             )}

@@ -199,9 +199,15 @@ html, body {
 }
 
 .rs-loading-label {
-  text-align: center;
-  color: #f0c46e;
-  margin-bottom: 8px;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-shadow: 1px 1px 0 #000;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .rs-loading-track {
@@ -211,6 +217,7 @@ html, body {
   background: #120707;
   box-shadow: inset 0 0 0 1px #000;
   overflow: hidden;
+  position: relative;
 }
 
 .rs-loading-fill {
@@ -261,6 +268,14 @@ html, body {
 }
 
 .rs-btn.decline { color: #ff7b7b; }
+
+.rs-btn-positive {
+  border-color: #2f8d3f;
+  background: linear-gradient(180deg, #253826 0%, #1a291b 100%);
+  color: #8aff9d;
+  text-shadow: 1px 1px 0 #102114;
+  box-shadow: inset 0 0 0 1px rgba(138,255,157,0.25);
+}
 
 .rs-btn-error {
   border-color: #8a2525;
