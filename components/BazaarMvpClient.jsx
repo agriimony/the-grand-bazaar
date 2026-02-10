@@ -16,6 +16,7 @@ const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
 const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
   'function requiredSenderKind() view returns (bytes4)',
+  'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
 
@@ -398,13 +399,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
-      const [requiredSenderKind, protocolFeeOnchain] = await Promise.all([
+      const [requiredSenderKind, protocolFeeOnchain, nonceUsed] = await Promise.all([
         swap.requiredSenderKind(),
         swap.protocolFee(),
+        swap.nonceUsed(parsed.signerWallet, parsed.nonce).catch(() => false),
       ]);
 
       if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
         setStatus('order expired');
+      } else if (nonceUsed) {
+        setStatus('order already taken');
       }
 
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
@@ -452,6 +456,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const nextChecks = {
         requiredSenderKind,
+        nonceUsed: Boolean(nonceUsed),
         signerSymbol,
         senderSymbol,
         signerDecimals,
@@ -489,6 +494,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
       setStatus('order expired');
+      return;
+    }
+    if (checks?.nonceUsed) {
+      setStatus('order already taken');
       return;
     }
 
@@ -641,18 +650,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const nowSec = Math.floor(Date.now() / 1000);
   const expirySec = parsed ? Number(parsed.expiry) : 0;
   const isExpired = Boolean(parsed) && Number.isFinite(expirySec) && expirySec <= nowSec;
+  const isTaken = Boolean(checks?.nonceUsed);
 
   const primaryLabel = !address
     ? 'Connect'
     : isExpired
     ? 'Expired'
+    : isTaken
+    ? 'Taken'
     : checks?.takerBalanceOk === false
     ? 'Insufficient Balance'
     : checks?.takerApprovalOk
     ? 'Swap'
     : 'Approve';
 
-  const isErrorState = isExpired || /error|expired/i.test(status || '');
+  const isErrorState = isExpired || isTaken || /error|expired|taken/i.test(status || '');
 
   const loadingStage = /connecting wallet/i.test(status)
     ? 'connecting wallet'
@@ -717,7 +729,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : (
               <div className="rs-btn-stack">
-                <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired}>{primaryLabel}</button>
+                <button className={`rs-btn ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken}>{primaryLabel}</button>
                 <button className="rs-btn decline" disabled>Decline</button>
               </div>
             )}
