@@ -331,7 +331,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   async function runChecks() {
-    if (!parsed) return;
+    if (!parsed) return null;
     try {
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
@@ -379,7 +379,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         takerApprovalOk = takerAllowance >= totalRequired;
       }
 
-      setChecks({
+      const nextChecks = {
         requiredSenderKind,
         signerSymbol,
         senderSymbol,
@@ -397,10 +397,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         senderAmount: BigInt(parsed.senderAmount),
         signerUsdValue,
         senderUsdValue,
-      });
+      };
+      setChecks(nextChecks);
       setStatus('checks complete');
+      return nextChecks;
     } catch (e) {
       setStatus(`check error: ${e.message}`);
+      return null;
     }
   }
 
@@ -413,11 +416,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('no order loaded');
       return;
     }
-    if (!checks) {
-      setStatus('checks not ready, running checks');
-      await runChecks();
-      return;
-    }
+
+    setStatus('running preflight checks');
+    const latestChecks = (await runChecks()) || checks;
+    if (!latestChecks) return;
 
     try {
       const signer = await provider.getSigner();
@@ -430,15 +432,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderToken = new ethers.Contract(parsed.senderToken, ERC20_ABI, signer);
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, signer);
 
-      if (!checks.takerBalanceOk) {
+      if (!latestChecks.takerBalanceOk) {
         setStatus('insufficient balance');
         return;
       }
 
-      if (!checks.takerApprovalOk) {
+      if (!latestChecks.takerApprovalOk) {
         try {
           setStatus('sending approve tx');
-          const tx = await senderToken.approve(parsed.swapContract, checks.totalRequired);
+          const tx = await senderToken.approve(parsed.swapContract, latestChecks.totalRequired);
           await tx.wait();
           setStatus(`approve confirmed: ${tx.hash.slice(0, 10)}...`);
           await runChecks();
@@ -449,7 +451,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       setStatus('simulating swap');
-      const orderForCall = buildOrderForCall(checks.requiredSenderKind);
+      const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
       await swap.swap.staticCall(address, 0, orderForCall).catch((e) => {
         throw new Error(`swap simulation failed: ${errText(e)}`);
       });
