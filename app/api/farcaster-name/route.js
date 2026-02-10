@@ -23,23 +23,26 @@ export async function GET(req) {
       return Response.json({ name: '', fallback: truncateAddress(address) });
     }
 
-    const url = `https://api.neynar.com/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=verified_address`;
-    const r = await fetch(url, {
-      headers: {
-        accept: 'application/json',
-        api_key: apiKey,
-      },
-      cache: 'no-store',
-    });
+    const addrTypes = ['verified_address', 'custody_address'];
+    let name = '';
 
-    if (!r.ok) {
-      return Response.json({ name: '', fallback: truncateAddress(address) });
+    for (const t of addrTypes) {
+      const url = `https://api.neynar.com/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=${t}`;
+      const r = await fetch(url, {
+        headers: {
+          accept: 'application/json',
+          api_key: apiKey,
+        },
+        cache: 'no-store',
+      });
+
+      if (!r.ok) continue;
+      const data = await r.json();
+      const users = data?.[address.toLowerCase()] || data?.[address] || [];
+      const u = users?.[0];
+      name = u?.username || u?.display_name || '';
+      if (name) break;
     }
-
-    const data = await r.json();
-    const users = data?.[address.toLowerCase()] || data?.[address] || [];
-    const u = users?.[0];
-    const name = u?.username || u?.display_name || '';
 
     return Response.json({ name, fallback: truncateAddress(address) });
   } catch {
