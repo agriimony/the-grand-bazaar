@@ -356,6 +356,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   useEffect(() => {
     if (!parsed) return;
+    if (!address) return;
     runChecks();
   }, [parsed, provider, address]);
 
@@ -388,6 +389,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function runChecks() {
     if (!parsed) return null;
+    if (!address) {
+      setStatus('connect wallet to run preflight checks');
+      return null;
+    }
     try {
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
