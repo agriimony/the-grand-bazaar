@@ -35,6 +35,12 @@ function fitName(v = '', max = 22) {
   return v.length > max ? `${v.slice(0, max - 1)}…` : v;
 }
 
+function fitOfferName(v = '', max = 14) {
+  if (!v) return 'Counterparty';
+  const clean = v.replace(/^@/, '');
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
 function compactAmount(value, digits = 3) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -529,7 +535,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title="Counterparty Offer"
+            title={`${fitOfferName(counterpartyName)} Offer`}
             amount={counterpartyAmountDisplay}
             symbol={signerSymbolDisplay}
             tokenAddress={parsed?.signerToken}
