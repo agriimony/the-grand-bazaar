@@ -385,6 +385,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
       const senderRead = await readTokenBatch(parsed.senderToken, senderOwner, parsed.swapContract);
       dbg(`rpc signer=${signerRead.rpc} sender=${senderRead.rpc}`);
+      dbg(`tokens signer=${parsed.signerToken.slice(0, 10)} dec=${signerRead.decimals} sender=${parsed.senderToken.slice(0, 10)} dec=${senderRead.decimals}`);
 
       const signerSymbol = signerRead.symbol;
       const signerDecimals = signerRead.decimals;
@@ -413,6 +414,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
       const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
       dbg(`preflight connected=${connectedNorm ? connectedNorm.slice(0, 10) : 'none'} owner=${ownerNorm ? ownerNorm.slice(0, 10) : 'none'} bal=${ethers.formatUnits(takerBalance, senderDecimals)} allow=${ethers.formatUnits(takerAllowance, senderDecimals)} need=${ethers.formatUnits(totalRequired, senderDecimals)} match=${ownerMatches}`);
+      dbg(`raw sender balance=${takerBalance.toString()} allowance=${takerAllowance.toString()} totalRequired=${totalRequired.toString()}`);
 
       const nextChecks = {
         requiredSenderKind,
