@@ -190,7 +190,7 @@ function tokenIconUrl(chainId, token) {
 }
 
 function ethIconUrl() {
-  return 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
+  return '/eth-icon.jpg';
 }
 
 async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
