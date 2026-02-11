@@ -883,6 +883,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             availableAmount: Number(t.balance || 0),
             availableRaw,
             usdValue: Number(t.usdValue || 0),
+            priceUsd: Number(t.priceUsd || 0),
             amountDisplay: formatTokenAmount(String(t.balance || '0')),
             imgUrl: t.imgUrl || null,
           };
@@ -923,11 +924,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const withUsd = await mapInChunks(nonzero, 5, async (r) => {
         const balanceFormatted = ethers.formatUnits(r.balance, r.decimals);
         const usd = await quoteUsdValue(readProvider, r.token, r.balance, r.decimals);
+        const availableAmount = Number(balanceFormatted);
+        const usdValue = usd ?? 0;
         return {
           ...r,
-          availableAmount: Number(balanceFormatted),
+          availableAmount,
           availableRaw: BigInt(r.balance),
-          usdValue: usd ?? 0,
+          usdValue,
+          priceUsd: availableAmount > 0 ? (usdValue / availableAmount) : 0,
           amountDisplay: formatTokenAmount(balanceFormatted),
         };
       });
@@ -965,8 +969,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const symbol = row?.symbol || guessSymbol(tokenAddr);
       const balanceRaw = row?.balance ?? 0n;
       const amount = ethers.formatUnits(balanceRaw, decimals);
-      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
-      const usd = await quoteUsdValue(rp, tokenAddr, balanceRaw, decimals);
+      let priceUsd = null;
+      try {
+        const pr = await fetch(`/api/token-price?token=${encodeURIComponent(tokenAddr)}`, { cache: 'no-store' });
+        const pd = await pr.json();
+        if (pr.ok && pd?.ok && Number.isFinite(Number(pd.priceUsd))) priceUsd = Number(pd.priceUsd);
+      } catch {
+        // fallback below
+      }
+
+      let usd = null;
+      if (Number.isFinite(priceUsd)) {
+        usd = Number(amount || 0) * Number(priceUsd);
+      } else {
+        const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+        usd = await quoteUsdValue(rp, tokenAddr, balanceRaw, decimals);
+        priceUsd = Number.isFinite(Number(usd)) && Number(amount || 0) > 0 ? (Number(usd) / Number(amount || 0)) : null;
+      }
 
       const option = {
         token: tokenAddr,
@@ -976,6 +995,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         availableAmount: Number(amount || 0),
         availableRaw: BigInt(balanceRaw || 0n),
         usdValue: Number(usd || 0),
+        priceUsd: Number.isFinite(Number(priceUsd)) ? Number(priceUsd) : 0,
         amountDisplay: formatTokenAmount(amount),
         imgUrl: tokenIconUrl(8453, tokenAddr),
       };
@@ -998,17 +1018,36 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const panel = tokenModalPanel;
 
     let selectedUsd = null;
-    try {
-      const dec = Number(pendingToken.decimals ?? 18);
-      const amountRaw = ethers.parseUnits(String(pendingAmount), dec);
-      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
-      selectedUsd = await quoteUsdValue(rp, pendingToken.token, amountRaw, dec);
-    } catch {
-      // fallback below
+    const amountNum = Number(pendingAmount || 0);
+
+    if (Number.isFinite(amountNum) && amountNum >= 0 && Number.isFinite(Number(pendingToken.priceUsd)) && Number(pendingToken.priceUsd) > 0) {
+      selectedUsd = amountNum * Number(pendingToken.priceUsd);
     }
 
     if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
-      const amountNum = Number(pendingAmount || 0);
+      try {
+        const pr = await fetch(`/api/token-price?token=${encodeURIComponent(pendingToken.token)}`, { cache: 'no-store' });
+        const pd = await pr.json();
+        if (pr.ok && pd?.ok && Number.isFinite(Number(pd.priceUsd)) && Number(pd.priceUsd) > 0) {
+          selectedUsd = amountNum * Number(pd.priceUsd);
+        }
+      } catch {
+        // fallback below
+      }
+    }
+
+    if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
+      try {
+        const dec = Number(pendingToken.decimals ?? 18);
+        const amountRaw = ethers.parseUnits(String(pendingAmount), dec);
+        const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+        selectedUsd = await quoteUsdValue(rp, pendingToken.token, amountRaw, dec);
+      } catch {
+        // fallback below
+      }
+    }
+
+    if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
       const availNum = Number(pendingToken.availableAmount || 0);
       selectedUsd = Number.isFinite(amountNum) && Number.isFinite(availNum) && availNum > 0
         ? (Number(pendingToken.usdValue || 0) * (amountNum / availNum))

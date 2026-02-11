@@ -95,13 +95,19 @@ export async function GET(req) {
       .map((e) => e?.node)
       .filter(Boolean)
       .filter((n) => (n?.network?.name || '').toLowerCase().includes('base'))
-      .map((n) => ({
-        token: n.tokenAddress,
-        symbol: n.symbol || 'TOKEN',
-        balance: String(n.balance || '0'),
-        usdValue: Number(n.balanceUSD || 0),
-        imgUrl: n.imgUrlV2 || null,
-      }))
+      .map((n) => {
+        const balance = Number(n.balance || 0);
+        const usdValue = Number(n.balanceUSD || 0);
+        const priceUsd = balance > 0 ? (usdValue / balance) : null;
+        return {
+          token: n.tokenAddress,
+          symbol: n.symbol || 'TOKEN',
+          balance: String(n.balance || '0'),
+          usdValue,
+          priceUsd: Number.isFinite(priceUsd) ? priceUsd : null,
+          imgUrl: n.imgUrlV2 || null,
+        };
+      })
       .filter((n) => Number(n.balance) > 0)
       .sort((a, b) => b.usdValue - a.usdValue);
 
