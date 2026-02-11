@@ -25,7 +25,6 @@ const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
 // removed duplicate abi block
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const FEE_TIERS = [500, 3000, 10000];
 
 const QUOTER_ABI = [
@@ -141,7 +140,7 @@ function isStableToken(addr = '') {
 function guessSymbol(addr = '') {
   const a = canonAddr(addr);
   if (a === BASE_USDC.toLowerCase()) return 'USDC';
-  if (a === BASE_WETH.toLowerCase()) return 'WETH';
+  if (a === '0x4200000000000000000000000000000000000006') return 'WETH';
   return '???';
 }
 
@@ -560,19 +559,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
       const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
 
-      let takerEthBalance = 0n;
-      let takerCanWrapFromEth = false;
-      const senderIsWeth = normalizeAddr(parsed.senderToken) === BASE_WETH.toLowerCase();
-      if (ownerMatches && senderIsWeth && !takerBalanceOk) {
-        try {
-          takerEthBalance = await readProvider.getBalance(address);
-          takerCanWrapFromEth = takerEthBalance >= totalRequired;
-        } catch {
-          takerEthBalance = 0n;
-          takerCanWrapFromEth = false;
-        }
-      }
-
       const baseChecks = {
         requiredSenderKind,
         nonceUsed: false,
@@ -587,8 +573,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         makerApprovalOk,
         takerBalanceOk,
         takerApprovalOk,
-        takerEthBalance,
-        takerCanWrapFromEth,
         totalRequired,
         feeAmount,
         protocolFeeBps: protocolFee,
@@ -863,8 +847,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             footer={checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
-                : checks.takerCanWrapFromEth
-                ? 'Insufficient WETH. You can wrap ETH to continue'
                 : 'You have not yet accepted'
               : ''}
             footerTone={checks
