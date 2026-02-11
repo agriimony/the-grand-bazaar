@@ -523,6 +523,14 @@ html, body {
 
 .meta-block {
   margin-top: 26px;
+  overflow-x: hidden;
+}
+
+.meta-block ul,
+.meta-block li {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 h1, h2, h3 {
