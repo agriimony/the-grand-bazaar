@@ -1375,7 +1375,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             <button className="rs-modal-close" onClick={() => setTokenModalOpen(false)}>✕</button>
             {tokenModalStep === 'grid' ? (
               <>
-                <div className="rs-modal-titlebar">Select Token</div>
+                <div className="rs-modal-titlebar">{tokenModalPanel === 'sender' ? 'Your Inventory' : `${fitOfferName(counterpartyName)}'s Inventory`}</div>
                 {tokenModalLoading ? (
                   <div className="rs-loading-wrap">
                     <div className="rs-loading-track">
