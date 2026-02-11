@@ -839,8 +839,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const parsedCache = JSON.parse(raw);
             const age = Date.now() - Number(parsedCache?.ts || 0);
             if (Array.isArray(parsedCache?.tokens) && age >= 0 && age < cacheTtlMs) {
-              dbg(`maker selector cache hit tokens=${parsedCache.tokens.length} ageMs=${age}`);
-              setTokenOptions(parsedCache.tokens);
+              const hydrated = parsedCache.tokens.map((t) => ({
+                ...t,
+                availableRaw: t?.availableRaw ? BigInt(t.availableRaw) : 0n,
+              }));
+              dbg(`maker selector cache hit tokens=${hydrated.length} ageMs=${age}`);
+              setTokenOptions(hydrated);
               return;
             }
           }
@@ -852,21 +856,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(wallet)}`, { cache: 'no-store' });
       const zd = await zr.json();
       if (zr.ok && zd?.ok && Array.isArray(zd.tokens)) {
-        const list = zd.tokens.map((t) => ({
-          token: normalizeAddr(t.token),
-          symbol: t.symbol || guessSymbol(t.token),
-          decimals: guessDecimals(t.token),
-          balance: String(t.balance || '0'),
-          availableAmount: Number(t.balance || 0),
-          usdValue: Number(t.usdValue || 0),
-          amountDisplay: formatTokenAmount(String(t.balance || '0')),
-          imgUrl: t.imgUrl || null,
-        }));
+        const list = zd.tokens.map((t) => {
+          const decimals = guessDecimals(t.token);
+          let availableRaw = 0n;
+          try { availableRaw = ethers.parseUnits(String(t.balance || '0'), decimals); } catch {}
+          return {
+            token: normalizeAddr(t.token),
+            symbol: t.symbol || guessSymbol(t.token),
+            decimals,
+            balance: String(t.balance || '0'),
+            availableAmount: Number(t.balance || 0),
+            availableRaw,
+            usdValue: Number(t.usdValue || 0),
+            amountDisplay: formatTokenAmount(String(t.balance || '0')),
+            imgUrl: t.imgUrl || null,
+          };
+        });
         dbg(`maker selector zapper tokens=${list.length}`);
         setTokenOptions(list);
         if (typeof window !== 'undefined') {
           try {
-            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens: list }));
+            const cacheTokens = list.map((t) => ({ ...t, availableRaw: typeof t.availableRaw === 'bigint' ? t.availableRaw.toString() : String(t.availableRaw || '0') }));
+            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens: cacheTokens }));
           } catch {
             // ignore cache write failures
           }
@@ -900,6 +911,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return {
           ...r,
           availableAmount: Number(balanceFormatted),
+          availableRaw: BigInt(r.balance),
           usdValue: usd ?? 0,
           amountDisplay: formatTokenAmount(balanceFormatted),
         };
@@ -927,6 +939,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}Token`]: pendingToken.token,
       [`${panel}Symbol`]: pendingToken.symbol,
       [`${panel}Decimals`]: pendingToken.decimals,
+      [`${panel}ImgUrl`]: pendingToken.imgUrl || null,
       [`${panel}Amount`]: pendingAmount,
     }));
     setTokenModalOpen(false);
@@ -1055,13 +1068,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
-  const pendingAvailableNum = Number(pendingToken?.availableAmount ?? 0);
-  const pendingInsufficient = Number.isFinite(pendingAmountNum) && pendingAmountNum > 0 && Number.isFinite(pendingAvailableNum) && pendingAmountNum > pendingAvailableNum;
+  let pendingInsufficient = false;
+  try {
+    const dec = Number(pendingToken?.decimals ?? 18);
+    const inRaw = pendingAmount ? ethers.parseUnits(String(pendingAmount || '0'), dec) : 0n;
+    const availRaw = typeof pendingToken?.availableRaw === 'bigint' ? pendingToken.availableRaw : 0n;
+    pendingInsufficient = inRaw > availRaw;
+  } catch {
+    const pendingAvailableNum = Number(pendingToken?.availableAmount ?? 0);
+    pendingInsufficient = Number.isFinite(pendingAmountNum) && pendingAmountNum > 0 && Number.isFinite(pendingAvailableNum) && pendingAmountNum > pendingAvailableNum;
+  }
 
   const yourAmountDisplayFinal = makerOverrides.senderAmount || yourAmountDisplay;
   const counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
+  const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
+  const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
 
   return (
     <>
@@ -1074,6 +1097,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             amount={yourAmountDisplayFinal}
             symbol={senderSymbolDisplay}
             tokenAddress={senderTokenAddressFinal}
+            tokenImage={senderTokenImgFinal}
             chainId={parsed?.chainId}
             editable={makerMode}
             onEdit={() => openTokenSelector('sender')}
@@ -1139,6 +1163,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
             tokenAddress={signerTokenAddressFinal}
+            tokenImage={signerTokenImgFinal}
             chainId={parsed?.chainId}
             editable={makerMode}
             onEdit={() => openTokenSelector('signer')}
@@ -1276,8 +1301,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
-  const icon = tokenIconUrl(chainId, tokenAddress || '');
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
+  const icon = tokenImage || tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
