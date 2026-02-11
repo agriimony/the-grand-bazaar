@@ -1153,25 +1153,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             <button className="rs-modal-close" onClick={() => setTokenModalOpen(false)}>✕</button>
             {tokenModalStep === 'grid' ? (
               <>
-                <div className="rs-panel-title">Select Token</div>
+                <div className="rs-modal-titlebar">Select Token</div>
                 {tokenModalLoading ? (
                   <p>Loading tokens...</p>
                 ) : (
                   <>
                     {tokenOptions.length === 0 ? <p>No supported tokens with balance found for {short(tokenModalWallet)}</p> : null}
-                    <div className="rs-token-grid">
-                      {tokenOptions.slice(0, 15).map((t) => (
-                        <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
-                          <div className="rs-token-cell-amount">{t.amountDisplay}</div>
-                          <img src={t.imgUrl || tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
-                          <div className="rs-token-cell-symbol">{t.symbol}</div>
-                        </button>
-                      ))}
-                      <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
-                        const token = prompt('Token contract address');
-                        if (!token) return;
-                        onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
-                      }}>+</button>
+                    <div className="rs-token-grid-wrap">
+                      <div className="rs-token-grid">
+                        {tokenOptions.slice(0, 15).map((t) => (
+                          <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
+                            <div className="rs-token-wrap rs-token-cell-wrap">
+                              <div className="rs-amount-overlay rs-token-cell-amount">{t.amountDisplay}</div>
+                              <img src={t.imgUrl || tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
+                              <div className="rs-symbol-overlay rs-token-cell-symbol">{t.symbol}</div>
+                            </div>
+                          </button>
+                        ))}
+                        <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
+                          const token = prompt('Token contract address');
+                          if (!token) return;
+                          onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
+                        }}>+</button>
+                      </div>
                     </div>
                   </>
                 )}

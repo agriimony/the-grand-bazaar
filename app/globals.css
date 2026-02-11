@@ -395,6 +395,26 @@ html, body {
   top: 8px;
 }
 
+.rs-modal-titlebar {
+  text-align: center;
+  padding: 12px 14px;
+  margin: -16px -16px 12px -16px;
+  border-bottom: 2px solid #31291f;
+  background: linear-gradient(180deg, #564a39 0%, #4a3f30 100%);
+  color: #f0c46e;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 24px;
+  letter-spacing: 0.8px;
+  text-shadow: 1px 1px 0 #2a2218;
+}
+
+.rs-token-grid-wrap {
+  border: 2px solid #342b21;
+  background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
+  box-shadow: inset 0 0 18px rgba(0,0,0,0.2);
+  padding: 10px;
+}
+
 .rs-token-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -402,15 +422,13 @@ html, body {
 }
 
 .rs-token-cell {
-  border: 2px solid #342b21;
-  background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
-  box-shadow: inset 0 0 18px rgba(0,0,0,0.2);
+  border: 2px solid #3b3227;
+  background: rgba(0,0,0,0.12);
   color: #ffe19c;
-  padding: 8px;
-  min-height: 120px;
+  padding: 6px;
+  min-height: 126px;
   display: grid;
-  gap: 6px;
-  align-content: space-between;
+  place-items: center;
   cursor: pointer;
 }
 
@@ -420,28 +438,34 @@ html, body {
   justify-items: center;
 }
 
-.rs-token-cell-amount {
-  font-size: 28px;
-  line-height: 1;
-  text-align: left;
-  color: #ffe19c;
-  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+.rs-token-cell-wrap {
+  width: 92px;
+  height: 92px;
 }
 
-.rs-token-cell-symbol {
-  font-size: 22px;
-  line-height: 1;
-  text-align: right;
+.rs-token-cell-amount {
+  top: 1px;
+  left: 2px;
+  font-size: 28px;
+  max-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #ffe19c;
-  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+}
+
+.rs-token-cell-symbol {
+  right: 2px;
+  bottom: 1px;
+  font-size: 22px;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rs-token-cell-icon {
-  width: 78px;
-  height: 78px;
+  width: 92px;
+  height: 92px;
   border-radius: 50%;
   object-fit: cover;
   justify-self: center;
