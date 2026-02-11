@@ -170,25 +170,40 @@ function guessDecimals(addr = '') {
 
 async function quoteUsdValue(readProvider, token, amountRaw, decimals) {
   try {
-    if (isStableToken(token)) {
-      return Number(ethers.formatUnits(amountRaw, 6));
-    }
+    if (isStableToken(token)) return Number(ethers.formatUnits(amountRaw, 6));
 
     const quoter = new ethers.Contract(QUOTER_V2, QUOTER_ABI, readProvider);
-    for (const fee of FEE_TIERS) {
-      try {
-        const [amountOut] = await quoter.quoteExactInputSingle.staticCall({
-          tokenIn: token,
-          tokenOut: BASE_USDC,
-          amountIn: amountRaw,
-          fee,
-          sqrtPriceLimitX96: 0,
-        });
-        return Number(ethers.formatUnits(amountOut, 6));
-      } catch {
-        // try next fee tier
+    const quoteSingle = async (tokenIn, tokenOut, amountIn) => {
+      for (const fee of FEE_TIERS) {
+        try {
+          const [amountOut] = await quoter.quoteExactInputSingle.staticCall({
+            tokenIn,
+            tokenOut,
+            amountIn,
+            fee,
+            sqrtPriceLimitX96: 0,
+          });
+          if (amountOut > 0n) return amountOut;
+        } catch {
+          // try next fee tier
+        }
+      }
+      return null;
+    };
+
+    // direct token -> USDC
+    const direct = await quoteSingle(token, BASE_USDC, amountRaw);
+    if (direct != null) return Number(ethers.formatUnits(direct, 6));
+
+    // fallback two-hop token -> WETH -> USDC for custom tokens without direct USDC pool
+    if (canonAddr(token) !== canonAddr(BASE_WETH)) {
+      const viaWeth = await quoteSingle(token, BASE_WETH, amountRaw);
+      if (viaWeth != null) {
+        const wethToUsdc = await quoteSingle(BASE_WETH, BASE_USDC, viaWeth);
+        if (wethToUsdc != null) return Number(ethers.formatUnits(wethToUsdc, 6));
       }
     }
+
     return null;
   } catch {
     return null;
