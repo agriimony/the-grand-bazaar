@@ -1320,11 +1320,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <input
                   className="rs-amount-input"
                   placeholder="Amount"
+                  inputMode="decimal"
                   value={pendingAmount}
-                  onChange={(e) => setPendingAmount(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    if (v === '' || /^\d*\.?\d*$/.test(v)) setPendingAmount(v);
+                  }}
                   onBlur={() => {
                     const n = Number(pendingAmount);
                     if (Number.isFinite(n) && n >= 0) setPendingAmount(String(n));
+                    else if (pendingAmount !== '') setPendingAmount('');
                   }}
                 />
                 <button className="rs-btn rs-btn-positive" onClick={onConfirmTokenAmount}>Confirm</button>
