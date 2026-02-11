@@ -33,7 +33,7 @@ const TOKEN_CATALOG = [
   BASE_WETH,
   '0xcbB7C0000aB88B473b1f5AFD9e0c6dFfD5A6Bf35', // cbBTC
   '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', // HIGHER
-  '0xfee293840d23b0b2de8c55e1cf7a9f01c157767c', // DEGEN
+  '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', // DEGEN
 ];
 const FEE_TIERS = [500, 3000, 10000];
 
@@ -794,17 +794,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
       const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => {
         try {
-          const c = new ethers.Contract(token, ERC20_ABI, readProvider);
+          const tokenAddr = normalizeAddr(token);
+          const c = new ethers.Contract(tokenAddr, ERC20_ABI, readProvider);
           const [bal, dec, sym] = await Promise.all([
             c.balanceOf(wallet),
             c.decimals().catch(() => guessDecimals(token)),
             c.symbol().catch(() => guessSymbol(token)),
           ]);
           if (bal <= 0n) return null;
-          const usd = await quoteUsdValue(readProvider, token, bal, Number(dec));
+          const usd = await quoteUsdValue(readProvider, tokenAddr, bal, Number(dec));
           return {
-            token,
-            symbol: sym || guessSymbol(token),
+            token: tokenAddr,
+            symbol: sym || guessSymbol(tokenAddr),
             decimals: Number(dec),
             balance: bal,
             usdValue: usd ?? 0,
