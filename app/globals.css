@@ -402,7 +402,10 @@ html, body {
 
 .rs-modal-titlebar {
   text-align: center;
-  padding: 12px 14px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: -16px -16px 12px -16px;
   border-bottom: 2px solid #31291f;
   background: linear-gradient(180deg, #564a39 0%, #4a3f30 100%);
@@ -451,7 +454,7 @@ html, body {
 }
 
 .rs-token-cell-amount {
-  top: 1px;
+  top: 0;
   left: 2px;
   font-size: 16px;
   max-width: 62px;
@@ -462,7 +465,7 @@ html, body {
 
 .rs-token-cell-symbol {
   right: 2px;
-  bottom: 1px;
+  bottom: 0;
   font-size: 13px;
   max-width: 62px;
   overflow: hidden;
