@@ -544,6 +544,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         requiredSenderKind,
         nonceUsed: false,
         protocolFeeMismatch: false,
+        ownerMatches,
         signerSymbol,
         senderSymbol,
         signerDecimals,
@@ -771,7 +772,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const isOrderNotFound = /order not found/i.test(status || '');
   const isProtocolFeeMismatch = Boolean(checks?.protocolFeeMismatch) || /incorrect protocol fees/i.test(status || '');
-  const isErrorState = isExpired || isTaken || isOrderNotFound || isProtocolFeeMismatch || /error|expired|taken/i.test(status || '');
+  const isWrongWallet = Boolean(checks && checks.ownerMatches === false);
+  const isErrorState = isExpired || isTaken || isOrderNotFound || isProtocolFeeMismatch || isWrongWallet || /error|expired|taken/i.test(status || '');
 
   const loadingStage = /loading order/i.test(status)
     ? 'loading order'
@@ -861,6 +863,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : isOrderNotFound ? (
               <div className="rs-order-blocked">Order Not Found</div>
+            ) : isWrongWallet ? (
+              <div className="rs-order-blocked">Wrong Wallet!</div>
             ) : isExpired || isTaken ? (
               <div className="rs-order-blocked">
                 {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
