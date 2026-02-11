@@ -370,6 +370,9 @@ html, body {
   max-height: 90vh;
   overflow: auto;
   position: relative;
+  border: 3px solid #2f271d;
+  background: linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%);
+  box-shadow: inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912;
 }
 
 .rs-modal-close,
@@ -396,6 +399,7 @@ html, body {
 .rs-token-cell {
   border: 2px solid #342b21;
   background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
+  box-shadow: inset 0 0 18px rgba(0,0,0,0.2);
   color: #ffe19c;
   padding: 8px;
   min-height: 120px;
@@ -411,10 +415,30 @@ html, body {
   justify-items: center;
 }
 
-.rs-token-cell-amount { font-size: 16px; text-align: left; }
-.rs-token-cell-symbol { font-size: 16px; text-align: right; }
-.rs-token-cell-icon { width: 52px; height: 52px; object-fit: contain; justify-self: center; }
-.rs-token-cell-icon-large { width: 84px; height: 84px; }
+.rs-token-cell-amount {
+  font-size: 28px;
+  line-height: 1;
+  text-align: left;
+  color: #ffe19c;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+}
+
+.rs-token-cell-symbol {
+  font-size: 22px;
+  line-height: 1;
+  text-align: right;
+  color: #ffe19c;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+}
+
+.rs-token-cell-icon {
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+  justify-self: center;
+}
+
+.rs-token-cell-icon-large { width: 92px; height: 92px; }
 
 .rs-token-center {
   display: grid;
@@ -426,6 +450,19 @@ html, body {
 .rs-amount-input {
   width: 100%;
   margin: 10px 0 14px;
+  border: 2px solid #342b21;
+  background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
+  box-shadow: inset 0 0 18px rgba(0,0,0,0.2);
+  color: #ffe19c;
+  font-size: 32px;
+  line-height: 1;
+  padding: 10px 12px;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+}
+
+.rs-amount-input::placeholder {
+  color: #e2c596;
+  opacity: 0.85;
 }
 
 .meta-block {
