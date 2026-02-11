@@ -931,6 +931,52 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalStep('amount');
   }
 
+  async function onAddCustomToken() {
+    const tokenInput = prompt('Token contract address');
+    if (!tokenInput) return;
+
+    let tokenAddr = '';
+    try {
+      tokenAddr = ethers.getAddress(tokenInput.trim()).toLowerCase();
+    } catch {
+      setStatus('invalid token address');
+      return;
+    }
+
+    try {
+      setTokenModalLoading(true);
+      const row = await readTokenForWallet(tokenAddr, tokenModalWallet);
+      const decimals = Number(row?.decimals ?? guessDecimals(tokenAddr));
+      const symbol = row?.symbol || guessSymbol(tokenAddr);
+      const balanceRaw = row?.balance ?? 0n;
+      const amount = ethers.formatUnits(balanceRaw, decimals);
+      const usd = await quoteUsdValue(readProvider, tokenAddr, balanceRaw, decimals);
+
+      const option = {
+        token: tokenAddr,
+        symbol,
+        decimals,
+        balance: amount,
+        availableAmount: Number(amount || 0),
+        availableRaw: BigInt(balanceRaw || 0n),
+        usdValue: Number(usd || 0),
+        amountDisplay: formatTokenAmount(amount),
+        imgUrl: tokenIconUrl(8453, tokenAddr),
+      };
+
+      setTokenOptions((prev) => {
+        const dedup = prev.filter((t) => t.token !== tokenAddr);
+        return [option, ...dedup];
+      });
+      onTokenSelect(option);
+    } catch (e) {
+      setStatus('custom token lookup failed');
+      dbg(`custom token lookup failed ${tokenAddr}: ${errText(e)}`);
+    } finally {
+      setTokenModalLoading(false);
+    }
+  }
+
   function onConfirmTokenAmount() {
     if (!pendingToken || !pendingAmount) return;
     const panel = tokenModalPanel;
@@ -1283,11 +1329,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                             </div>
                           </button>
                         ))}
-                        <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
-                          const token = prompt('Token contract address');
-                          if (!token) return;
-                          onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
-                        }}>+</button>
+                        <button className="rs-token-cell rs-token-cell-plus" onClick={onAddCustomToken}>+</button>
                       </div>
                     </div>
                   </>
