@@ -940,6 +940,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}Symbol`]: pendingToken.symbol,
       [`${panel}Decimals`]: pendingToken.decimals,
       [`${panel}ImgUrl`]: pendingToken.imgUrl || null,
+      [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
       [`${panel}Amount`]: pendingAmount,
     }));
     setTokenModalOpen(false);
@@ -1098,6 +1099,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
   const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
 
+  let makerSenderInsufficient = false;
+  let makerSignerInsufficient = false;
+  if (makerMode) {
+    try {
+      const dec = Number(makerOverrides.senderDecimals ?? 18);
+      const inRaw = makerOverrides.senderAmount ? ethers.parseUnits(String(makerOverrides.senderAmount), dec) : 0n;
+      const availRaw = BigInt(makerOverrides.senderAvailableRaw || '0');
+      makerSenderInsufficient = inRaw > 0n && inRaw > availRaw;
+    } catch {}
+    try {
+      const dec = Number(makerOverrides.signerDecimals ?? 18);
+      const inRaw = makerOverrides.signerAmount ? ethers.parseUnits(String(makerOverrides.signerAmount), dec) : 0n;
+      const availRaw = BigInt(makerOverrides.signerAvailableRaw || '0');
+      makerSignerInsufficient = inRaw > 0n && inRaw > availRaw;
+    } catch {}
+  }
+
   return (
     <>
       <section className="rs-window">
@@ -1113,8 +1131,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             chainId={parsed?.chainId}
             editable={makerMode}
             onEdit={() => openTokenSelector('sender')}
-            danger={Boolean(checks && !checks.takerBalanceOk)}
-            insufficientBalance={Boolean(checks && !checks.takerBalanceOk)}
+            danger={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
+            insufficientBalance={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
             feeText={makerMode ? '' : checks?.protocolFeeMismatch
               ? 'Incorrect protocol fees'
@@ -1183,8 +1201,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             chainId={parsed?.chainId}
             editable={makerMode}
             onEdit={() => openTokenSelector('signer')}
-            danger={Boolean(checks && !checks.makerBalanceOk)}
-            insufficientBalance={Boolean(checks && !checks.makerBalanceOk)}
+            danger={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
+            insufficientBalance={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
             feeText={makerMode
               ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
