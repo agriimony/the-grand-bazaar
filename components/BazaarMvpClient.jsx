@@ -993,14 +993,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
-  function onConfirmTokenAmount() {
+  async function onConfirmTokenAmount() {
     if (!pendingToken || !pendingAmount) return;
     const panel = tokenModalPanel;
-    const amountNum = Number(pendingAmount || 0);
-    const availNum = Number(pendingToken.availableAmount || 0);
-    const selectedUsd = Number.isFinite(amountNum) && Number.isFinite(availNum) && availNum > 0
-      ? (Number(pendingToken.usdValue || 0) * (amountNum / availNum))
-      : null;
+
+    let selectedUsd = null;
+    try {
+      const dec = Number(pendingToken.decimals ?? 18);
+      const amountRaw = ethers.parseUnits(String(pendingAmount), dec);
+      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+      selectedUsd = await quoteUsdValue(rp, pendingToken.token, amountRaw, dec);
+    } catch {
+      // fallback below
+    }
+
+    if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
+      const amountNum = Number(pendingAmount || 0);
+      const availNum = Number(pendingToken.availableAmount || 0);
+      selectedUsd = Number.isFinite(amountNum) && Number.isFinite(availNum) && availNum > 0
+        ? (Number(pendingToken.usdValue || 0) * (amountNum / availNum))
+        : null;
+    }
 
     setMakerOverrides((prev) => ({
       ...prev,
