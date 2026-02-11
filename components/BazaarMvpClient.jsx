@@ -190,7 +190,7 @@ function tokenIconUrl(chainId, token) {
 }
 
 function ethIconUrl() {
-  return '/eth-icon.jpg';
+  return '/eth-icon.png';
 }
 
 async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
