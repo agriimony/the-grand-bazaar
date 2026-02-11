@@ -829,7 +829,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
 
     const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
-    const cacheTtlMs = 2 * 60 * 1000;
+    const cacheTtlMs = 15 * 60 * 1000;
 
     try {
       if (typeof window !== 'undefined') {
@@ -1200,6 +1200,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div className="rs-token-center">
                   <img src={tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()} alt={pendingToken?.symbol || 'TOKEN'} className="rs-token-cell-icon rs-token-cell-icon-large" />
                   <div>{pendingToken?.symbol || 'TOKEN'}</div>
+                  <div className="rs-token-balance-note">Available: {pendingToken?.amountDisplay || '0'}</div>
                 </div>
                 <input
                   className="rs-amount-input"
