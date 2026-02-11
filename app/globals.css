@@ -184,10 +184,12 @@ html, body {
   right: 4px;
   bottom: 1px;
   z-index: 2;
-  max-width: 84px;
+  max-width: calc(100% - 8px);
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
   color: #ffe19c;
   font-size: 24px;
   font-weight: 900;
