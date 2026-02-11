@@ -1199,23 +1199,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
                 <div className="rs-token-center">
                   <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                    <div className="rs-amount-overlay rs-token-cell-amount">{pendingAmount || pendingToken?.amountDisplay || '0'}</div>
+                    <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmount || pendingToken?.amountDisplay || '0'}</div>
                     <img
-                      src={tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
+                      src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
                       alt={pendingToken?.symbol || 'TOKEN'}
-                      className="rs-token-cell-icon rs-token-cell-icon-large"
+                      className="rs-token-art rs-selected-token-icon"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                         const fb = e.currentTarget.nextElementSibling;
                         if (fb) fb.style.display = 'flex';
                       }}
                     />
-                    <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-icon-large rs-token-cell-fallback" style={{ display: 'none' }}>
+                    <div className="rs-token-art rs-token-fallback rs-selected-token-icon" style={{ display: 'none' }}>
                       {tokenInitials(pendingToken?.symbol || '??')}
                     </div>
-                    <div className="rs-symbol-overlay rs-token-cell-symbol">{pendingToken?.symbol || 'TOKEN'}</div>
+                    <div className="rs-symbol-overlay rs-selected-token-symbol">{pendingToken?.symbol || 'TOKEN'}</div>
                   </div>
-                  <div className="rs-token-balance-note">Available: {pendingToken?.amountDisplay || '0'}</div>
                 </div>
                 <input
                   className="rs-amount-input"
