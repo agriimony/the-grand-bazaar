@@ -1264,6 +1264,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
                     {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                     <img
+                      key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
                       src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
                       alt={pendingToken?.symbol || 'TOKEN'}
                       className="rs-token-art rs-selected-token-icon"
@@ -1361,6 +1362,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
               {icon ? (
                 <>
                   <img
+                    key={`panel-${icon || 'none'}-${symbol || ''}`}
                     src={icon}
                     alt={symbol}
                     className="rs-token-art"

@@ -409,6 +409,8 @@ html, body {
   position: absolute;
   right: 10px;
   top: 8px;
+  z-index: 20;
+  line-height: 1;
 }
 
 .rs-modal-titlebar {
