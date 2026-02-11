@@ -779,7 +779,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function openTokenSelector(panel) {
     if (!makerMode) return;
-    const wallet = address || (panel === 'sender' ? parsed?.senderWallet : parsed?.signerWallet) || '';
+    const panelWallet = panel === 'sender' ? parsed?.senderWallet : parsed?.signerWallet;
+    const wallet = panelWallet || address || '';
     if (!wallet) {
       setStatus('connect wallet');
       return;
@@ -1071,20 +1072,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 {tokenModalLoading ? (
                   <p>Loading tokens...</p>
                 ) : (
-                  <div className="rs-token-grid">
-                    {tokenOptions.slice(0, 15).map((t) => (
-                      <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
-                        <div className="rs-token-cell-amount">{t.amountDisplay}</div>
-                        <img src={tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
-                        <div className="rs-token-cell-symbol">{t.symbol}</div>
-                      </button>
-                    ))}
-                    <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
-                      const token = prompt('Token contract address');
-                      if (!token) return;
-                      onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
-                    }}>+</button>
-                  </div>
+                  <>
+                    {tokenOptions.length === 0 ? <p>No supported tokens with balance found for {short(tokenModalWallet)}</p> : null}
+                    <div className="rs-token-grid">
+                      {tokenOptions.slice(0, 15).map((t) => (
+                        <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
+                          <div className="rs-token-cell-amount">{t.amountDisplay}</div>
+                          <img src={tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
+                          <div className="rs-token-cell-symbol">{t.symbol}</div>
+                        </button>
+                      ))}
+                      <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
+                        const token = prompt('Token contract address');
+                        if (!token) return;
+                        onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
+                      }}>+</button>
+                    </div>
+                  </>
                 )}
               </>
             ) : (
@@ -1145,14 +1149,14 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{titleLink ? <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link">{title}</a> : title}</div>
-      <div className={`rs-box ${danger ? 'rs-danger' : ''} ${editable ? 'rs-editable' : ''}`} onClick={editable ? onEdit : undefined}>
+      <div className={`rs-box ${danger ? 'rs-danger' : ''}`} onClick={editable ? onEdit : undefined}>
         <p className="rs-value">
           {valueMatch ? (
             <>Value: ${valueMatch[1]}<span className={`amt-sfx ${suffixClass(valueMatch[2])}`}>{valueMatch[2]}</span></>
           ) : valueText}
         </p>
         <div className="rs-asset-stage">
-          <div className="rs-token-wrap">
+          <div className={`rs-token-wrap ${editable ? 'rs-token-editable' : ''}`}>
             <div className="rs-amount-overlay">
               {amountMatch ? (
                 <>{amountMatch[1]}<span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></>
