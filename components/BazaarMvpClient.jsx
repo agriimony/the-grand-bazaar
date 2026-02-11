@@ -857,6 +857,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           symbol: t.symbol || guessSymbol(t.token),
           decimals: guessDecimals(t.token),
           balance: String(t.balance || '0'),
+          availableAmount: Number(t.balance || 0),
           usdValue: Number(t.usdValue || 0),
           amountDisplay: formatTokenAmount(String(t.balance || '0')),
           imgUrl: t.imgUrl || null,
@@ -894,11 +895,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const nonzero = rawRows.filter((r) => r && r.balance > 0n);
       const withUsd = await mapInChunks(nonzero, 5, async (r) => {
+        const balanceFormatted = ethers.formatUnits(r.balance, r.decimals);
         const usd = await quoteUsdValue(readProvider, r.token, r.balance, r.decimals);
         return {
           ...r,
+          availableAmount: Number(balanceFormatted),
           usdValue: usd ?? 0,
-          amountDisplay: formatTokenAmount(ethers.formatUnits(r.balance, r.decimals)),
+          amountDisplay: formatTokenAmount(balanceFormatted),
         };
       });
 
@@ -1049,6 +1052,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const signerSymbolDisplay = makerOverrides.signerSymbol || checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
   const wrapAmountNeeded = typeof checks?.wrapAmountNeeded === 'bigint' ? checks.wrapAmountNeeded : 0n;
   const showWrapHint = Boolean(checks?.canWrapFromEth) && wrapAmountNeeded > 0n;
+
+  const pendingAmountNum = Number(pendingAmount || 0);
+  const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
+  const pendingAvailableNum = Number(pendingToken?.availableAmount ?? 0);
+  const pendingInsufficient = Number.isFinite(pendingAmountNum) && pendingAmountNum > 0 && Number.isFinite(pendingAvailableNum) && pendingAmountNum > pendingAvailableNum;
 
   const yourAmountDisplayFinal = makerOverrides.senderAmount || yourAmountDisplay;
   const counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
@@ -1204,7 +1212,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
                 <div className="rs-token-center">
                   <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                    <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmount || pendingToken?.amountDisplay || '0'}</div>
+                    <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
+                    {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                     <img
                       src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
                       alt={pendingToken?.symbol || 'TOKEN'}
@@ -1226,6 +1235,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   placeholder="Amount"
                   value={pendingAmount}
                   onChange={(e) => setPendingAmount(e.target.value)}
+                  onBlur={() => {
+                    const n = Number(pendingAmount);
+                    if (Number.isFinite(n) && n >= 0) setPendingAmount(String(n));
+                  }}
                 />
                 <button className="rs-btn rs-btn-positive" onClick={onConfirmTokenAmount}>Confirm</button>
               </>
