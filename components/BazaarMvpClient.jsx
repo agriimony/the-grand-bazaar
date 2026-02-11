@@ -1266,7 +1266,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
         <div className="rs-grid">
           <TradePanel
-            title="Your Offer"
+            title="You offer"
             amount={yourAmountDisplayFinal}
             symbol={senderSymbolDisplay}
             tokenAddress={senderTokenAddressFinal}
@@ -1335,7 +1335,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title={`${fitOfferName(counterpartyName)}'s Offer`}
+            title={`${fitOfferName(counterpartyName)} offers`}
             titleLink={counterpartyProfileUrl}
             amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
