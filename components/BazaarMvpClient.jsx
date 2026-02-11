@@ -486,7 +486,31 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return null;
       }
 
+      const protocolFee = onchainProtocolFee;
+      const senderAmount = BigInt(parsed.senderAmount);
+      const feeAmount = (senderAmount * protocolFee) / 10000n;
+      const totalRequired = senderAmount + feeAmount;
+
+      const signerSymbol = guessSymbol(parsed.signerToken);
+      const signerDecimals = guessDecimals(parsed.signerToken);
+      const senderSymbol = guessSymbol(parsed.senderToken);
+      const senderDecimals = guessDecimals(parsed.senderToken);
+
+      const [signerUsdValue, senderUsdValue] = await Promise.all([
+        quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
+        quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
+      ]);
+
       if (!address) {
+        setChecks((prev) => ({
+          ...(prev || {}),
+          requiredSenderKind,
+          nonceUsed: false,
+          protocolFeeMismatch: false,
+          protocolFeeBps: protocolFee,
+          signerUsdValue,
+          senderUsdValue,
+        }));
         setStatus('connecting wallet');
         return null;
       }
@@ -518,15 +542,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerRead = pairRead.signer;
       const senderRead = pairRead.sender;
 
-      const signerSymbol = signerRead.symbol;
-      const signerDecimals = signerRead.decimals;
-      const senderSymbol = senderRead.symbol;
-      const senderDecimals = senderRead.decimals;
-
-      const protocolFee = onchainProtocolFee;
-      const senderAmount = BigInt(parsed.senderAmount);
-      const feeAmount = (senderAmount * protocolFee) / 10000n;
-      const totalRequired = senderAmount + feeAmount;
+      const finalSignerSymbol = signerRead.symbol || signerSymbol;
+      const finalSignerDecimals = signerRead.decimals ?? signerDecimals;
+      const finalSenderSymbol = senderRead.symbol || senderSymbol;
+      const finalSenderDecimals = senderRead.decimals ?? senderDecimals;
 
       const makerBalanceOk = signerRead.balance >= BigInt(parsed.signerAmount);
       const makerApprovalOk = signerRead.allowance >= BigInt(parsed.signerAmount);
@@ -545,10 +564,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         nonceUsed: false,
         protocolFeeMismatch: false,
         ownerMatches,
-        signerSymbol,
-        senderSymbol,
-        signerDecimals,
-        senderDecimals,
+        signerSymbol: finalSignerSymbol,
+        senderSymbol: finalSenderSymbol,
+        signerDecimals: finalSignerDecimals,
+        senderDecimals: finalSenderDecimals,
         makerAccepted,
         makerBalanceOk,
         makerApprovalOk,
@@ -559,31 +578,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         protocolFeeBps: protocolFee,
         signerAmount: BigInt(parsed.signerAmount),
         senderAmount: BigInt(parsed.senderAmount),
-        signerUsdValue: null,
-        senderUsdValue: null,
+        signerUsdValue,
+        senderUsdValue,
       };
 
-      if (!makerAccepted) {
-        setChecks(baseChecks);
-        setStatus('checks complete');
-        return baseChecks;
-      }
-
-      if (!takerBalanceOk || !takerApprovalOk) {
-        setChecks(baseChecks);
-        setStatus('checks complete');
-        return baseChecks;
-      }
-
-      const [signerUsdValue, senderUsdValue] = await Promise.all([
-        quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
-        quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
-      ]);
-
-      const nextChecks = { ...baseChecks, signerUsdValue, senderUsdValue };
-      setChecks(nextChecks);
+      setChecks(baseChecks);
       setStatus('checks complete');
-      return nextChecks;
+      return baseChecks;
     } catch (e) {
       setStatus(`check error: ${e.message}`);
       return null;
