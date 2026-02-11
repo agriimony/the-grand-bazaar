@@ -1066,6 +1066,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const wrapAmountNeeded = typeof checks?.wrapAmountNeeded === 'bigint' ? checks.wrapAmountNeeded : 0n;
   const showWrapHint = Boolean(checks?.canWrapFromEth) && wrapAmountNeeded > 0n;
 
+  const uiProtocolFeeBps = checks?.protocolFeeBps != null ? BigInt(checks.protocolFeeBps) : protocolFeeBpsFallback;
+
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
   let pendingInsufficient = false;
@@ -1080,7 +1082,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   const yourAmountDisplayFinal = makerOverrides.senderAmount || yourAmountDisplay;
-  const counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
+
+  let counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
+  if (makerMode && makerOverrides.signerAmount) {
+    const n = Number(makerOverrides.signerAmount);
+    if (Number.isFinite(n) && n >= 0) {
+      const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+      counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+    }
+  }
+
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
@@ -1104,7 +1115,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={Boolean(checks && !checks.takerBalanceOk)}
             insufficientBalance={Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
-            feeText={checks?.protocolFeeMismatch
+            feeText={makerMode ? '' : checks?.protocolFeeMismatch
               ? 'Incorrect protocol fees'
               : checks?.protocolFeeBps != null
               ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
@@ -1116,12 +1127,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             wrapAmount={showWrapHint ? formatTokenAmount(ethers.formatUnits(wrapAmountNeeded, 18)) : ''}
             onWrap={onWrapFromEth}
             wrapBusy={isWrapping}
-            footer={checks
+            footer={makerMode
+              ? 'You have not yet accepted'
+              : checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
                 : 'You have not yet accepted'
               : ''}
-            footerTone={checks
+            footerTone={makerMode
+              ? 'bad'
+              : checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'ok'
                 : 'bad'
@@ -1170,12 +1185,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={Boolean(checks && !checks.makerBalanceOk)}
             insufficientBalance={Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
-            footer={checks
+            feeText={makerMode
+              ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+              : ''}
+            feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
+            footer={makerMode
+              ? `${fitOfferName(counterpartyName)} has not yet accepted`
+              : checks
               ? checks.makerAccepted
                 ? `${fitOfferName(counterpartyName)} accepted`
                 : `${fitOfferName(counterpartyName)} has not yet accepted`
               : ''}
-            footerTone={checks
+            footerTone={makerMode
+              ? 'bad'
+              : checks
               ? checks.makerAccepted
                 ? 'ok'
                 : 'bad'
