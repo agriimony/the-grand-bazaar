@@ -131,9 +131,10 @@ html, body {
   width: 92px;
   height: 92px;
   border: 0;
+  border-radius: 50%;
   image-rendering: auto;
   background: transparent;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .rs-token-fallback {
@@ -172,6 +173,10 @@ html, body {
   right: 4px;
   bottom: 1px;
   z-index: 2;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #ffe19c;
   font-size: 24px;
   font-weight: 900;
@@ -427,6 +432,9 @@ html, body {
   font-size: 22px;
   line-height: 1;
   text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #ffe19c;
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
 }
@@ -434,7 +442,8 @@ html, body {
 .rs-token-cell-icon {
   width: 78px;
   height: 78px;
-  object-fit: contain;
+  border-radius: 50%;
+  object-fit: cover;
   justify-self: center;
 }
 
