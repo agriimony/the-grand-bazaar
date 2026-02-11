@@ -414,6 +414,7 @@ html, body {
   font-size: 14px;
   letter-spacing: 0.8px;
   text-shadow: 1px 1px 0 #2a2218;
+  transform: translateY(1px);
 }
 
 .rs-token-grid-wrap {
