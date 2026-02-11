@@ -134,7 +134,7 @@ html, body {
 
 .rs-amount-overlay {
   position: absolute;
-  top: 4px;
+  top: 1px;
   left: 4px;
   z-index: 2;
   color: #ffe19c;
@@ -147,7 +147,7 @@ html, body {
 .rs-symbol-overlay {
   position: absolute;
   right: 4px;
-  bottom: 4px;
+  bottom: 1px;
   z-index: 2;
   color: #ffe19c;
   font-size: 24px;
