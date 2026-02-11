@@ -934,6 +934,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   function onConfirmTokenAmount() {
     if (!pendingToken || !pendingAmount) return;
     const panel = tokenModalPanel;
+    const amountNum = Number(pendingAmount || 0);
+    const availNum = Number(pendingToken.availableAmount || 0);
+    const selectedUsd = Number.isFinite(amountNum) && Number.isFinite(availNum) && availNum > 0
+      ? (Number(pendingToken.usdValue || 0) * (amountNum / availNum))
+      : null;
+
     setMakerOverrides((prev) => ({
       ...prev,
       [`${panel}Token`]: pendingToken.token,
@@ -942,6 +948,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}ImgUrl`]: pendingToken.imgUrl || null,
       [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
       [`${panel}Amount`]: pendingAmount,
+      [`${panel}Usd`]: selectedUsd,
     }));
     setTokenModalOpen(false);
     setPendingToken(null);
@@ -1099,6 +1106,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
   const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
 
+  const yourValueTextFinal = makerMode && Number.isFinite(Number(makerOverrides.senderUsd))
+    ? `Value: $${formatTokenAmount(String(makerOverrides.senderUsd))}`
+    : (checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found');
+
+  const counterpartyUsdBase = Number(makerOverrides.signerUsd);
+  const counterpartyUsdWithFee = Number.isFinite(counterpartyUsdBase)
+    ? counterpartyUsdBase * (1 + Number(uiProtocolFeeBps) / 10000)
+    : null;
+  const counterpartyValueTextFinal = makerMode && Number.isFinite(counterpartyUsdWithFee)
+    ? `Value: $${formatTokenAmount(String(counterpartyUsdWithFee))}`
+    : (checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found');
+
   let makerSenderInsufficient = false;
   let makerSignerInsufficient = false;
   if (makerMode) {
@@ -1133,7 +1152,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             onEdit={() => openTokenSelector('sender')}
             danger={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
             insufficientBalance={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
-            valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
+            valueText={yourValueTextFinal}
             feeText={makerMode ? '' : checks?.protocolFeeMismatch
               ? 'Incorrect protocol fees'
               : checks?.protocolFeeBps != null
@@ -1203,7 +1222,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             onEdit={() => openTokenSelector('signer')}
             danger={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
             insufficientBalance={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
-            valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
+            valueText={counterpartyValueTextFinal}
             feeText={makerMode
               ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : ''}
