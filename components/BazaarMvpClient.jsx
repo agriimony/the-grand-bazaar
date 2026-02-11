@@ -35,6 +35,11 @@ const TOKEN_CATALOG = [
   '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', // DEGEN
 ];
 const FEE_TIERS = [500, 3000, 10000];
+const BASE_RPCS = [
+  'https://mainnet.base.org',
+  'https://base.llamarpc.com',
+  'https://base-rpc.publicnode.com',
+];
 
 const QUOTER_ABI = [
   'function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)',
@@ -253,6 +258,24 @@ async function mapInChunks(items, chunkSize, fn) {
     out.push(...rows);
   }
   return out;
+}
+
+async function readTokenForWallet(tokenAddr, wallet) {
+  for (const rpc of BASE_RPCS) {
+    try {
+      const p = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
+      const c = new ethers.Contract(tokenAddr, ERC20_ABI, p);
+      const [bal, dec, sym] = await Promise.all([
+        c.balanceOf(wallet),
+        c.decimals().catch(() => guessDecimals(tokenAddr)),
+        c.symbol().catch(() => guessSymbol(tokenAddr)),
+      ]);
+      return { ok: true, rpc, balance: bal, decimals: Number(dec), symbol: sym || guessSymbol(tokenAddr) };
+    } catch (e) {
+      // try next RPC
+    }
+  }
+  return { ok: false, rpc: 'none', balance: 0n, decimals: guessDecimals(tokenAddr), symbol: guessSymbol(tokenAddr) };
 }
 
 async function waitForTxConfirmation({ publicClient, txHash, timeoutMs = 180000 }) {
@@ -801,32 +824,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
     try {
-      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 10 });
+      const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
 
-      const rawRows = await mapInChunks(TOKEN_CATALOG, 3, async (token) => {
+      const rawRows = await mapInChunks(TOKEN_CATALOG, 5, async (token) => {
         const tokenAddr = normalizeAddr(token);
-        try {
-          const c = new ethers.Contract(tokenAddr, ERC20_ABI, readProvider);
-          const [bal, dec, sym] = await Promise.all([
-            c.balanceOf(wallet),
-            c.decimals().catch(() => guessDecimals(tokenAddr)),
-            c.symbol().catch(() => guessSymbol(tokenAddr)),
-          ]);
-          dbg(`maker token ${tokenAddr} sym=${sym || '?'} balRaw=${bal.toString()} dec=${dec}`);
-          return {
-            token: tokenAddr,
-            symbol: sym || guessSymbol(tokenAddr),
-            decimals: Number(dec),
-            balance: bal,
-          };
-        } catch (e) {
-          dbg(`maker token ${tokenAddr} read error: ${e?.message || 'unknown'}`);
+        const row = await readTokenForWallet(tokenAddr, wallet);
+        if (!row.ok) {
+          dbg(`maker token ${tokenAddr} read error across RPC fallbacks`);
           return null;
         }
+        dbg(`maker token ${tokenAddr} sym=${row.symbol || '?'} balRaw=${row.balance.toString()} dec=${row.decimals} rpc=${row.rpc}`);
+        return {
+          token: tokenAddr,
+          symbol: row.symbol,
+          decimals: row.decimals,
+          balance: row.balance,
+        };
       });
 
       const nonzero = rawRows.filter((r) => r && r.balance > 0n);
-      const withUsd = await mapInChunks(nonzero, 4, async (r) => {
+      const withUsd = await mapInChunks(nonzero, 5, async (r) => {
         const usd = await quoteUsdValue(readProvider, r.token, r.balance, r.decimals);
         return {
           ...r,
