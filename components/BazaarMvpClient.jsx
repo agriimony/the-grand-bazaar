@@ -823,7 +823,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalStep('grid');
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
+
+    const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
+    const cacheTtlMs = 2 * 60 * 1000;
+
     try {
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = window.localStorage.getItem(cacheKey);
+          if (raw) {
+            const parsedCache = JSON.parse(raw);
+            const age = Date.now() - Number(parsedCache?.ts || 0);
+            if (Array.isArray(parsedCache?.tokens) && age >= 0 && age < cacheTtlMs) {
+              dbg(`maker selector cache hit tokens=${parsedCache.tokens.length} ageMs=${age}`);
+              setTokenOptions(parsedCache.tokens);
+              return;
+            }
+          }
+        } catch {
+          // ignore cache parse errors
+        }
+      }
+
       const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(wallet)}`, { cache: 'no-store' });
       const zd = await zr.json();
       if (zr.ok && zd?.ok && Array.isArray(zd.tokens)) {
@@ -831,13 +852,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           token: normalizeAddr(t.token),
           symbol: t.symbol || guessSymbol(t.token),
           decimals: guessDecimals(t.token),
-          balance: 0n,
+          balance: String(t.balance || '0'),
           usdValue: Number(t.usdValue || 0),
           amountDisplay: formatTokenAmount(String(t.balance || '0')),
           imgUrl: t.imgUrl || null,
         }));
         dbg(`maker selector zapper tokens=${list.length}`);
         setTokenOptions(list);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens: list }));
+          } catch {
+            // ignore cache write failures
+          }
+        }
         return;
       }
       dbg(`maker selector zapper fallback reason=${zd?.error || zr.status}`);
