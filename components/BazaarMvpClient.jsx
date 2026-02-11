@@ -31,7 +31,6 @@ const TOKEN_CATALOG = [
   BASE_USDC,
   '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', // USDT
   BASE_WETH,
-  '0xcbB7C0000aB88B473b1f5AFD9e0c6dFfD5A6Bf35', // cbBTC
   '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', // HIGHER
   '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', // DEGEN
 ];
@@ -244,6 +243,16 @@ function normalizeAddr(a = '') {
   } catch {
     return String(a || '').toLowerCase();
   }
+}
+
+async function mapInChunks(items, chunkSize, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const rows = await Promise.all(chunk.map(fn));
+    out.push(...rows);
+  }
+  return out;
 }
 
 async function waitForTxConfirmation({ publicClient, txHash, timeoutMs = 180000 }) {
@@ -792,8 +801,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
     try {
-      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => { 
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 10 });
+
+      const rawRows = await mapInChunks(TOKEN_CATALOG, 3, async (token) => {
         const tokenAddr = normalizeAddr(token);
         try {
           const c = new ethers.Contract(tokenAddr, ERC20_ABI, readProvider);
@@ -803,23 +813,30 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             c.symbol().catch(() => guessSymbol(tokenAddr)),
           ]);
           dbg(`maker token ${tokenAddr} sym=${sym || '?'} balRaw=${bal.toString()} dec=${dec}`);
-          if (bal <= 0n) return null;
-          const usd = await quoteUsdValue(readProvider, tokenAddr, bal, Number(dec));
           return {
             token: tokenAddr,
             symbol: sym || guessSymbol(tokenAddr),
             decimals: Number(dec),
             balance: bal,
-            usdValue: usd ?? 0,
-            amountDisplay: formatTokenAmount(ethers.formatUnits(bal, Number(dec))),
           };
         } catch (e) {
           dbg(`maker token ${tokenAddr} read error: ${e?.message || 'unknown'}`);
           return null;
         }
-      }));
-      const list = rows.filter(Boolean).sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0));
-      dbg(`maker selector rows=${rows.length} nonzero=${list.length}`);
+      });
+
+      const nonzero = rawRows.filter((r) => r && r.balance > 0n);
+      const withUsd = await mapInChunks(nonzero, 4, async (r) => {
+        const usd = await quoteUsdValue(readProvider, r.token, r.balance, r.decimals);
+        return {
+          ...r,
+          usdValue: usd ?? 0,
+          amountDisplay: formatTokenAmount(ethers.formatUnits(r.balance, r.decimals)),
+        };
+      });
+
+      const list = withUsd.sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0));
+      dbg(`maker selector rows=${rawRows.length} nonzero=${list.length}`);
       setTokenOptions(list);
     } finally {
       setTokenModalLoading(false);
@@ -953,13 +970,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals))
     : parsed
     ? formatTokenAmount(ethers.formatUnits(senderTotalFallback.toString(), senderDecimalsFallback))
-    : '—';
+    : '-';
 
   const counterpartyAmountDisplay = hasCheckAmounts
     ? formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals))
     : parsed
     ? formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback))
-    : '—';
+    : '-';
 
   const senderSymbolDisplay = makerOverrides.senderSymbol || checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
   const signerSymbolDisplay = makerOverrides.signerSymbol || checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
