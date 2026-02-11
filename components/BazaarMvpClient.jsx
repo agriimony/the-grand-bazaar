@@ -1070,16 +1070,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
-  let pendingInsufficient = false;
-  try {
-    const dec = Number(pendingToken?.decimals ?? 18);
-    const inRaw = pendingAmount ? ethers.parseUnits(String(pendingAmount || '0'), dec) : 0n;
-    const availRaw = typeof pendingToken?.availableRaw === 'bigint' ? pendingToken.availableRaw : 0n;
-    pendingInsufficient = inRaw > availRaw;
-  } catch {
-    const pendingAvailableNum = Number(pendingToken?.availableAmount ?? 0);
-    pendingInsufficient = Number.isFinite(pendingAmountNum) && pendingAmountNum > 0 && Number.isFinite(pendingAvailableNum) && pendingAmountNum > pendingAvailableNum;
-  }
+  const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
+  const pendingInsufficient =
+    Number.isFinite(pendingAmountNum)
+    && pendingAmountNum > 0
+    && Number.isFinite(pendingAvailableNum)
+    && pendingAvailableNum >= 0
+    && pendingAmountNum > (pendingAvailableNum + 1e-12);
 
   const yourAmountDisplayFinal = makerOverrides.senderAmount
     ? formatTokenAmount(makerOverrides.senderAmount)
