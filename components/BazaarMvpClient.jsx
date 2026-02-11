@@ -649,6 +649,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
 
       if (!latestChecks.takerBalanceOk) {
+        if (latestChecks.canWrapFromEth) {
+          await onWrapFromEth();
+          return;
+        }
         setStatus('insufficient balance');
         return;
       }
@@ -811,7 +815,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : isTaken
     ? 'Taken'
     : checks?.takerBalanceOk === false
-    ? 'Insufficient Balance'
+    ? checks?.canWrapFromEth
+      ? 'Wrap'
+      : 'Insufficient Balance'
     : checks?.takerApprovalOk
     ? 'Swap'
     : 'Approve';
@@ -930,7 +936,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : (
               <div className="rs-btn-stack">
-                <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
+                <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' || primaryLabel === 'Wrap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
                 <button className="rs-btn decline" disabled>Decline</button>
               </div>
             )}
