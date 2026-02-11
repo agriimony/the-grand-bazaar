@@ -220,6 +220,17 @@ html, body {
 
 .rs-token-editable {
   cursor: pointer;
+  position: relative;
+}
+
+.rs-token-editable::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid #f5d76e;
+  box-shadow: inset 0 0 12px rgba(245, 215, 110, 0.25);
+  pointer-events: none;
+  z-index: 6;
   animation: rsEditableFlash 1.1s steps(2, end) infinite;
 }
 
