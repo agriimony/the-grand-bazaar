@@ -475,7 +475,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     try {
       setStatus('checking order');
-      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
       const [requiredSenderKind, protocolFeeOnchain, nonceUsed] = await Promise.all([
         swap.requiredSenderKind(),
@@ -663,7 +663,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
       const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
 
       if (!latestChecks.takerBalanceOk) {
@@ -792,8 +792,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
     try {
-      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-      const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => {
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+      const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => { 
         const tokenAddr = normalizeAddr(token);
         try {
           const c = new ethers.Contract(tokenAddr, ERC20_ABI, readProvider);
