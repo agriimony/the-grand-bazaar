@@ -1167,10 +1167,11 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
             <div className="rs-symbol-overlay">{symbol || '???'}</div>
             {insufficientBalance ? <div className="rs-insufficient-mark">❗</div> : null}
             <a
-              href={tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
-              target="_blank"
-              rel="noreferrer"
+              href={!editable && tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
+              target={!editable ? "_blank" : undefined}
+              rel={!editable ? "noreferrer" : undefined}
               className="rs-token-link"
+              onClick={editable ? (e) => e.preventDefault() : undefined}
             >
               {icon ? <img src={icon} alt={symbol} className="rs-token-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="rs-token-art rs-token-fallback">{symbol || '???'}</div>}
             </a>
