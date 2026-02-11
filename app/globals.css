@@ -125,9 +125,15 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 .rs-token-art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 74px;
   height: 74px;
   border: 0;
@@ -518,6 +524,10 @@ html, body {
 }
 
 .rs-token-cell-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 54px;
   height: 54px;
   border-radius: 50%;
