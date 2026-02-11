@@ -1159,7 +1159,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <>
                 <div className="rs-modal-titlebar">Select Token</div>
                 {tokenModalLoading ? (
-                  <p>Loading tokens...</p>
+                  <div className="rs-loading-wrap">
+                    <div className="rs-loading-track">
+                      <div className="rs-loading-fill" />
+                      <div className="rs-loading-label">loading tokens</div>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     {tokenOptions.length === 0 ? <p>No supported tokens with balance found for {short(tokenModalWallet)}</p> : null}
