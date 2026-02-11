@@ -1054,6 +1054,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         : null;
     }
 
+    if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
+      selectedUsd = 0;
+    }
+
     setMakerOverrides((prev) => ({
       ...prev,
       [`${panel}Token`]: pendingToken.token,
@@ -1220,15 +1224,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
   const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
 
-  const yourValueTextFinal = makerMode && Number.isFinite(Number(makerOverrides.senderUsd))
-    ? `Value: $${formatTokenAmount(String(makerOverrides.senderUsd))}`
+  const makerSenderUsd = makerOverrides.senderUsd;
+  const makerSenderUsdOk = typeof makerSenderUsd === 'number' && Number.isFinite(makerSenderUsd) && makerSenderUsd >= 0;
+  const yourValueTextFinal = makerMode && makerSenderUsdOk
+    ? `Value: $${formatTokenAmount(String(makerSenderUsd))}`
     : (checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found');
 
-  const counterpartyUsdBase = Number(makerOverrides.signerUsd);
-  const counterpartyUsdWithFee = Number.isFinite(counterpartyUsdBase)
+  const counterpartyUsdBase = makerOverrides.signerUsd;
+  const counterpartyUsdWithFee = (typeof counterpartyUsdBase === 'number' && Number.isFinite(counterpartyUsdBase) && counterpartyUsdBase >= 0)
     ? counterpartyUsdBase * (1 + Number(uiProtocolFeeBps) / 10000)
     : null;
-  const counterpartyValueTextFinal = makerMode && Number.isFinite(counterpartyUsdWithFee)
+  const counterpartyValueTextFinal = makerMode && typeof counterpartyUsdWithFee === 'number' && Number.isFinite(counterpartyUsdWithFee)
     ? `Value: $${formatTokenAmount(String(counterpartyUsdWithFee))}`
     : (checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found');
 
