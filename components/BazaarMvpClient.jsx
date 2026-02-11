@@ -292,7 +292,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerOverrides, setMakerOverrides] = useState({});
 
   const dbg = (msg) => {
-    setDebugLog((prev) => [...prev.slice(-7), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
+    setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
   };
 
   useEffect(() => {
@@ -790,17 +790,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalOpen(true);
     setTokenModalStep('grid');
     setTokenModalLoading(true);
+    dbg(`maker selector open panel=${panel} wallet=${wallet}`);
     try {
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
       const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => {
+        const tokenAddr = normalizeAddr(token);
         try {
-          const tokenAddr = normalizeAddr(token);
           const c = new ethers.Contract(tokenAddr, ERC20_ABI, readProvider);
           const [bal, dec, sym] = await Promise.all([
             c.balanceOf(wallet),
-            c.decimals().catch(() => guessDecimals(token)),
-            c.symbol().catch(() => guessSymbol(token)),
+            c.decimals().catch(() => guessDecimals(tokenAddr)),
+            c.symbol().catch(() => guessSymbol(tokenAddr)),
           ]);
+          dbg(`maker token ${tokenAddr} sym=${sym || '?'} balRaw=${bal.toString()} dec=${dec}`);
           if (bal <= 0n) return null;
           const usd = await quoteUsdValue(readProvider, tokenAddr, bal, Number(dec));
           return {
@@ -811,11 +813,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             usdValue: usd ?? 0,
             amountDisplay: formatTokenAmount(ethers.formatUnits(bal, Number(dec))),
           };
-        } catch {
+        } catch (e) {
+          dbg(`maker token ${tokenAddr} read error: ${e?.message || 'unknown'}`);
           return null;
         }
       }));
       const list = rows.filter(Boolean).sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0));
+      dbg(`maker selector rows=${rows.length} nonzero=${list.length}`);
       setTokenOptions(list);
     } finally {
       setTokenModalLoading(false);
