@@ -835,12 +835,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'connecting wallet'
     : /checking wallet|checks not ready/i.test(status)
     ? 'checking wallet'
+    : /wrapping/i.test(status)
+    ? 'wrapping'
     : /approving/i.test(status)
     ? status
     : /simulating swap|sending swap tx|swapping/i.test(status)
     ? 'swapping'
     : '';
-  const showLoadingBar = Boolean(loadingStage) && (!checks || /approving|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /wrapping|approving|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
