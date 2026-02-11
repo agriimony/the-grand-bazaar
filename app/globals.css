@@ -453,6 +453,11 @@ html, body {
   height: 68px;
 }
 
+.rs-token-center-wrap {
+  width: 92px;
+  height: 92px;
+}
+
 .rs-token-cell-amount {
   top: 0;
   left: 2px;

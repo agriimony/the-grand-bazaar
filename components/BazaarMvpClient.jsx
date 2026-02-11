@@ -1198,7 +1198,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <>
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
                 <div className="rs-token-center">
-                  <img src={tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()} alt={pendingToken?.symbol || 'TOKEN'} className="rs-token-cell-icon rs-token-cell-icon-large" />
+                  <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
+                    <img
+                      src={tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
+                      alt={pendingToken?.symbol || 'TOKEN'}
+                      className="rs-token-cell-icon rs-token-cell-icon-large"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fb = e.currentTarget.nextElementSibling;
+                        if (fb) fb.style.display = 'flex';
+                      }}
+                    />
+                    <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-icon-large rs-token-cell-fallback" style={{ display: 'none' }}>
+                      {tokenInitials(pendingToken?.symbol || '??')}
+                    </div>
+                  </div>
                   <div>{pendingToken?.symbol || 'TOKEN'}</div>
                   <div className="rs-token-balance-note">Available: {pendingToken?.amountDisplay || '0'}</div>
                 </div>
@@ -1305,7 +1319,17 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
                 {wrapAmount}
               </div>
               <div className="rs-symbol-overlay">ETH</div>
-              <img src={ethIcon} alt="ETH" className="rs-token-art rs-eth-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              <img
+                src={ethIcon}
+                alt="ETH"
+                className="rs-token-art rs-eth-art"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fb = e.currentTarget.nextElementSibling;
+                  if (fb) fb.style.display = 'flex';
+                }}
+              />
+              <div className="rs-token-art rs-token-fallback" style={{ display: 'none' }}>{tokenInitials('ETH')}</div>
             </div>
           ) : null}
         </div>
