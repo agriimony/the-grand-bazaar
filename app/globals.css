@@ -479,8 +479,8 @@ html, body {
 }
 
 .rs-selected-token-icon {
-  width: 92px;
-  height: 92px;
+  width: 74px;
+  height: 74px;
 }
 
 .rs-selected-token-amount {
@@ -656,8 +656,13 @@ textarea { width: 100%; font-size: 42px; }
   }
 
   .rs-token-art {
-    width: 72px;
-    height: 72px;
+    width: 58px;
+    height: 58px;
+  }
+
+  .rs-selected-token-icon {
+    width: 58px;
+    height: 58px;
   }
 
   .rs-item {
