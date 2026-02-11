@@ -189,6 +189,10 @@ function tokenIconUrl(chainId, token) {
   return '';
 }
 
+function ethIconUrl() {
+  return 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
+}
+
 async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
   try {
     const qs = new URLSearchParams({
@@ -989,6 +993,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
 function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
+  const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
 
@@ -1032,7 +1037,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
                 {wrapAmount}
               </div>
               <div className="rs-symbol-overlay">ETH</div>
-              <div className="rs-token-art rs-token-fallback">ETH</div>
+              <img src={ethIcon} alt="ETH" className="rs-token-art rs-eth-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
             </div>
           ) : null}
         </div>
