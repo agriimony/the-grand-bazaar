@@ -898,8 +898,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             footer={checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
-                : checks?.canWrapFromEth
-                ? 'Insufficient WETH. Wrap from ETH to continue'
                 : 'You have not yet accepted'
               : ''}
             footerTone={checks
