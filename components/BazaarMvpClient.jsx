@@ -138,6 +138,10 @@ function suffixClass(suffix = '') {
   return 'amt-n';
 }
 
+function tokenInitials(symbol = '??') {
+  return String(symbol || '??').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || '??';
+}
+
 function canonAddr(addr = '') {
   try {
     return ethers.getAddress(String(addr || '').trim()).toLowerCase();
@@ -1165,7 +1169,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                           <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
                             <div className="rs-token-wrap rs-token-cell-wrap">
                               <div className="rs-amount-overlay rs-token-cell-amount">{t.amountDisplay}</div>
-                              <img src={t.imgUrl || tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
+                              <img
+                                src={t.imgUrl || tokenIconUrl(8453, t.token)}
+                                alt={t.symbol}
+                                className="rs-token-cell-icon"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fb = e.currentTarget.nextElementSibling;
+                                  if (fb) fb.style.display = 'flex';
+                                }}
+                              />
+                              <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback" style={{ display: 'none' }}>{tokenInitials(t.symbol)}</div>
                               <div className="rs-symbol-overlay rs-token-cell-symbol">{t.symbol}</div>
                             </div>
                           </button>
@@ -1262,7 +1276,21 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
               className="rs-token-link"
               onClick={editable ? (e) => e.preventDefault() : undefined}
             >
-              {icon ? <img src={icon} alt={symbol} className="rs-token-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="rs-token-art rs-token-fallback">{symbol || '???'}</div>}
+              {icon ? (
+                <>
+                  <img
+                    src={icon}
+                    alt={symbol}
+                    className="rs-token-art"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const fb = e.currentTarget.nextElementSibling;
+                      if (fb) fb.style.display = 'flex';
+                    }}
+                  />
+                  <div className="rs-token-art rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(symbol || '??')}</div>
+                </>
+              ) : <div className="rs-token-art rs-token-fallback">{tokenInitials(symbol || '??')}</div>}
             </a>
           </div>
 

@@ -142,9 +142,14 @@ html, body {
   align-items: center;
   justify-content: center;
   color: #f0c46e;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 900;
   border: 1px solid #3a3024;
   background: rgba(0,0,0,0.2);
+}
+
+.rs-token-cell-fallback {
+  font-size: 22px;
 }
 
 .rs-item {
