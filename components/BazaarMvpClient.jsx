@@ -950,7 +950,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const symbol = row?.symbol || guessSymbol(tokenAddr);
       const balanceRaw = row?.balance ?? 0n;
       const amount = ethers.formatUnits(balanceRaw, decimals);
-      const usd = await quoteUsdValue(readProvider, tokenAddr, balanceRaw, decimals);
+      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+      const usd = await quoteUsdValue(rp, tokenAddr, balanceRaw, decimals);
 
       const option = {
         token: tokenAddr,
