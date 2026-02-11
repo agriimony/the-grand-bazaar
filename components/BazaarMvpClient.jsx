@@ -27,6 +27,14 @@ const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
+const TOKEN_CATALOG = [
+  BASE_USDC,
+  BASE_WETH,
+  '0xcbB7C0000aB88B473b1f5AFD9e0c6dFfD5A6Bf35', // cbBTC
+  '0x940181a94A35A4569E4529A3CDfB74e38FD98631', // AERO
+  '0x6921B130D297cc43754afba22e5EAc0FBf8Db75b', // DOGINME
+  '0x5b5dee44552546ecea05edea01dcd7be7aa6144a', // KTA
+];
 const FEE_TIERS = [500, 3000, 10000];
 
 const QUOTER_ABI = [
@@ -272,6 +280,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
+  const [makerMode, setMakerMode] = useState(false);
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [tokenModalLoading, setTokenModalLoading] = useState(false);
+  const [tokenModalStep, setTokenModalStep] = useState('grid');
+  const [tokenModalPanel, setTokenModalPanel] = useState('sender');
+  const [tokenModalWallet, setTokenModalWallet] = useState('');
+  const [tokenOptions, setTokenOptions] = useState([]);
+  const [pendingToken, setPendingToken] = useState(null);
+  const [pendingAmount, setPendingAmount] = useState('');
+  const [makerOverrides, setMakerOverrides] = useState({});
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-7), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -759,11 +777,77 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
+  async function openTokenSelector(panel) {
+    if (!makerMode) return;
+    const wallet = address || (panel === 'sender' ? parsed?.senderWallet : parsed?.signerWallet) || '';
+    if (!wallet) {
+      setStatus('connect wallet');
+      return;
+    }
+    setTokenModalPanel(panel);
+    setTokenModalWallet(wallet);
+    setTokenModalOpen(true);
+    setTokenModalStep('grid');
+    setTokenModalLoading(true);
+    try {
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+      const rows = await Promise.all(TOKEN_CATALOG.map(async (token) => {
+        try {
+          const c = new ethers.Contract(token, ERC20_ABI, readProvider);
+          const [bal, dec, sym] = await Promise.all([
+            c.balanceOf(wallet),
+            c.decimals().catch(() => guessDecimals(token)),
+            c.symbol().catch(() => guessSymbol(token)),
+          ]);
+          if (bal <= 0n) return null;
+          const usd = await quoteUsdValue(readProvider, token, bal, Number(dec));
+          return {
+            token,
+            symbol: sym || guessSymbol(token),
+            decimals: Number(dec),
+            balance: bal,
+            usdValue: usd ?? 0,
+            amountDisplay: formatTokenAmount(ethers.formatUnits(bal, Number(dec))),
+          };
+        } catch {
+          return null;
+        }
+      }));
+      const list = rows.filter(Boolean).sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0));
+      setTokenOptions(list);
+    } finally {
+      setTokenModalLoading(false);
+    }
+  }
+
+  function onTokenSelect(option) {
+    setPendingToken(option);
+    setPendingAmount('');
+    setTokenModalStep('amount');
+  }
+
+  function onConfirmTokenAmount() {
+    if (!pendingToken || !pendingAmount) return;
+    const panel = tokenModalPanel;
+    setMakerOverrides((prev) => ({
+      ...prev,
+      [`${panel}Token`]: pendingToken.token,
+      [`${panel}Symbol`]: pendingToken.symbol,
+      [`${panel}Decimals`]: pendingToken.decimals,
+      [`${panel}Amount`]: pendingAmount,
+    }));
+    setTokenModalOpen(false);
+    setPendingToken(null);
+    setPendingAmount('');
+  }
+
   function loadOrder() {
     try {
       const decoded = decodeCompressedOrder(compressed.trim());
       setOrderData(decoded);
       setChecks(null);
+      setMakerMode(false);
+      setMakerOverrides({});
       setStatus('order loaded');
     } catch (e) {
       setStatus('order not found');
@@ -871,10 +955,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback))
     : '—';
 
-  const senderSymbolDisplay = checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
-  const signerSymbolDisplay = checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
+  const senderSymbolDisplay = makerOverrides.senderSymbol || checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
+  const signerSymbolDisplay = makerOverrides.signerSymbol || checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
   const wrapAmountNeeded = typeof checks?.wrapAmountNeeded === 'bigint' ? checks.wrapAmountNeeded : 0n;
   const showWrapHint = Boolean(checks?.canWrapFromEth) && wrapAmountNeeded > 0n;
+
+  const yourAmountDisplayFinal = makerOverrides.senderAmount || yourAmountDisplay;
+  const counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
+  const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
+  const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
 
   return (
     <>
@@ -884,10 +973,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-grid">
           <TradePanel
             title="Your Offer"
-            amount={yourAmountDisplay}
+            amount={yourAmountDisplayFinal}
             symbol={senderSymbolDisplay}
-            tokenAddress={parsed?.senderToken}
+            tokenAddress={senderTokenAddressFinal}
             chainId={parsed?.chainId}
+            editable={makerMode}
+            onEdit={() => openTokenSelector('sender')}
             danger={Boolean(checks && !checks.takerBalanceOk)}
             insufficientBalance={Boolean(checks && !checks.takerBalanceOk)}
             valueText={checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found'}
@@ -939,7 +1030,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             ) : (
               <div className="rs-btn-stack">
                 <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' || primaryLabel === 'Wrap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
-                <button className="rs-btn decline" disabled>Decline</button>
+                <button className="rs-btn decline" onClick={() => { setMakerMode(true); setStatus('maker flow'); }}>Decline</button>
               </div>
             )}
           </div>
@@ -947,10 +1038,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           <TradePanel
             title={`${fitOfferName(counterpartyName)}'s Offer`}
             titleLink={counterpartyProfileUrl}
-            amount={counterpartyAmountDisplay}
+            amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
-            tokenAddress={parsed?.signerToken}
+            tokenAddress={signerTokenAddressFinal}
             chainId={parsed?.chainId}
+            editable={makerMode}
+            onEdit={() => openTokenSelector('signer')}
             danger={Boolean(checks && !checks.makerBalanceOk)}
             insufficientBalance={Boolean(checks && !checks.makerBalanceOk)}
             valueText={checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found'}
@@ -967,6 +1060,52 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           />
         </div>
       </section>
+
+      {tokenModalOpen ? (
+        <div className="rs-modal-backdrop">
+          <div className="rs-modal rs-panel">
+            <button className="rs-modal-close" onClick={() => setTokenModalOpen(false)}>✕</button>
+            {tokenModalStep === 'grid' ? (
+              <>
+                <div className="rs-panel-title">Select Token</div>
+                {tokenModalLoading ? (
+                  <p>Loading tokens...</p>
+                ) : (
+                  <div className="rs-token-grid">
+                    {tokenOptions.slice(0, 15).map((t) => (
+                      <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
+                        <div className="rs-token-cell-amount">{t.amountDisplay}</div>
+                        <img src={tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
+                        <div className="rs-token-cell-symbol">{t.symbol}</div>
+                      </button>
+                    ))}
+                    <button className="rs-token-cell rs-token-cell-plus" onClick={() => {
+                      const token = prompt('Token contract address');
+                      if (!token) return;
+                      onTokenSelect({ token, symbol: 'TOKEN', decimals: 18 });
+                    }}>+</button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
+                <div className="rs-token-center">
+                  <img src={tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()} alt={pendingToken?.symbol || 'TOKEN'} className="rs-token-cell-icon rs-token-cell-icon-large" />
+                  <div>{pendingToken?.symbol || 'TOKEN'}</div>
+                </div>
+                <input
+                  className="rs-amount-input"
+                  placeholder="Amount"
+                  value={pendingAmount}
+                  onChange={(e) => setPendingAmount(e.target.value)}
+                />
+                <button className="rs-btn rs-btn-positive" onClick={onConfirmTokenAmount}>Confirm</button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="meta-block">
         <div style={{ display: 'grid', gap: 8 }}>
@@ -997,7 +1136,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -1006,7 +1145,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{titleLink ? <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link">{title}</a> : title}</div>
-      <div className={`rs-box ${danger ? 'rs-danger' : ''}`}>
+      <div className={`rs-box ${danger ? 'rs-danger' : ''} ${editable ? 'rs-editable' : ''}`} onClick={editable ? onEdit : undefined}>
         <p className="rs-value">
           {valueMatch ? (
             <>Value: ${valueMatch[1]}<span className={`amt-sfx ${suffixClass(valueMatch[2])}`}>{valueMatch[2]}</span></>
