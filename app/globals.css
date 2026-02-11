@@ -572,6 +572,15 @@ html, body {
   opacity: 0.85;
 }
 
+.rs-token-confirm-btn {
+  display: block;
+  width: min(360px, 86%);
+  margin: 8px auto 10px;
+  font-size: 24px;
+  line-height: 1.1;
+  padding: 14px 16px;
+}
+
 .meta-block {
   margin-top: 26px;
   overflow-x: hidden;

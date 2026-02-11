@@ -1055,7 +1055,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     if (!(Number.isFinite(Number(selectedUsd)) && Number(selectedUsd) >= 0)) {
-      selectedUsd = 0;
+      selectedUsd = null;
     }
 
     setMakerOverrides((prev) => ({
@@ -1224,18 +1224,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
   const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
 
+  const hasMakerSenderUsd = Object.prototype.hasOwnProperty.call(makerOverrides, 'senderUsd');
   const makerSenderUsd = makerOverrides.senderUsd;
   const makerSenderUsdOk = typeof makerSenderUsd === 'number' && Number.isFinite(makerSenderUsd) && makerSenderUsd >= 0;
-  const yourValueTextFinal = makerMode && makerSenderUsdOk
-    ? `Value: $${formatTokenAmount(String(makerSenderUsd))}`
+  const yourValueTextFinal = makerMode && hasMakerSenderUsd
+    ? (makerSenderUsdOk ? `Value: $${formatTokenAmount(String(makerSenderUsd))}` : 'Value: Not Found')
     : (checks?.senderUsdValue != null ? `Value: $${formatTokenAmount(checks.senderUsdValue)}` : 'Value: Not found');
 
+  const hasMakerSignerUsd = Object.prototype.hasOwnProperty.call(makerOverrides, 'signerUsd');
   const counterpartyUsdBase = makerOverrides.signerUsd;
   const counterpartyUsdWithFee = (typeof counterpartyUsdBase === 'number' && Number.isFinite(counterpartyUsdBase) && counterpartyUsdBase >= 0)
     ? counterpartyUsdBase * (1 + Number(uiProtocolFeeBps) / 10000)
     : null;
-  const counterpartyValueTextFinal = makerMode && typeof counterpartyUsdWithFee === 'number' && Number.isFinite(counterpartyUsdWithFee)
-    ? `Value: $${formatTokenAmount(String(counterpartyUsdWithFee))}`
+  const counterpartyValueTextFinal = makerMode && hasMakerSignerUsd
+    ? (typeof counterpartyUsdWithFee === 'number' && Number.isFinite(counterpartyUsdWithFee)
+      ? `Value: $${formatTokenAmount(String(counterpartyUsdWithFee))}`
+      : 'Value: Not Found')
     : (checks?.signerUsdValue != null ? `Value: $${formatTokenAmount(checks.signerUsdValue)}` : 'Value: Not found');
 
   let makerSenderInsufficient = false;
@@ -1448,7 +1452,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     else if (pendingAmount !== '') setPendingAmount('');
                   }}
                 />
-                <button className="rs-btn rs-btn-positive" onClick={onConfirmTokenAmount}>Confirm</button>
+                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmTokenAmount}>Confirm</button>
               </>
             )}
           </div>
