@@ -13,6 +13,7 @@ const ERC20_ABI = [
   'function approve(address spender,uint256 amount) returns (bool)',
 ];
 const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
+const WETH_IFACE = new ethers.Interface(['function deposit() payable']);
 
 const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
@@ -25,6 +26,7 @@ const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
 // removed duplicate abi block
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const FEE_TIERS = [500, 3000, 10000];
 
 const QUOTER_ABI = [
@@ -140,7 +142,7 @@ function isStableToken(addr = '') {
 function guessSymbol(addr = '') {
   const a = canonAddr(addr);
   if (a === BASE_USDC.toLowerCase()) return 'USDC';
-  if (a === '0x4200000000000000000000000000000000000006') return 'WETH';
+  if (a === BASE_WETH.toLowerCase()) return 'WETH';
   return '???';
 }
 
@@ -265,6 +267,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
+  const [isWrapping, setIsWrapping] = useState(false);
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-7), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -559,11 +562,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
       const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
 
+      const senderIsWeth = normalizeAddr(parsed.senderToken) === BASE_WETH.toLowerCase();
+      const wrapAmountNeeded = ownerMatches && senderIsWeth && takerBalance < totalRequired ? (totalRequired - takerBalance) : 0n;
+      const takerEthBalance = ownerMatches && senderIsWeth ? await readProvider.getBalance(address) : 0n;
+      const canWrapFromEth = wrapAmountNeeded > 0n && takerEthBalance >= wrapAmountNeeded;
+
       const baseChecks = {
         requiredSenderKind,
         nonceUsed: false,
         protocolFeeMismatch: false,
         ownerMatches,
+        senderIsWeth,
+        wrapAmountNeeded,
+        takerEthBalance,
+        canWrapFromEth,
         signerSymbol: finalSignerSymbol,
         senderSymbol: finalSenderSymbol,
         signerDecimals: finalSignerDecimals,
@@ -710,6 +722,35 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
+  async function onWrapFromEth() {
+    if (!parsed || !checks) return;
+    if (!checks.canWrapFromEth || !checks.wrapAmountNeeded || checks.wrapAmountNeeded <= 0n) return;
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
+      return;
+    }
+
+    try {
+      setIsWrapping(true);
+      setStatus('wrapping ETH to WETH');
+      const txHash = await sendTransactionAsync({
+        account: address,
+        chainId: 8453,
+        to: BASE_WETH,
+        data: WETH_IFACE.encodeFunctionData('deposit', []),
+        value: checks.wrapAmountNeeded,
+      });
+      setStatus('wrapping ETH to WETH: confirming');
+      await waitForTxConfirmation({ publicClient, txHash });
+      setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
+      await runChecks();
+    } catch (e) {
+      setStatus(`wrap error: ${errText(e)}`);
+    } finally {
+      setIsWrapping(false);
+    }
+  }
+
   function loadOrder() {
     try {
       const decoded = decodeCompressedOrder(compressed.trim());
@@ -820,6 +861,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderSymbolDisplay = checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
   const signerSymbolDisplay = checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
+  const wrapAmountNeeded = typeof checks?.wrapAmountNeeded === 'bigint' ? checks.wrapAmountNeeded : 0n;
+  const showWrapHint = Boolean(checks?.canWrapFromEth) && wrapAmountNeeded > 0n;
 
   return (
     <>
@@ -844,9 +887,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
               : ''}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
+            wrapHint={showWrapHint}
+            wrapAmount={showWrapHint ? formatTokenAmount(ethers.formatUnits(wrapAmountNeeded, 18)) : ''}
+            onWrap={onWrapFromEth}
+            wrapBusy={isWrapping}
             footer={checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
+                : checks?.canWrapFromEth
+                ? 'Insufficient WETH. Wrap from ETH to continue'
                 : 'You have not yet accepted'
               : ''}
             footerTone={checks
@@ -938,7 +987,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, insufficientBalance = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, chainId, danger, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenIconUrl(chainId, tokenAddress || '');
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -972,6 +1021,20 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
               {icon ? <img src={icon} alt={symbol} className="rs-token-art" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="rs-token-art rs-token-fallback">{symbol || '???'}</div>}
             </a>
           </div>
+
+          {wrapHint ? (
+            <button type="button" className="rs-wrap-arrow" onClick={onWrap} disabled={wrapBusy}>⬅️</button>
+          ) : null}
+
+          {wrapHint ? (
+            <div className="rs-token-wrap rs-token-wrap-secondary">
+              <div className="rs-amount-overlay">
+                {wrapAmount}
+              </div>
+              <div className="rs-symbol-overlay">ETH</div>
+              <div className="rs-token-art rs-token-fallback">ETH</div>
+            </div>
+          ) : null}
         </div>
         {feeText ? <p className={feeTone === 'bad' ? 'rs-fee-note-bad' : 'rs-fee-note'}>{feeText}</p> : null}
         {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}

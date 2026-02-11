@@ -89,6 +89,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 10px;
   padding-left: 16px;
 }
 
@@ -96,6 +97,28 @@ html, body {
   position: relative;
   width: 92px;
   height: 92px;
+}
+
+.rs-token-wrap-secondary .rs-token-fallback {
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.rs-wrap-arrow {
+  border: 2px solid #857458;
+  background: linear-gradient(180deg, #2e271f 0%, #211b15 100%);
+  color: #e8ddcb;
+  font-size: 26px;
+  line-height: 1;
+  height: 48px;
+  min-width: 56px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #100e0b;
+}
+
+.rs-wrap-arrow:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .rs-token-link {
