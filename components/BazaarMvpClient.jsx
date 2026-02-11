@@ -1081,9 +1081,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     pendingInsufficient = Number.isFinite(pendingAmountNum) && pendingAmountNum > 0 && Number.isFinite(pendingAvailableNum) && pendingAmountNum > pendingAvailableNum;
   }
 
-  const yourAmountDisplayFinal = makerOverrides.senderAmount || yourAmountDisplay;
+  const yourAmountDisplayFinal = makerOverrides.senderAmount
+    ? formatTokenAmount(makerOverrides.senderAmount)
+    : yourAmountDisplay;
 
-  let counterpartyAmountDisplayFinal = makerOverrides.signerAmount || counterpartyAmountDisplay;
+  let counterpartyAmountDisplayFinal = makerOverrides.signerAmount
+    ? formatTokenAmount(makerOverrides.signerAmount)
+    : counterpartyAmountDisplay;
   if (makerMode && makerOverrides.signerAmount) {
     const n = Number(makerOverrides.signerAmount);
     if (Number.isFinite(n) && n >= 0) {
