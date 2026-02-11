@@ -824,6 +824,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet}`);
     try {
+      const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(wallet)}`, { cache: 'no-store' });
+      const zd = await zr.json();
+      if (zr.ok && zd?.ok && Array.isArray(zd.tokens)) {
+        const list = zd.tokens.map((t) => ({
+          token: normalizeAddr(t.token),
+          symbol: t.symbol || guessSymbol(t.token),
+          decimals: guessDecimals(t.token),
+          balance: 0n,
+          usdValue: Number(t.usdValue || 0),
+          amountDisplay: formatTokenAmount(String(t.balance || '0')),
+          imgUrl: t.imgUrl || null,
+        }));
+        dbg(`maker selector zapper tokens=${list.length}`);
+        setTokenOptions(list);
+        return;
+      }
+      dbg(`maker selector zapper fallback reason=${zd?.error || zr.status}`);
+
       const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
 
       const rawRows = await mapInChunks(TOKEN_CATALOG, 5, async (token) => {
@@ -1117,7 +1135,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       {tokenOptions.slice(0, 15).map((t) => (
                         <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
                           <div className="rs-token-cell-amount">{t.amountDisplay}</div>
-                          <img src={tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
+                          <img src={t.imgUrl || tokenIconUrl(8453, t.token)} alt={t.symbol} className="rs-token-cell-icon" />
                           <div className="rs-token-cell-symbol">{t.symbol}</div>
                         </button>
                       ))}
