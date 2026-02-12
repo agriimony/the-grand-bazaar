@@ -1049,6 +1049,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     try {
+      setIsWrapping(true);
       const amountRaw = ethers.parseUnits(String(pendingAmount), 18);
       setStatus('wrapping ETH to WETH');
       const txHash = await sendTransactionAsync({
@@ -1058,11 +1059,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         data: WETH_IFACE.encodeFunctionData('deposit', []),
         value: amountRaw,
       });
+      setStatus('wrapping ETH to WETH: confirming');
       await waitForTxConfirmation({ publicClient, txHash });
       await swapPendingEthToWeth();
       setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
       setStatus(`wrap error: ${errText(e)}`);
+    } finally {
+      setIsWrapping(false);
     }
   }
 
@@ -1514,6 +1518,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     ) : null}
                   </div>
                 </div>
+                {isWrapping ? (
+                  <div className="rs-loading-wrap" style={{ marginTop: 8 }}>
+                    <div className="rs-loading-track">
+                      <div className="rs-loading-fill" />
+                      <div className="rs-loading-label">wrapping</div>
+                    </div>
+                  </div>
+                ) : null}
                 <input
                   className="rs-amount-input"
                   placeholder="Amount"
@@ -1528,12 +1540,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     if (Number.isFinite(n) && n >= 0) setPendingAmount(String(n));
                     else if (pendingAmount !== '') setPendingAmount('');
                   }}
+                  disabled={isWrapping}
                 />
                 <button
                   className="rs-btn rs-btn-positive rs-token-confirm-btn"
                   onClick={pendingIsEth ? onModalWrapEth : onConfirmTokenAmount}
+                  disabled={isWrapping}
                 >
-                  {pendingIsEth && tokenModalPanel === 'sender' ? 'Wrap' : 'Confirm'}
+                  {isWrapping ? 'Wrapping...' : (pendingIsEth && tokenModalPanel === 'sender' ? 'Wrap' : 'Confirm')}
                 </button>
               </>
             )}
