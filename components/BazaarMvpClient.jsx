@@ -29,12 +29,12 @@ const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const TOKEN_CATALOG = [
-  { token: BASE_ETH, iconArt: '/eth-icon.png' }, // ETH (native)
-  { token: BASE_USDC },
-  { token: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' }, // USDT
-  { token: BASE_WETH, iconArt: '/eth-icon.png' },
-  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe' }, // HIGHER
-  { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed' }, // DEGEN
+  { token: BASE_ETH, symbol: 'ETH', decimals: 18, native: true, iconArt: '/eth-icon.png' },
+  { token: BASE_USDC, symbol: 'USDC', decimals: 6 },
+  { token: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', symbol: 'USDT', decimals: 6 },
+  { token: BASE_WETH, symbol: 'WETH', decimals: 18, iconArt: '/eth-icon.png' },
+  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', symbol: 'HIGHER', decimals: 18 },
+  { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', symbol: 'DEGEN', decimals: 18 },
 ];
 const FEE_TIERS = [500, 3000, 10000];
 const BASE_RPCS = [
@@ -297,6 +297,24 @@ async function mapInChunks(items, chunkSize, fn) {
     out.push(...rows);
   }
   return out;
+}
+
+async function readKnownTokenBalance(tokenAddr, wallet, native = false) {
+  for (const rpc of BASE_RPCS) {
+    try {
+      const p = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
+      if (native || canonAddr(tokenAddr) === canonAddr(BASE_ETH)) {
+        const bal = await p.getBalance(wallet);
+        return { ok: true, rpc, balance: bal };
+      }
+      const c = new ethers.Contract(tokenAddr, ERC20_ABI, p);
+      const bal = await c.balanceOf(wallet);
+      return { ok: true, rpc, balance: bal };
+    } catch {
+      // try next RPC
+    }
+  }
+  return { ok: false, rpc: 'none', balance: 0n };
 }
 
 async function readTokenForWallet(tokenAddr, wallet) {
@@ -938,16 +956,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const rawRows = await mapInChunks(TOKEN_CATALOG, 5, async (entry) => {
         const tokenAddr = normalizeAddr(entry?.token || '');
-        const row = await readTokenForWallet(tokenAddr, wallet);
+        const row = await readKnownTokenBalance(tokenAddr, wallet, Boolean(entry?.native));
         if (!row.ok) {
           dbg(`maker token ${tokenAddr} read error across RPC fallbacks`);
           return null;
         }
-        dbg(`maker token ${tokenAddr} sym=${row.symbol || '?'} balRaw=${row.balance.toString()} dec=${row.decimals} rpc=${row.rpc}`);
+        const symbol = entry?.symbol || guessSymbol(tokenAddr);
+        const decimals = Number(entry?.decimals ?? guessDecimals(tokenAddr));
+        dbg(`maker token ${tokenAddr} sym=${symbol} balRaw=${row.balance.toString()} dec=${decimals} rpc=${row.rpc}`);
         return {
           token: tokenAddr,
-          symbol: row.symbol,
-          decimals: row.decimals,
+          symbol,
+          decimals,
           balance: row.balance,
           imgUrl: entry?.iconArt || tokenIconUrl(8453, tokenAddr) || null,
         };
