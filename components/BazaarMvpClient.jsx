@@ -1039,7 +1039,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (!Number.isFinite(n) || n <= 0) return;
 
     if (tokenModalPanel !== 'sender' || normalizeAddr(tokenModalWallet) !== normalizeAddr(address)) {
-      await swapPendingEthToWeth();
+      const wethOption = await fetchTokenOption(BASE_WETH.toLowerCase(), tokenModalWallet, 'WETH');
+      const panel = tokenModalPanel;
+      const usd = Number.isFinite(Number(wethOption.priceUsd))
+        ? Number(wethOption.priceUsd) * n
+        : (Number.isFinite(Number(wethOption.usdValue)) && Number.isFinite(Number(wethOption.availableAmount)) && Number(wethOption.availableAmount) > 0
+          ? Number(wethOption.usdValue) * (n / Number(wethOption.availableAmount))
+          : null);
+
+      setMakerOverrides((prev) => ({
+        ...prev,
+        [`${panel}Token`]: wethOption.token,
+        [`${panel}Symbol`]: 'WETH',
+        [`${panel}Decimals`]: wethOption.decimals,
+        [`${panel}ImgUrl`]: wethOption.imgUrl || null,
+        [`${panel}AvailableRaw`]: typeof wethOption.availableRaw === 'bigint' ? wethOption.availableRaw.toString() : String(wethOption.availableRaw || '0'),
+        [`${panel}Amount`]: String(n),
+        [`${panel}Usd`]: usd,
+      }));
+      setTokenModalOpen(false);
+      setPendingToken(null);
+      setPendingAmount('');
       return;
     }
 
