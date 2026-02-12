@@ -61,10 +61,14 @@ export async function GET(req) {
       return Response.json({ ok: false, error: 'invalid token' }, { status: 400 });
     }
 
-    const cg = await fromCoinGecko(token);
+    const ETH_SENTINEL = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const WETH = '0x4200000000000000000000000000000000000006';
+    const lookupToken = token === ETH_SENTINEL ? WETH : token;
+
+    const cg = await fromCoinGecko(lookupToken);
     if (cg != null) return Response.json({ ok: true, token, source: 'coingecko', priceUsd: cg });
 
-    const ds = await fromDexScreener(token);
+    const ds = await fromDexScreener(lookupToken);
     if (ds != null) return Response.json({ ok: true, token, source: 'dexscreener', priceUsd: ds });
 
     return Response.json({ ok: true, token, source: 'none', priceUsd: null });

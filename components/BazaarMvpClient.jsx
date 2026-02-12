@@ -27,7 +27,9 @@ const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
+const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const TOKEN_CATALOG = [
+  BASE_ETH, // ETH (native)
   BASE_USDC,
   '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', // USDT
   BASE_WETH,
@@ -157,6 +159,7 @@ function isStableToken(addr = '') {
 
 function guessSymbol(addr = '') {
   const a = canonAddr(addr);
+  if (a === BASE_ETH.toLowerCase()) return 'ETH';
   if (a === BASE_USDC.toLowerCase()) return 'USDC';
   if (a === BASE_WETH.toLowerCase()) return 'WETH';
   return '???';
@@ -172,6 +175,7 @@ async function quoteUsdValue(readProvider, token, amountRaw, decimals) {
   try {
     if (isStableToken(token)) return Number(ethers.formatUnits(amountRaw, 6));
 
+    const tokenInResolved = canonAddr(token) === canonAddr(BASE_ETH) ? BASE_WETH : token;
     const quoter = new ethers.Contract(QUOTER_V2, QUOTER_ABI, readProvider);
     const quoteSingle = async (tokenIn, tokenOut, amountIn) => {
       for (const fee of FEE_TIERS) {
@@ -192,12 +196,12 @@ async function quoteUsdValue(readProvider, token, amountRaw, decimals) {
     };
 
     // direct token -> USDC
-    const direct = await quoteSingle(token, BASE_USDC, amountRaw);
+    const direct = await quoteSingle(tokenInResolved, BASE_USDC, amountRaw);
     if (direct != null) return Number(ethers.formatUnits(direct, 6));
 
     // fallback two-hop token -> WETH -> USDC for custom tokens without direct USDC pool
-    if (canonAddr(token) !== canonAddr(BASE_WETH)) {
-      const viaWeth = await quoteSingle(token, BASE_WETH, amountRaw);
+    if (canonAddr(tokenInResolved) !== canonAddr(BASE_WETH)) {
+      const viaWeth = await quoteSingle(tokenInResolved, BASE_WETH, amountRaw);
       if (viaWeth != null) {
         const wethToUsdc = await quoteSingle(BASE_WETH, BASE_USDC, viaWeth);
         if (wethToUsdc != null) return Number(ethers.formatUnits(wethToUsdc, 6));
@@ -213,6 +217,7 @@ async function quoteUsdValue(readProvider, token, amountRaw, decimals) {
 function tokenIconUrl(chainId, token) {
   try {
     const checksum = ethers.getAddress(token);
+    if (canonAddr(checksum) === canonAddr(BASE_ETH)) return ethIconUrl();
     if (Number(chainId) === 8453) {
       return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${checksum}/logo.png`;
     }
@@ -287,6 +292,17 @@ async function mapInChunks(items, chunkSize, fn) {
 }
 
 async function readTokenForWallet(tokenAddr, wallet) {
+  if (canonAddr(tokenAddr) === canonAddr(BASE_ETH)) {
+    for (const rpc of BASE_RPCS) {
+      try {
+        const p = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
+        const bal = await p.getBalance(wallet);
+        return { ok: true, rpc, balance: bal, decimals: 18, symbol: 'ETH' };
+      } catch {}
+    }
+    return { ok: false, rpc: 'none', balance: 0n, decimals: 18, symbol: 'ETH' };
+  }
+
   for (const rpc of BASE_RPCS) {
     try {
       const p = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
@@ -895,8 +911,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             imgUrl: t.imgUrl || null,
           };
         });
-        dbg(`maker selector zapper tokens=${list.length}`);
-        setTokenOptions(list);
+
+        try {
+          const ethOpt = await fetchTokenOption(BASE_ETH.toLowerCase(), wallet, 'ETH');
+          if (Number(ethOpt.availableAmount || 0) > 0) {
+            const dedup = list.filter((t) => normalizeAddr(t.token) !== normalizeAddr(BASE_ETH));
+            dedup.unshift({ ...ethOpt, imgUrl: ethIconUrl() });
+            dbg(`maker selector zapper tokens=${dedup.length} (with ETH)`);
+            setTokenOptions(dedup);
+          } else {
+            dbg(`maker selector zapper tokens=${list.length}`);
+            setTokenOptions(list);
+          }
+        } catch {
+          dbg(`maker selector zapper tokens=${list.length}`);
+          setTokenOptions(list);
+        }
         if (typeof window !== 'undefined') {
           try {
             const cacheTokens = list.map((t) => ({ ...t, availableRaw: typeof t.availableRaw === 'bigint' ? t.availableRaw.toString() : String(t.availableRaw || '0') }));
