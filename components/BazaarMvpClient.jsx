@@ -29,12 +29,12 @@ const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const TOKEN_CATALOG = [
-  BASE_ETH, // ETH (native)
-  BASE_USDC,
-  '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', // USDT
-  BASE_WETH,
-  '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', // HIGHER
-  '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', // DEGEN
+  { token: BASE_ETH, iconArt: '/eth-icon.png' }, // ETH (native)
+  { token: BASE_USDC },
+  { token: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' }, // USDT
+  { token: BASE_WETH, iconArt: '/eth-icon.png' },
+  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe' }, // HIGHER
+  { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed' }, // DEGEN
 ];
 const FEE_TIERS = [500, 3000, 10000];
 const BASE_RPCS = [
@@ -217,6 +217,8 @@ async function quoteUsdValue(readProvider, token, amountRaw, decimals) {
 function tokenIconUrl(chainId, token) {
   try {
     const checksum = ethers.getAddress(token);
+    const localArt = catalogIconArt(checksum);
+    if (localArt) return localArt;
     if (canonAddr(checksum) === canonAddr(BASE_ETH)) return ethIconUrl();
     if (Number(chainId) === 8453) {
       return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${checksum}/logo.png`;
@@ -227,6 +229,12 @@ function tokenIconUrl(chainId, token) {
 
 function ethIconUrl() {
   return '/eth-icon.png';
+}
+
+function catalogIconArt(token) {
+  const t = canonAddr(token || '');
+  const found = TOKEN_CATALOG.find((x) => canonAddr(x?.token || '') === t);
+  return found?.iconArt || '';
 }
 
 function isEthLikeToken(option) {
@@ -908,7 +916,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             usdValue: Number(t.usdValue || 0),
             priceUsd: Number(t.priceUsd || 0),
             amountDisplay: formatTokenAmount(String(t.balance || '0')),
-            imgUrl: t.imgUrl || null,
+            imgUrl: catalogIconArt(t.token) || t.imgUrl || tokenIconUrl(8453, t.token) || null,
           };
         });
 
@@ -928,8 +936,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
 
-      const rawRows = await mapInChunks(TOKEN_CATALOG, 5, async (token) => {
-        const tokenAddr = normalizeAddr(token);
+      const rawRows = await mapInChunks(TOKEN_CATALOG, 5, async (entry) => {
+        const tokenAddr = normalizeAddr(entry?.token || '');
         const row = await readTokenForWallet(tokenAddr, wallet);
         if (!row.ok) {
           dbg(`maker token ${tokenAddr} read error across RPC fallbacks`);
@@ -941,6 +949,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           symbol: row.symbol,
           decimals: row.decimals,
           balance: row.balance,
+          imgUrl: entry?.iconArt || tokenIconUrl(8453, tokenAddr) || null,
         };
       });
 
@@ -1007,7 +1016,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       usdValue: Number(usd || 0),
       priceUsd: Number.isFinite(Number(priceUsd)) ? Number(priceUsd) : 0,
       amountDisplay: formatTokenAmount(amount),
-      imgUrl: tokenIconUrl(8453, tokenAddr),
+      imgUrl: catalogIconArt(tokenAddr) || tokenIconUrl(8453, tokenAddr),
     };
   }
 
