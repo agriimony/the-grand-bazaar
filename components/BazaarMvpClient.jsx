@@ -397,6 +397,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
+  const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -853,6 +854,69 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     } catch (e) {
       setStatus(`action error: ${errText(e)}`);
     }
+  }
+
+  async function onMakerApprove() {
+    if (!makerMode) return;
+    if (!parsed?.swapContract) {
+      setStatus('order not loaded');
+      return;
+    }
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
+      return;
+    }
+
+    const token = makerOverrides.senderToken;
+    const amount = makerOverrides.senderAmount;
+    const decimals = Number(makerOverrides.senderDecimals ?? 18);
+    if (!token || !amount) {
+      setStatus('select your offer token and amount first');
+      return;
+    }
+    if (isEthSentinelAddr(token)) {
+      setStatus('ETH does not require approve');
+      return;
+    }
+
+    try {
+      const rawAmount = ethers.parseUnits(String(amount), decimals);
+      const sym = makerOverrides.senderSymbol || guessSymbol(token);
+      setStatus(`approving ${sym}`);
+      const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, rawAmount]);
+      const txHash = await sendTransactionAsync({
+        account: address,
+        chainId: 8453,
+        to: token,
+        data: approveData,
+        value: 0n,
+      });
+      setStatus(`approving ${sym}: confirming`);
+      await waitForTxConfirmation({ publicClient, txHash });
+      setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
+    } catch (e) {
+      setStatus(`approve error: ${errText(e)}`);
+    }
+  }
+
+  function cycleMakerExpiry() {
+    const options = [3600, 6 * 3600, 12 * 3600, 24 * 3600, 2 * 24 * 3600, 7 * 24 * 3600];
+    const idx = options.indexOf(makerExpirySec);
+    const next = options[(idx + 1) % options.length];
+    setMakerExpirySec(next);
+    setMakerOverrides((prev) => ({ ...prev, expirySec: next }));
+  }
+
+  function makerExpiryLabel(sec) {
+    if (sec % (24 * 3600) === 0) {
+      const d = sec / (24 * 3600);
+      return d === 1 ? 'Expiry: 1 day' : `Expiry: ${d} days`;
+    }
+    if (sec % 3600 === 0) {
+      const h = sec / 3600;
+      return h === 1 ? 'Expiry: 1 hour' : `Expiry: ${h} hours`;
+    }
+    return `Expiry: ${sec}s`;
   }
 
   async function onWrapFromEth() {
@@ -1457,10 +1521,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   <div className="rs-loading-label">{loadingStage}</div>
                 </div>
               </div>
+            ) : makerMode ? (
+              <div className="rs-btn-stack">
+                <button className="rs-btn rs-btn-positive" onClick={onMakerApprove}>Approve</button>
+                <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
+              </div>
             ) : (
               <div className="rs-btn-stack">
                 <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' || primaryLabel === 'Wrap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
-                <button className="rs-btn decline" onClick={() => { setMakerMode(true); setStatus('maker flow'); }}>Decline</button>
+                <button className="rs-btn decline" onClick={() => { setMakerMode(true); setMakerExpirySec(24 * 60 * 60); setMakerOverrides((prev) => ({ ...prev, expirySec: 24 * 60 * 60 })); setStatus('maker flow'); }}>Decline</button>
               </div>
             )}
           </div>
