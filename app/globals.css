@@ -546,6 +546,13 @@ html, body {
   margin: 12px 0;
 }
 
+.rs-modal-wrap-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
 .rs-token-balance-note {
   color: #e2c596;
   font-size: 18px;

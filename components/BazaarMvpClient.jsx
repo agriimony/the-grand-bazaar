@@ -224,6 +224,13 @@ function ethIconUrl() {
   return '/eth-icon.png';
 }
 
+function isEthLikeToken(option) {
+  if (!option) return false;
+  const sym = String(option.symbol || '').toUpperCase();
+  const tok = canonAddr(option.token || '');
+  return sym === 'ETH' || tok === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || tok === '0x0000000000000000000000000000000000000000';
+}
+
 async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
   try {
     const qs = new URLSearchParams({
@@ -950,6 +957,43 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalStep('amount');
   }
 
+  async function fetchTokenOption(tokenAddr, wallet, symbolHint = null) {
+    const row = await readTokenForWallet(tokenAddr, wallet);
+    const decimals = Number(row?.decimals ?? guessDecimals(tokenAddr));
+    const symbol = symbolHint || row?.symbol || guessSymbol(tokenAddr);
+    const balanceRaw = row?.balance ?? 0n;
+    const amount = ethers.formatUnits(balanceRaw, decimals);
+
+    let priceUsd = null;
+    try {
+      const pr = await fetch(`/api/token-price?token=${encodeURIComponent(tokenAddr)}`, { cache: 'no-store' });
+      const pd = await pr.json();
+      if (pr.ok && pd?.ok && Number.isFinite(Number(pd.priceUsd))) priceUsd = Number(pd.priceUsd);
+    } catch {}
+
+    let usd = null;
+    if (Number.isFinite(priceUsd)) {
+      usd = Number(amount || 0) * Number(priceUsd);
+    } else {
+      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+      usd = await quoteUsdValue(rp, tokenAddr, balanceRaw, decimals);
+      priceUsd = Number.isFinite(Number(usd)) && Number(amount || 0) > 0 ? (Number(usd) / Number(amount || 0)) : null;
+    }
+
+    return {
+      token: tokenAddr,
+      symbol,
+      decimals,
+      balance: amount,
+      availableAmount: Number(amount || 0),
+      availableRaw: BigInt(balanceRaw || 0n),
+      usdValue: Number(usd || 0),
+      priceUsd: Number.isFinite(Number(priceUsd)) ? Number(priceUsd) : 0,
+      amountDisplay: formatTokenAmount(amount),
+      imgUrl: tokenIconUrl(8453, tokenAddr),
+    };
+  }
+
   async function onAddCustomToken() {
     const tokenInput = prompt('Token contract address');
     if (!tokenInput) return;
@@ -964,42 +1008,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     try {
       setTokenModalLoading(true);
-      const row = await readTokenForWallet(tokenAddr, tokenModalWallet);
-      const decimals = Number(row?.decimals ?? guessDecimals(tokenAddr));
-      const symbol = row?.symbol || guessSymbol(tokenAddr);
-      const balanceRaw = row?.balance ?? 0n;
-      const amount = ethers.formatUnits(balanceRaw, decimals);
-      let priceUsd = null;
-      try {
-        const pr = await fetch(`/api/token-price?token=${encodeURIComponent(tokenAddr)}`, { cache: 'no-store' });
-        const pd = await pr.json();
-        if (pr.ok && pd?.ok && Number.isFinite(Number(pd.priceUsd))) priceUsd = Number(pd.priceUsd);
-      } catch {
-        // fallback below
-      }
-
-      let usd = null;
-      if (Number.isFinite(priceUsd)) {
-        usd = Number(amount || 0) * Number(priceUsd);
-      } else {
-        const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
-        usd = await quoteUsdValue(rp, tokenAddr, balanceRaw, decimals);
-        priceUsd = Number.isFinite(Number(usd)) && Number(amount || 0) > 0 ? (Number(usd) / Number(amount || 0)) : null;
-      }
-
-      const option = {
-        token: tokenAddr,
-        symbol,
-        decimals,
-        balance: amount,
-        availableAmount: Number(amount || 0),
-        availableRaw: BigInt(balanceRaw || 0n),
-        usdValue: Number(usd || 0),
-        priceUsd: Number.isFinite(Number(priceUsd)) ? Number(priceUsd) : 0,
-        amountDisplay: formatTokenAmount(amount),
-        imgUrl: tokenIconUrl(8453, tokenAddr),
-      };
-
+      const option = await fetchTokenOption(tokenAddr, tokenModalWallet);
       setTokenOptions((prev) => {
         const dedup = prev.filter((t) => t.token !== tokenAddr);
         return [option, ...dedup];
@@ -1010,6 +1019,44 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       dbg(`custom token lookup failed ${tokenAddr}: ${errText(e)}`);
     } finally {
       setTokenModalLoading(false);
+    }
+  }
+
+  async function onModalWrapEth() {
+    if (!pendingToken || !isEthLikeToken(pendingToken)) return;
+    const n = Number(pendingAmount || 0);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
+      return;
+    }
+    if (normalizeAddr(tokenModalWallet) !== normalizeAddr(address) || tokenModalPanel !== 'sender') {
+      setStatus('wrap only available for your wallet inventory');
+      return;
+    }
+
+    try {
+      const amountRaw = ethers.parseUnits(String(pendingAmount), 18);
+      setStatus('wrapping ETH to WETH');
+      const txHash = await sendTransactionAsync({
+        account: address,
+        chainId: 8453,
+        to: BASE_WETH,
+        data: WETH_IFACE.encodeFunctionData('deposit', []),
+        value: amountRaw,
+      });
+      await waitForTxConfirmation({ publicClient, txHash });
+
+      const wethOption = await fetchTokenOption(BASE_WETH.toLowerCase(), tokenModalWallet, 'WETH');
+      setTokenOptions((prev) => {
+        const dedup = prev.filter((t) => t.token !== BASE_WETH.toLowerCase());
+        return [wethOption, ...dedup];
+      });
+      setPendingToken(wethOption);
+      setPendingAmount(String(n));
+      setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
+    } catch (e) {
+      setStatus(`wrap error: ${errText(e)}`);
     }
   }
 
@@ -1196,6 +1243,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
+  const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
   const pendingInsufficient =
     Number.isFinite(pendingAmountNum)
@@ -1417,24 +1465,47 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <>
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
                 <div className="rs-token-center">
-                  <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                    <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
-                    {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
-                    <img
-                      key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
-                      src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
-                      alt={pendingToken?.symbol || 'TOKEN'}
-                      className="rs-token-art rs-selected-token-icon"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const fb = e.currentTarget.nextElementSibling;
-                        if (fb) fb.style.display = 'flex';
-                      }}
-                    />
-                    <div className="rs-token-art rs-token-fallback rs-selected-token-icon" style={{ display: 'none' }}>
-                      {tokenInitials(pendingToken?.symbol || '??')}
+                  <div className="rs-modal-wrap-row">
+                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
+                      <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
+                      {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
+                      <img
+                        key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
+                        src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
+                        alt={pendingToken?.symbol || 'TOKEN'}
+                        className="rs-token-art rs-selected-token-icon"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fb = e.currentTarget.nextElementSibling;
+                          if (fb) fb.style.display = 'flex';
+                        }}
+                      />
+                      <div className="rs-token-art rs-token-fallback rs-selected-token-icon" style={{ display: 'none' }}>
+                        {tokenInitials(pendingToken?.symbol || '??')}
+                      </div>
+                      <div className="rs-symbol-overlay rs-selected-token-symbol">{pendingToken?.symbol || 'TOKEN'}</div>
                     </div>
-                    <div className="rs-symbol-overlay rs-selected-token-symbol">{pendingToken?.symbol || 'TOKEN'}</div>
+
+                    {pendingIsEth ? (
+                      <>
+                        <button type="button" className="rs-wrap-arrow" onClick={onModalWrapEth}>➡️</button>
+                        <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
+                          <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
+                          <img
+                            src={tokenIconUrl(8453, BASE_WETH) || ethIconUrl()}
+                            alt="WETH"
+                            className="rs-token-art rs-selected-token-icon"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fb = e.currentTarget.nextElementSibling;
+                              if (fb) fb.style.display = 'flex';
+                            }}
+                          />
+                          <div className="rs-token-art rs-token-fallback rs-selected-token-icon" style={{ display: 'none' }}>{tokenInitials('WETH')}</div>
+                          <div className="rs-symbol-overlay rs-selected-token-symbol">WETH</div>
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                 </div>
                 <input
@@ -1452,7 +1523,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     else if (pendingAmount !== '') setPendingAmount('');
                   }}
                 />
-                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmTokenAmount}>Confirm</button>
+                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={pendingIsEth ? onModalWrapEth : onConfirmTokenAmount}>{pendingIsEth ? 'Wrap' : 'Confirm'}</button>
               </>
             )}
           </div>
