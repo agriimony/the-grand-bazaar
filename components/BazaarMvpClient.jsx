@@ -912,21 +912,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           };
         });
 
-        try {
-          const ethOpt = await fetchTokenOption(BASE_ETH.toLowerCase(), wallet, 'ETH');
-          if (Number(ethOpt.availableAmount || 0) > 0) {
-            const dedup = list.filter((t) => normalizeAddr(t.token) !== normalizeAddr(BASE_ETH));
-            dedup.unshift({ ...ethOpt, imgUrl: ethIconUrl() });
-            dbg(`maker selector zapper tokens=${dedup.length} (with ETH)`);
-            setTokenOptions(dedup);
-          } else {
-            dbg(`maker selector zapper tokens=${list.length}`);
-            setTokenOptions(list);
-          }
-        } catch {
-          dbg(`maker selector zapper tokens=${list.length}`);
-          setTokenOptions(list);
-        }
+        dbg(`maker selector zapper tokens=${list.length}`);
+        setTokenOptions(list);
         if (typeof window !== 'undefined') {
           try {
             const cacheTokens = list.map((t) => ({ ...t, availableRaw: typeof t.availableRaw === 'bigint' ? t.availableRaw.toString() : String(t.availableRaw || '0') }));
