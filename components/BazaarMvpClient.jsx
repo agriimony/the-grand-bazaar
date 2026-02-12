@@ -152,6 +152,18 @@ function canonAddr(addr = '') {
   }
 }
 
+function isEthSentinelAddr(addr = '') {
+  const a = canonAddr(addr);
+  return a === canonAddr(BASE_ETH)
+    || a === '0x0000000000000000000000000000000000000000'
+    || a === '0x000000000000000000000000000000000000dead'
+    || a === 'eth';
+}
+
+function tokenKey(addr = '') {
+  return isEthSentinelAddr(addr) ? canonAddr(BASE_ETH) : canonAddr(addr);
+}
+
 function isStableToken(addr = '') {
   const a = canonAddr(addr);
   return a === BASE_USDC.toLowerCase();
@@ -232,16 +244,15 @@ function ethIconUrl() {
 }
 
 function catalogIconArt(token) {
-  const t = canonAddr(token || '');
-  const found = TOKEN_CATALOG.find((x) => canonAddr(x?.token || '') === t);
+  const t = tokenKey(token || '');
+  const found = TOKEN_CATALOG.find((x) => tokenKey(x?.token || '') === t);
   return found?.iconArt || '';
 }
 
 function isEthLikeToken(option) {
   if (!option) return false;
   const sym = String(option.symbol || '').toUpperCase();
-  const tok = canonAddr(option.token || '');
-  return sym === 'ETH' || tok === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || tok === '0x0000000000000000000000000000000000000000';
+  return sym === 'ETH' || isEthSentinelAddr(option.token || '');
 }
 
 async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwner, spender }) {
@@ -282,11 +293,7 @@ async function readPairBatch({ signerToken, signerOwner, senderToken, senderOwne
 }
 
 function normalizeAddr(a = '') {
-  try {
-    return ethers.getAddress(a).toLowerCase();
-  } catch {
-    return String(a || '').toLowerCase();
-  }
+  return tokenKey(a);
 }
 
 async function mapInChunks(items, chunkSize, fn) {
