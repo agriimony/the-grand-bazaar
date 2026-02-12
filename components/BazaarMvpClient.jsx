@@ -1022,16 +1022,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
+  async function swapPendingEthToWeth() {
+    const n = Number(pendingAmount || 0);
+    const wethOption = await fetchTokenOption(BASE_WETH.toLowerCase(), tokenModalWallet, 'WETH');
+    setTokenOptions((prev) => {
+      const dedup = prev.filter((t) => t.token !== BASE_WETH.toLowerCase());
+      return [wethOption, ...dedup];
+    });
+    setPendingToken(wethOption);
+    if (Number.isFinite(n) && n > 0) setPendingAmount(String(n));
+  }
+
   async function onModalWrapEth() {
     if (!pendingToken || !isEthLikeToken(pendingToken)) return;
     const n = Number(pendingAmount || 0);
     if (!Number.isFinite(n) || n <= 0) return;
-    if (!address || !sendTransactionAsync || !publicClient) {
-      setStatus('wallet connector not ready');
+
+    if (tokenModalPanel !== 'sender' || normalizeAddr(tokenModalWallet) !== normalizeAddr(address)) {
+      await swapPendingEthToWeth();
       return;
     }
-    if (normalizeAddr(tokenModalWallet) !== normalizeAddr(address) || tokenModalPanel !== 'sender') {
-      setStatus('wrap only available for your wallet inventory');
+
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
       return;
     }
 
@@ -1046,14 +1059,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         value: amountRaw,
       });
       await waitForTxConfirmation({ publicClient, txHash });
-
-      const wethOption = await fetchTokenOption(BASE_WETH.toLowerCase(), tokenModalWallet, 'WETH');
-      setTokenOptions((prev) => {
-        const dedup = prev.filter((t) => t.token !== BASE_WETH.toLowerCase());
-        return [wethOption, ...dedup];
-      });
-      setPendingToken(wethOption);
-      setPendingAmount(String(n));
+      await swapPendingEthToWeth();
       setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
       setStatus(`wrap error: ${errText(e)}`);
@@ -1523,7 +1529,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     else if (pendingAmount !== '') setPendingAmount('');
                   }}
                 />
-                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={pendingIsEth ? onModalWrapEth : onConfirmTokenAmount}>{pendingIsEth ? 'Wrap' : 'Confirm'}</button>
+                <button
+                  className="rs-btn rs-btn-positive rs-token-confirm-btn"
+                  onClick={pendingIsEth ? onModalWrapEth : onConfirmTokenAmount}
+                >
+                  {pendingIsEth && tokenModalPanel === 'sender' ? 'Wrap' : 'Confirm'}
+                </button>
               </>
             )}
           </div>
