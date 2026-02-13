@@ -582,7 +582,7 @@ html, body {
   font-family: var(--font-pixel-heading), monospace;
   font-weight: 900;
   letter-spacing: 0.5px;
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   padding: 8px 10px;
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
