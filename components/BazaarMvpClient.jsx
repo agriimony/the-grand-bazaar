@@ -1523,7 +1523,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : makerMode ? (
               <div className="rs-btn-stack">
-                {!makerSenderInsufficient ? <button className="rs-btn rs-btn-positive" onClick={onMakerApprove}>Approve</button> : null}
+                <button
+                  className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
+                  onClick={onMakerApprove}
+                  disabled={makerSenderInsufficient}
+                >
+                  {makerSenderInsufficient ? 'Insufficient balance' : 'Approve'}
+                </button>
                 <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
               </div>
             ) : (
