@@ -459,7 +459,7 @@ html, body {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   column-gap: 14px;
-  row-gap: 8px;
+  row-gap: 4px;
 }
 
 .rs-token-cell {
@@ -467,7 +467,7 @@ html, body {
   background: transparent;
   color: #ffe19c;
   padding: 4px;
-  min-height: 110px;
+  min-height: 98px;
   display: grid;
   place-items: center;
   cursor: pointer;
