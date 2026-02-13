@@ -1588,7 +1588,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     {tokenOptions.length === 0 ? <p>No supported tokens with balance found for {short(tokenModalWallet)}</p> : null}
                     <div className="rs-token-grid-wrap">
                       <div className="rs-token-grid">
-                        {tokenOptions.slice(0, 15).map((t) => (
+                        {tokenOptions.slice(0, 23).map((t) => (
                           <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
                             <div className="rs-token-wrap rs-token-cell-wrap">
                               <div className="rs-amount-overlay rs-token-cell-amount">{t.amountDisplay}</div>
