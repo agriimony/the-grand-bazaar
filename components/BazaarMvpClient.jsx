@@ -33,7 +33,7 @@ const TOKEN_CATALOG = [
   { token: BASE_USDC, symbol: 'USDC', decimals: 6 },
   { token: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', symbol: 'USDT', decimals: 6 },
   { token: BASE_WETH, symbol: 'WETH', decimals: 18, iconArt: '/weth-icon.png' },
-  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', symbol: 'HIGHER', decimals: 18 },
+  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', symbol: 'HIGHER', decimals: 18, iconArt: '/higher-icon.png' },
   { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', symbol: 'DEGEN', decimals: 18 },
 ];
 const FEE_TIERS = [500, 3000, 10000];
