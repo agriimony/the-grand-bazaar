@@ -1033,45 +1033,54 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg('maker sign wagmi success');
       } catch (e1) {
         dbg(`maker sign wagmi failed: ${errText(e1)}`);
-        try {
-          dbg('maker sign via provider.signTypedData');
-          if (!provider) throw new Error('provider unavailable');
-          const signerObj = await provider.getSigner();
-          sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
-          dbg('maker sign provider success');
-        } catch (e2) {
-          dbg(`maker sign provider failed: ${errText(e2)}`);
-          if (!walletProvider?.request) throw new Error('wallet signing unavailable');
-          const typedData = JSON.stringify({
-            types: {
-              EIP712Domain: [
-                { name: 'name', type: 'string' },
-                { name: 'version', type: 'string' },
-                { name: 'chainId', type: 'uint256' },
-                { name: 'verifyingContract', type: 'address' },
-              ],
-              ...ORDER_TYPES,
-            },
-            domain,
-            primaryType: 'Order',
-            message: typedOrder,
-          });
+
+        let eip1193 = walletProvider;
+        if (!eip1193?.request) {
           try {
-            dbg('maker sign via walletProvider eth_signTypedData_v4');
-            sig = await walletProvider.request({
-              method: 'eth_signTypedData_v4',
-              params: [address, typedData],
-            });
-            dbg('maker sign v4 success');
-          } catch (e3) {
-            dbg(`maker sign v4 failed: ${errText(e3)}`);
-            dbg('maker sign via walletProvider eth_signTypedData');
-            sig = await walletProvider.request({
-              method: 'eth_signTypedData',
-              params: [address, typedData],
-            });
-            dbg('maker sign legacy success');
+            const mod = await import('@farcaster/miniapp-sdk');
+            const sdk = mod?.sdk || mod?.default || mod;
+            const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
+            if (getter) eip1193 = await getter();
+            dbg(`maker sign sdk provider ${eip1193?.request ? 'found' : 'missing'}`);
+          } catch (e2) {
+            dbg(`maker sign sdk provider lookup failed: ${errText(e2)}`);
           }
+        }
+        if (!eip1193?.request && typeof window !== 'undefined' && window.ethereum?.request) {
+          eip1193 = window.ethereum;
+          dbg('maker sign using window.ethereum provider');
+        }
+        if (!eip1193?.request) throw new Error('wallet signing unavailable');
+
+        const typedData = JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: 'name', type: 'string' },
+              { name: 'version', type: 'string' },
+              { name: 'chainId', type: 'uint256' },
+              { name: 'verifyingContract', type: 'address' },
+            ],
+            ...ORDER_TYPES,
+          },
+          domain,
+          primaryType: 'Order',
+          message: typedOrder,
+        });
+        try {
+          dbg('maker sign via eth_signTypedData_v4');
+          sig = await eip1193.request({
+            method: 'eth_signTypedData_v4',
+            params: [address, typedData],
+          });
+          dbg('maker sign v4 success');
+        } catch (e3) {
+          dbg(`maker sign v4 failed: ${errText(e3)}`);
+          dbg('maker sign via eth_signTypedData');
+          sig = await eip1193.request({
+            method: 'eth_signTypedData',
+            params: [address, typedData],
+          });
+          dbg('maker sign legacy success');
         }
       }
       const split = ethers.Signature.from(sig);
