@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
-import { useAccount, useConnect, usePublicClient, useSendTransaction } from 'wagmi';
+import { useAccount, useConnect, usePublicClient, useSendTransaction, useSignTypedData } from 'wagmi';
 import { decodeCompressedOrder, encodeCompressedOrder } from '../lib/orders';
 
 const ERC20_ABI = [
@@ -396,6 +396,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const { address: wagmiAddress, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
+  const { signTypedDataAsync } = useSignTypedData();
   const publicClient = usePublicClient();
   const [status, setStatus] = useState('ready');
   const [lastSwapTxHash, setLastSwapTxHash] = useState('');
@@ -1021,34 +1022,43 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       let sig;
       try {
-        const signerObj = await provider.getSigner();
-        sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
-      } catch {
-        if (!walletProvider?.request) throw new Error('wallet signing unavailable');
-        const typedData = JSON.stringify({
-          types: {
-            EIP712Domain: [
-              { name: 'name', type: 'string' },
-              { name: 'version', type: 'string' },
-              { name: 'chainId', type: 'uint256' },
-              { name: 'verifyingContract', type: 'address' },
-            ],
-            ...ORDER_TYPES,
-          },
+        sig = await signTypedDataAsync({
           domain,
+          types: ORDER_TYPES,
           primaryType: 'Order',
           message: typedOrder,
         });
+      } catch {
         try {
-          sig = await walletProvider.request({
-            method: 'eth_signTypedData_v4',
-            params: [address, typedData],
-          });
+          const signerObj = await provider.getSigner();
+          sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
         } catch {
-          sig = await walletProvider.request({
-            method: 'eth_signTypedData',
-            params: [address, typedData],
+          if (!walletProvider?.request) throw new Error('wallet signing unavailable');
+          const typedData = JSON.stringify({
+            types: {
+              EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+              ],
+              ...ORDER_TYPES,
+            },
+            domain,
+            primaryType: 'Order',
+            message: typedOrder,
           });
+          try {
+            sig = await walletProvider.request({
+              method: 'eth_signTypedData_v4',
+              params: [address, typedData],
+            });
+          } catch {
+            sig = await walletProvider.request({
+              method: 'eth_signTypedData',
+              params: [address, typedData],
+            });
+          }
         }
       }
       const split = ethers.Signature.from(sig);
