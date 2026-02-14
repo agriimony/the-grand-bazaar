@@ -1787,7 +1787,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             tokenAddress={senderTokenAddressFinal}
             tokenImage={senderTokenImgFinal}
             chainId={parsed?.chainId}
-            editable={makerMode}
+            editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('sender')}
             danger={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
             insufficientBalance={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
@@ -1880,7 +1880,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             tokenAddress={signerTokenAddressFinal}
             tokenImage={signerTokenImgFinal}
             chainId={parsed?.chainId}
-            editable={makerMode}
+            editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('signer')}
             danger={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
             insufficientBalance={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
