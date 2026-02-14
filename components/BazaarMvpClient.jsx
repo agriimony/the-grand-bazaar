@@ -1132,12 +1132,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       const mod = await import('@farcaster/miniapp-sdk');
       const sdk = mod?.sdk || mod?.default || mod;
-      const payload = {
-        text: makerCastText,
-        embeds: makerOverrides.composeEmbed ? [{ url: makerOverrides.composeEmbed }] : [],
-      };
-      if (initialCastHash) payload.parent = { type: 'cast', hash: initialCastHash };
-      await sdk?.actions?.composeCast?.(payload);
+      const compose = sdk?.actions?.composeCast;
+      if (!compose) throw new Error('composeCast unavailable');
+
+      const textWithEmbed = makerOverrides.composeEmbed
+        ? `${makerCastText}\n${makerOverrides.composeEmbed}`
+        : makerCastText;
+
+      try {
+        await compose(textWithEmbed);
+      } catch {
+        await compose({ text: textWithEmbed });
+      }
+
       setStatus('compose opened');
     } catch (e) {
       setStatus(`compose error: ${errText(e)}`);
