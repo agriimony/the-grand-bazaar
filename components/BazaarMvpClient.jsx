@@ -421,6 +421,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
+  const [counterpartyHandle, setCounterpartyHandle] = useState('');
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
@@ -494,17 +495,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     async function resolveName() {
       if (!orderData?.signerWallet) {
         setCounterpartyName('Counterparty');
+        setCounterpartyHandle('');
         setCounterpartyProfileUrl('');
         return;
       }
       try {
         const r = await fetch(`/api/farcaster-name?address=${encodeURIComponent(orderData.signerWallet)}`);
         const d = await r.json();
-        const label = d?.name ? fitName(`@${d.name.replace(/^@/, '')}`) : (d?.fallback || short(orderData.signerWallet));
+        const rawHandle = d?.name ? `@${String(d.name).replace(/^@/, '')}` : '';
+        const label = rawHandle ? fitName(rawHandle) : (d?.fallback || short(orderData.signerWallet));
         setCounterpartyName(label || short(orderData.signerWallet));
+        setCounterpartyHandle(rawHandle);
         setCounterpartyProfileUrl(d?.profileUrl || '');
       } catch {
         setCounterpartyName(short(orderData.signerWallet));
+        setCounterpartyHandle('');
         setCounterpartyProfileUrl('');
       }
     }
@@ -1127,8 +1132,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       dbg('maker sign signature parsed, encoding compressed order');
       const compressed = encodeCompressedOrder(fullOrder);
       const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
+      const isPrivateOrder = String(parsed.signerWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+      const mentionPrefix = isPrivateOrder && counterpartyHandle ? `${counterpartyHandle} ` : '';
       const lines = [
-        `WTS: ${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
+        `${mentionPrefix}WTS: ${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
         `Offer expires in ${offerExpiryInLabel(makerExpirySec)}`,
         `GBZ1:${compressed}`,
       ];
@@ -1159,6 +1166,32 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const sdk = mod?.sdk || mod?.default || mod;
       const compose = sdk?.actions?.composeCast;
       if (!compose) throw new Error('composeCast unavailable');
+
+      const isPrivateOrder = String(parsed?.signerWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+      let mentionHandle = counterpartyHandle;
+      if (isPrivateOrder && !mentionHandle && parsed?.signerWallet) {
+        try {
+          const rr = await fetch(`/api/farcaster-name?address=${encodeURIComponent(parsed.signerWallet)}`, { cache: 'no-store' });
+          const dd = await rr.json();
+          mentionHandle = dd?.name ? `@${String(dd.name).replace(/^@/, '')}` : '';
+          if (mentionHandle) {
+            setCounterpartyHandle(mentionHandle);
+            setCounterpartyName(fitName(mentionHandle));
+          }
+        } catch {
+          // no-op
+        }
+      }
+      if (isPrivateOrder && !mentionHandle) {
+        const fallback = String(counterpartyName || '').trim();
+        if (fallback.startsWith('@') && !fallback.includes('…')) mentionHandle = fallback;
+      }
+
+      const step1Text = (isPrivateOrder && mentionHandle)
+        ? (makerCastText.startsWith(`${mentionHandle} `)
+          ? makerCastText
+          : makerCastText.replace(/^WTS:/, `${mentionHandle} WTS:`))
+        : makerCastText;
 
       const publishEmbedStep = async (offerCastHash) => {
         const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
@@ -1201,13 +1234,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       try {
         const first = await compose({
-          text: makerCastText,
+          text: step1Text,
           ...(parent ? { parent } : {}),
         });
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch (e1) {
         dbg(`step1 compose object failed: ${errText(e1)}`);
-        const first = await compose(makerCastText);
+        const first = await compose(step1Text);
         offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
