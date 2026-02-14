@@ -1019,8 +1019,38 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         verifyingContract: parsed.swapContract,
       };
 
-      const signerObj = await provider.getSigner();
-      const sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
+      let sig;
+      try {
+        const signerObj = await provider.getSigner();
+        sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
+      } catch {
+        if (!walletProvider?.request) throw new Error('wallet signing unavailable');
+        const typedData = JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: 'name', type: 'string' },
+              { name: 'version', type: 'string' },
+              { name: 'chainId', type: 'uint256' },
+              { name: 'verifyingContract', type: 'address' },
+            ],
+            ...ORDER_TYPES,
+          },
+          domain,
+          primaryType: 'Order',
+          message: typedOrder,
+        });
+        try {
+          sig = await walletProvider.request({
+            method: 'eth_signTypedData_v4',
+            params: [address, typedData],
+          });
+        } catch {
+          sig = await walletProvider.request({
+            method: 'eth_signTypedData',
+            params: [address, typedData],
+          });
+        }
+      }
       const split = ethers.Signature.from(sig);
 
       const fullOrder = {
