@@ -981,22 +981,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     try {
       setStatus('signing maker order');
-      dbg('maker sign prepare order fields');
-
-      let protocolFee = null;
-      let requiredSenderKind = null;
-      if (checks?.protocolFeeBps != null && checks?.requiredSenderKind) {
-        protocolFee = BigInt(checks.protocolFeeBps);
-        requiredSenderKind = checks.requiredSenderKind;
-        dbg('maker sign using cached protocolFee/kind from checks');
-      } else {
-        dbg('maker sign fetching protocolFee/kind from swap');
-        const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-        const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
-        const pfk = await Promise.all([swap.protocolFee(), swap.requiredSenderKind()]);
-        protocolFee = BigInt(pfk[0].toString());
-        requiredSenderKind = pfk[1];
-      }
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
+      const [protocolFee, requiredSenderKind] = await Promise.all([
+        swap.protocolFee(),
+        swap.requiredSenderKind(),
+      ]);
 
       const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
       const senderAmount = ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
