@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { useAccount, useConnect, usePublicClient, useSendTransaction } from 'wagmi';
-import { decodeCompressedOrder } from '../lib/orders';
+import { decodeCompressedOrder, encodeCompressedOrder } from '../lib/orders';
 
 const ERC20_ABI = [
   'function allowance(address owner,address spender) view returns (uint256)',
@@ -22,6 +22,24 @@ const SWAP_ABI = [
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
 const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
+const ORDER_TYPES = {
+  Order: [
+    { name: 'nonce', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'protocolFee', type: 'uint256' },
+    { name: 'signer', type: 'Party' },
+    { name: 'sender', type: 'Party' },
+    { name: 'affiliateWallet', type: 'address' },
+    { name: 'affiliateAmount', type: 'uint256' },
+  ],
+  Party: [
+    { name: 'wallet', type: 'address' },
+    { name: 'token', type: 'address' },
+    { name: 'kind', type: 'bytes4' },
+    { name: 'id', type: 'uint256' },
+    { name: 'amount', type: 'uint256' },
+  ],
+};
 
 // removed duplicate abi block
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
@@ -398,10 +416,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
   const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
+  const [makerStep, setMakerStep] = useState('approve');
+  const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
+  const [makerCastText, setMakerCastText] = useState('');
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
   };
+
+  useEffect(() => {
+    if (!makerMode) return;
+    setMakerStep('approve');
+    setMakerCompressedOrder('');
+    setMakerCastText('');
+  }, [
+    makerMode,
+    makerOverrides.senderToken,
+    makerOverrides.senderAmount,
+    makerOverrides.senderDecimals,
+    makerOverrides.signerToken,
+    makerOverrides.signerAmount,
+    makerOverrides.signerDecimals,
+    makerExpirySec,
+  ]);
 
   useEffect(() => {
     async function loadFromCastHash() {
@@ -893,6 +930,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       });
       setStatus(`approving ${sym}: confirming`);
       await waitForTxConfirmation({ publicClient, txHash });
+      setMakerStep('sign');
       setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
       setStatus(`approve error: ${errText(e)}`);
@@ -917,6 +955,128 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return h === 1 ? 'Expiry: 1 hour' : `Expiry: ${h} hours`;
     }
     return `Expiry: ${sec}s`;
+  }
+
+  async function onMakerSign() {
+    if (!makerMode || !parsed) return;
+    if (!address || !provider) {
+      setStatus('connect wallet');
+      return;
+    }
+
+    const signerToken = makerOverrides.senderToken;
+    const signerAmountHuman = makerOverrides.senderAmount;
+    const signerDecimals = Number(makerOverrides.senderDecimals ?? 18);
+    const senderToken = makerOverrides.signerToken;
+    const senderAmountHuman = makerOverrides.signerAmount;
+    const senderDecimals = Number(makerOverrides.signerDecimals ?? 18);
+
+    if (!signerToken || !senderToken || !signerAmountHuman || !senderAmountHuman) {
+      setStatus('select both offer tokens and amounts first');
+      return;
+    }
+
+    try {
+      setStatus('signing maker order');
+      const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
+      const [protocolFee, requiredSenderKind] = await Promise.all([
+        swap.protocolFee(),
+        swap.requiredSenderKind(),
+      ]);
+
+      const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
+      const senderAmount = ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
+      const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
+      const expiry = Math.floor(Date.now() / 1000) + Number(makerExpirySec || 24 * 3600);
+
+      const typedOrder = {
+        nonce,
+        expiry,
+        protocolFee: Number(protocolFee.toString()),
+        signer: {
+          wallet: address,
+          token: signerToken,
+          kind: requiredSenderKind,
+          id: 0,
+          amount: signerAmount,
+        },
+        sender: {
+          wallet: parsed.signerWallet || ethers.ZeroAddress,
+          token: senderToken,
+          kind: requiredSenderKind,
+          id: 0,
+          amount: senderAmount,
+        },
+        affiliateWallet: ethers.ZeroAddress,
+        affiliateAmount: 0,
+      };
+
+      const domain = {
+        name: 'SWAP',
+        version: '4.2',
+        chainId: 8453,
+        verifyingContract: parsed.swapContract,
+      };
+
+      const signerObj = await provider.getSigner();
+      const sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
+      const split = ethers.Signature.from(sig);
+
+      const fullOrder = {
+        chainId: 8453,
+        swapContract: parsed.swapContract,
+        nonce,
+        expiry: String(expiry),
+        signerWallet: address,
+        signerToken,
+        signerAmount,
+        protocolFee: String(protocolFee),
+        senderWallet: parsed.signerWallet || ethers.ZeroAddress,
+        senderToken,
+        senderAmount,
+        v: String(split.v),
+        r: split.r,
+        s: split.s,
+      };
+
+      const compressed = encodeCompressedOrder(fullOrder);
+      const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
+      const lines = [
+        `${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
+        `Expiry: ${new Date(expiry * 1000).toISOString()}`,
+        `GBZ1:${compressed}`,
+      ];
+      const castText = lines.join('\n');
+
+      setMakerCompressedOrder(compressed);
+      setMakerCastText(castText);
+      setMakerOverrides((prev) => ({ ...prev, composeEmbed: miniappUrl }));
+      setMakerStep('cast');
+      setStatus('maker order signed');
+    } catch (e) {
+      setStatus(`sign error: ${errText(e)}`);
+    }
+  }
+
+  async function onMakerCast() {
+    if (!makerCastText) {
+      setStatus('sign order first');
+      return;
+    }
+    try {
+      const mod = await import('@farcaster/miniapp-sdk');
+      const sdk = mod?.sdk || mod?.default || mod;
+      const payload = {
+        text: makerCastText,
+        embeds: makerOverrides.composeEmbed ? [{ url: makerOverrides.composeEmbed }] : [],
+      };
+      if (initialCastHash) payload.parent = { type: 'cast', hash: initialCastHash };
+      await sdk?.actions?.composeCast?.(payload);
+      setStatus('compose opened');
+    } catch (e) {
+      setStatus(`compose error: ${errText(e)}`);
+    }
   }
 
   async function onWrapFromEth() {
@@ -1523,13 +1683,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </div>
             ) : makerMode ? (
               <div className="rs-btn-stack">
-                <button
-                  className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
-                  onClick={onMakerApprove}
-                  disabled={makerSenderInsufficient}
-                >
-                  {makerSenderInsufficient ? 'Insufficient balance' : 'Approve'}
-                </button>
+                {makerStep === 'cast' ? (
+                  <button className="rs-btn rs-btn-positive" onClick={onMakerCast}>Cast</button>
+                ) : makerStep === 'sign' ? (
+                  <button className="rs-btn rs-btn-positive" onClick={onMakerSign}>Sign</button>
+                ) : (
+                  <button
+                    className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
+                    onClick={onMakerApprove}
+                    disabled={makerSenderInsufficient}
+                  >
+                    {makerSenderInsufficient ? 'Insufficient balance' : 'Approve'}
+                  </button>
+                )}
                 <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
               </div>
             ) : (
