@@ -1733,14 +1733,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             onWrap={onWrapFromEth}
             wrapBusy={isWrapping}
             footer={makerMode
-              ? 'You have not yet accepted'
+              ? (makerStep === 'cast' ? 'You have accepted' : 'You have not yet accepted')
               : checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'You have accepted'
                 : 'You have not yet accepted'
               : ''}
             footerTone={makerMode
-              ? 'bad'
+              ? (makerStep === 'cast' ? 'ok' : 'bad')
               : checks
               ? checks.takerBalanceOk && checks.takerApprovalOk
                 ? 'ok'
