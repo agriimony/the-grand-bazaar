@@ -959,8 +959,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   async function onMakerSign() {
-    if (!makerMode || !parsed) return;
+    dbg('maker sign clicked');
+    if (!makerMode || !parsed) { dbg('maker sign aborted: no makerMode/parsed'); return; }
     if (!address || !provider) {
+      dbg('maker sign aborted: no address/provider');
       setStatus('connect wallet');
       return;
     }
@@ -1022,17 +1024,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       let sig;
       try {
+        dbg('maker sign via wagmi useSignTypedData');
         sig = await signTypedDataAsync({
           domain,
           types: ORDER_TYPES,
           primaryType: 'Order',
           message: typedOrder,
         });
-      } catch {
+        dbg('maker sign wagmi success');
+      } catch (e1) {
+        dbg(`maker sign wagmi failed: ${errText(e1)}`);
         try {
+          dbg('maker sign via provider.signTypedData');
           const signerObj = await provider.getSigner();
           sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
-        } catch {
+          dbg('maker sign provider success');
+        } catch (e2) {
+          dbg(`maker sign provider failed: ${errText(e2)}`);
           if (!walletProvider?.request) throw new Error('wallet signing unavailable');
           const typedData = JSON.stringify({
             types: {
@@ -1049,15 +1057,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             message: typedOrder,
           });
           try {
+            dbg('maker sign via walletProvider eth_signTypedData_v4');
             sig = await walletProvider.request({
               method: 'eth_signTypedData_v4',
               params: [address, typedData],
             });
-          } catch {
+            dbg('maker sign v4 success');
+          } catch (e3) {
+            dbg(`maker sign v4 failed: ${errText(e3)}`);
+            dbg('maker sign via walletProvider eth_signTypedData');
             sig = await walletProvider.request({
               method: 'eth_signTypedData',
               params: [address, typedData],
             });
+            dbg('maker sign legacy success');
           }
         }
       }
@@ -1080,6 +1093,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         s: split.s,
       };
 
+      dbg('maker sign signature parsed, encoding compressed order');
       const compressed = encodeCompressedOrder(fullOrder);
       const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
       const lines = [
@@ -1094,7 +1108,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setMakerOverrides((prev) => ({ ...prev, composeEmbed: miniappUrl }));
       setMakerStep('cast');
       setStatus('maker order signed');
+      dbg('maker sign complete -> cast step');
     } catch (e) {
+      dbg(`maker sign error: ${errText(e)}`);
       setStatus(`sign error: ${errText(e)}`);
     }
   }
