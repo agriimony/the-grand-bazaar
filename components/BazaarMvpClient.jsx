@@ -1022,6 +1022,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       let sig;
       try {
+        if (!walletProvider?.request) throw new Error('wagmi skipped: no walletProvider.request');
         dbg('maker sign via wagmi useSignTypedData');
         sig = await signTypedDataAsync({
           domain,
@@ -1034,6 +1035,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg(`maker sign wagmi failed: ${errText(e1)}`);
         try {
           dbg('maker sign via provider.signTypedData');
+          if (!provider) throw new Error('provider unavailable');
           const signerObj = await provider.getSigner();
           sig = await signerObj.signTypedData(domain, ORDER_TYPES, typedOrder);
           dbg('maker sign provider success');
