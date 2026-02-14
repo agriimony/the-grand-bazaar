@@ -420,6 +420,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerStep, setMakerStep] = useState('approve');
   const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
   const [makerCastText, setMakerCastText] = useState('');
+  const [makerOfferCastHash, setMakerOfferCastHash] = useState('');
+  const [makerEmbedPosted, setMakerEmbedPosted] = useState(false);
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -430,6 +432,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setMakerStep('approve');
     setMakerCompressedOrder('');
     setMakerCastText('');
+    setMakerOfferCastHash('');
+    setMakerEmbedPosted(false);
   }, [
     makerMode,
     makerOverrides.senderToken,
@@ -1114,6 +1118,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setMakerCompressedOrder(compressed);
       setMakerCastText(castText);
+      setMakerOfferCastHash('');
+      setMakerEmbedPosted(false);
       setMakerOverrides((prev) => ({ ...prev, composeEmbed: miniappUrl }));
       setMakerStep('cast');
       setStatus('maker order signed');
@@ -1135,6 +1141,40 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const sdk = mod?.sdk || mod?.default || mod;
       const compose = sdk?.actions?.composeCast;
       if (!compose) throw new Error('composeCast unavailable');
+
+      const publishEmbedStep = async (offerCastHash) => {
+        const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
+        const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
+
+        let step2Hash = '';
+        try {
+          const second = await compose({
+            text: embedText,
+            embeds: [deeplink],
+            parent: { type: 'cast', hash: offerCastHash },
+          });
+          step2Hash = String(second?.cast?.hash || '').trim();
+        } catch (e2) {
+          dbg(`step2 compose object failed: ${errText(e2)}`);
+          const second = await compose(embedText);
+          step2Hash = String(second?.cast?.hash || '').trim();
+        }
+
+        if (step2Hash) {
+          setMakerEmbedPosted(true);
+          setStatus(`Waiting for ${fitOfferName(counterpartyName)} to accept`);
+        } else {
+          setMakerOfferCastHash(offerCastHash);
+          setMakerEmbedPosted(false);
+          setStatus('Step 1 posted. Post step 2 to publish the app link, then wait for a taker.');
+        }
+      };
+
+      // Step 2 retry path: step 1 already published previously.
+      if (makerOfferCastHash && !makerEmbedPosted) {
+        await publishEmbedStep(makerOfferCastHash);
+        return;
+      }
 
       // Step 1: publish offer text as a cast
       const parentHash = String(initialCastHash || '').trim();
@@ -1158,22 +1198,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      // Step 2: open follow-up compose with app deeplink to the new cast hash
-      const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
-      const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
-
-      try {
-        await compose({
-          text: embedText,
-          embeds: [deeplink],
-          parent: { type: 'cast', hash: offerCastHash },
-        });
-      } catch (e2) {
-        dbg(`step2 compose object failed: ${errText(e2)}`);
-        await compose(embedText);
-      }
-
-      setStatus('step 1 posted, step 2 composer opened');
+      setMakerOfferCastHash(offerCastHash);
+      await publishEmbedStep(offerCastHash);
     } catch (e) {
       setStatus(`compose error: ${errText(e)}`);
     }
@@ -1816,22 +1842,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 </div>
               </div>
             ) : makerMode ? (
-              <div className="rs-btn-stack">
-                {makerStep === 'cast' ? (
-                  <button className="rs-btn rs-btn-positive" onClick={onMakerCast}>Cast</button>
-                ) : makerStep === 'sign' ? (
-                  <button className="rs-btn rs-btn-positive" onClick={onMakerSign}>Sign</button>
-                ) : (
-                  <button
-                    className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
-                    onClick={onMakerApprove}
-                    disabled={makerSenderInsufficient}
-                  >
-                    {makerSenderInsufficient ? 'Insufficient balance' : 'Approve'}
-                  </button>
-                )}
-                <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
-              </div>
+              makerEmbedPosted ? (
+                <div className="rs-order-blocked">Waiting for {fitOfferName(counterpartyName)} to accept</div>
+              ) : (
+                <div className="rs-btn-stack">
+                  {makerStep === 'cast' ? (
+                    <button className="rs-btn rs-btn-positive" onClick={onMakerCast}>
+                      {makerOfferCastHash ? 'Embed Link' : 'Publish Offer'}
+                    </button>
+                  ) : makerStep === 'sign' ? (
+                    <button className="rs-btn rs-btn-positive" onClick={onMakerSign}>Sign</button>
+                  ) : (
+                    <button
+                      className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
+                      onClick={onMakerApprove}
+                      disabled={makerSenderInsufficient}
+                    >
+                      {makerSenderInsufficient ? 'Insufficient balance' : 'Approve'}
+                    </button>
+                  )}
+                  <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
+                </div>
+              )
             ) : (
               <div className="rs-btn-stack">
                 <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' || primaryLabel === 'Wrap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
