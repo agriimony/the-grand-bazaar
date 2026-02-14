@@ -967,15 +967,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    const signerToken = makerOverrides.senderToken;
-    const signerAmountHuman = makerOverrides.senderAmount;
-    const signerDecimals = Number(makerOverrides.senderDecimals ?? 18);
-    const senderToken = makerOverrides.signerToken;
-    const senderAmountHuman = makerOverrides.signerAmount;
-    const senderDecimals = Number(makerOverrides.signerDecimals ?? 18);
+    const signerToken = makerOverrides.senderToken || parsed.senderToken;
+    const signerDecimals = Number(makerOverrides.senderDecimals ?? checks?.senderDecimals ?? guessDecimals(signerToken));
+    const signerAmountHuman = makerOverrides.senderAmount || ethers.formatUnits(parsed.senderAmount, signerDecimals);
 
-    if (!signerToken || !senderToken || !signerAmountHuman || !senderAmountHuman) {
-      setStatus('select both offer tokens and amounts first');
+    const senderToken = makerOverrides.signerToken || parsed.signerToken;
+    const senderDecimals = Number(makerOverrides.signerDecimals ?? checks?.signerDecimals ?? guessDecimals(senderToken));
+    const senderAmountHuman = makerOverrides.signerAmount || ethers.formatUnits(parsed.signerAmount, senderDecimals);
+
+    if (!signerToken || !signerAmountHuman || !senderToken || !senderAmountHuman) {
+      setStatus('select your offer token and amount first');
       return;
     }
 
