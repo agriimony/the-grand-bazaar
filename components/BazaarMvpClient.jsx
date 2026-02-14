@@ -961,8 +961,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   async function onMakerSign() {
     dbg('maker sign clicked');
     if (!makerMode || !parsed) { dbg('maker sign aborted: no makerMode/parsed'); return; }
-    if (!address || !provider) {
-      dbg('maker sign aborted: no address/provider');
+    if (!address) {
+      dbg('maker sign aborted: no address');
       setStatus('connect wallet');
       return;
     }
