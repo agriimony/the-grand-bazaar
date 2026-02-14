@@ -92,6 +92,24 @@ function compactAmount(value, digits = 3) {
   return trim(n.toPrecision(3));
 }
 
+function offerExpiryInLabel(sec) {
+  const n = Number(sec || 0);
+  if (!Number.isFinite(n) || n <= 0) return 'soon';
+  if (n % (24 * 3600) === 0) {
+    const d = n / (24 * 3600);
+    return d === 1 ? '1 day' : `${d} days`;
+  }
+  if (n % 3600 === 0) {
+    const h = n / 3600;
+    return h === 1 ? '1 hour' : `${h} hours`;
+  }
+  if (n % 60 === 0) {
+    const m = n / 60;
+    return m === 1 ? '1 minute' : `${m} minutes`;
+  }
+  return `${n}s`;
+}
+
 function formatTokenAmountParts(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return { number: String(value), suffix: '' };
@@ -1110,8 +1128,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const compressed = encodeCompressedOrder(fullOrder);
       const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
       const lines = [
-        `${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
-        `Expiry: ${new Date(expiry * 1000).toISOString()}`,
+        `WTS: ${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
+        `Offer expires in ${offerExpiryInLabel(makerExpirySec)}`,
         `GBZ1:${compressed}`,
       ];
       const castText = lines.join('\n');
