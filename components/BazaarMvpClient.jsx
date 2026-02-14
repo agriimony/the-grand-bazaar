@@ -1412,8 +1412,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       selectedUsd = null;
     }
 
-    setMakerOverrides((prev) => ({
-      ...prev,
+    const nextOverrides = {
+      ...makerOverrides,
       [`${panel}Token`]: pendingToken.token,
       [`${panel}Symbol`]: pendingToken.symbol,
       [`${panel}Decimals`]: pendingToken.decimals,
@@ -1421,7 +1421,41 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
       [`${panel}Amount`]: pendingAmount,
       [`${panel}Usd`]: selectedUsd,
-    }));
+    };
+    setMakerOverrides(nextOverrides);
+
+    if (makerMode && panel === 'sender') {
+      const token = nextOverrides.senderToken;
+      const amount = nextOverrides.senderAmount;
+      const dec = Number(nextOverrides.senderDecimals ?? 18);
+      let insufficient = false;
+      try {
+        const inRaw = amount ? ethers.parseUnits(String(amount), dec) : 0n;
+        const availRaw = BigInt(nextOverrides.senderAvailableRaw || '0');
+        insufficient = inRaw > 0n && inRaw > availRaw;
+      } catch {}
+
+      if (!insufficient && token && amount) {
+        if (isEthSentinelAddr(token)) {
+          setMakerStep('sign');
+        } else if (parsed?.swapContract && address) {
+          try {
+            const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+            const c = new ethers.Contract(token, ERC20_ABI, rp);
+            const need = ethers.parseUnits(String(amount), dec);
+            const allowance = await c.allowance(address, parsed.swapContract);
+            setMakerStep(allowance >= need ? 'sign' : 'approve');
+          } catch {
+            setMakerStep('approve');
+          }
+        } else {
+          setMakerStep('approve');
+        }
+      } else {
+        setMakerStep('approve');
+      }
+    }
+
     setTokenModalOpen(false);
     setPendingToken(null);
     setPendingAmount('');
