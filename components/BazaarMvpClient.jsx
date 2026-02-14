@@ -703,7 +703,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('checking wallet');
 
-      const senderOwner = address || parsed.senderWallet || ethers.ZeroAddress;
+      const senderOwner = parsed.senderWallet || ethers.ZeroAddress;
       const pairRead = await readPairBatch({
         signerToken: parsed.signerToken,
         signerOwner: parsed.signerWallet,
