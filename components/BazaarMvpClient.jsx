@@ -1129,23 +1129,51 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('sign order first');
       return;
     }
+
     try {
       const mod = await import('@farcaster/miniapp-sdk');
       const sdk = mod?.sdk || mod?.default || mod;
       const compose = sdk?.actions?.composeCast;
       if (!compose) throw new Error('composeCast unavailable');
 
-      const textWithEmbed = makerOverrides.composeEmbed
-        ? `${makerCastText}\n${makerOverrides.composeEmbed}`
-        : makerCastText;
+      // Step 1: publish offer text as a cast
+      const parentHash = String(initialCastHash || '').trim();
+      const parent = parentHash ? { type: 'cast', hash: parentHash } : undefined;
+      let offerCastHash = '';
 
       try {
-        await compose(textWithEmbed);
-      } catch {
-        await compose({ text: textWithEmbed });
+        const first = await compose({
+          text: makerCastText,
+          ...(parent ? { parent } : {}),
+        });
+        offerCastHash = String(first?.cast?.hash || '').trim();
+      } catch (e1) {
+        dbg(`step1 compose object failed: ${errText(e1)}`);
+        const first = await compose(makerCastText);
+        offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
-      setStatus('compose opened');
+      if (!offerCastHash) {
+        setStatus('offer composer closed or not posted');
+        return;
+      }
+
+      // Step 2: open follow-up compose with app deeplink to the new cast hash
+      const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
+      const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
+
+      try {
+        await compose({
+          text: embedText,
+          embeds: [deeplink],
+          parent: { type: 'cast', hash: offerCastHash },
+        });
+      } catch (e2) {
+        dbg(`step2 compose object failed: ${errText(e2)}`);
+        await compose(embedText);
+      }
+
+      setStatus('step 1 posted, step 2 composer opened');
     } catch (e) {
       setStatus(`compose error: ${errText(e)}`);
     }
