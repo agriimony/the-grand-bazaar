@@ -1829,7 +1829,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             ) : isOrderNotFound ? (
               <div className="rs-order-blocked">Order Not Found</div>
             ) : isWrongWallet ? (
-              <div className="rs-order-blocked">Wrong Wallet!</div>
+              <div className="rs-order-blocked">This trade is not meant for you!</div>
             ) : isExpired || isTaken ? (
               <div className="rs-order-blocked">
                 {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
