@@ -435,9 +435,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     makerOverrides.senderToken,
     makerOverrides.senderAmount,
     makerOverrides.senderDecimals,
-    makerOverrides.signerToken,
-    makerOverrides.signerAmount,
-    makerOverrides.signerDecimals,
     makerExpirySec,
   ]);
 
