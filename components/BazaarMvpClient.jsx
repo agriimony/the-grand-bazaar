@@ -448,6 +448,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
   };
 
+  const showTopbarClose = Boolean(initialCompressed || initialCastHash);
+
   function resetToMainMakerFlow() {
     setCompressed('');
     setOrderData(null);
@@ -1337,6 +1339,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             if (Array.isArray(parsedCache?.tokens) && age >= 0 && age < cacheTtlMs) {
               const hydrated = parsedCache.tokens.map((t) => ({
                 ...t,
+                amountDisplay: '',
                 availableRaw: t?.availableRaw ? BigInt(t.availableRaw) : 0n,
               }));
               dbg(`maker selector cache hit tokens=${hydrated.length} ageMs=${age}`);
@@ -1365,7 +1368,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             availableRaw,
             usdValue: Number(t.usdValue || 0),
             priceUsd: Number(t.priceUsd || 0),
-            amountDisplay: formatTokenAmount(String(t.balance || '0')),
+            amountDisplay: '',
             imgUrl: catalogIconArt(t.token) || t.imgUrl || tokenIconUrl(8453, t.token) || null,
           };
         });
@@ -1405,8 +1408,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         };
       });
 
-      const nonzero = rawRows.filter((r) => r && r.balance > 0n);
-      const withUsd = await mapInChunks(nonzero, 5, async (r) => {
+      const known = rawRows.filter(Boolean);
+      const withUsd = await mapInChunks(known, 5, async (r) => {
         const balanceFormatted = ethers.formatUnits(r.balance, r.decimals);
         const usd = await quoteUsdValue(readProvider, r.token, r.balance, r.decimals);
         const availableAmount = Number(balanceFormatted);
@@ -1417,12 +1420,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           availableRaw: BigInt(r.balance),
           usdValue,
           priceUsd: availableAmount > 0 ? (usdValue / availableAmount) : 0,
-          amountDisplay: formatTokenAmount(balanceFormatted),
+          amountDisplay: '',
         };
       });
 
-      const list = withUsd.sort((a, b) => (b.usdValue || 0) - (a.usdValue || 0));
-      dbg(`maker selector rows=${rawRows.length} nonzero=${list.length}`);
+      const list = withUsd;
+      dbg(`maker selector rows=${rawRows.length} known=${list.length}`);
       setTokenOptions(list);
     } finally {
       setTokenModalLoading(false);
@@ -1853,8 +1856,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     <>
       <section className="rs-window">
         <div className="rs-topbar">
-          <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button>
-          <span>Trading with {parsed ? counterpartyName : 'Counterparty'}</span>
+          {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
+          <span>Trading with {makerMode && !parsed ? 'anyone' : (parsed ? counterpartyName : 'Counterparty')}</span>
         </div>
 
         <div className="rs-grid">
@@ -1951,8 +1954,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title={`${fitOfferName(counterpartyName)} offers`}
-            titleLink={counterpartyProfileUrl}
+            title={makerMode && !parsed ? 'Anybody offers' : `${fitOfferName(counterpartyName)} offers`}
+            titleLink={makerMode && !parsed ? '' : counterpartyProfileUrl}
             amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
             tokenAddress={signerTokenAddressFinal}
@@ -1968,7 +1971,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               : ''}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
             footer={makerMode
-              ? `${fitOfferName(counterpartyName)} has not yet accepted`
+              ? 'Nobody has accepted yet'
               : checks
               ? checks.makerAccepted
                 ? `${fitOfferName(counterpartyName)} accepted`
