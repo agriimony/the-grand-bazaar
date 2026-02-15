@@ -437,6 +437,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
+  const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(30);
   const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
   const [makerStep, setMakerStep] = useState('approve');
   const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
@@ -486,6 +487,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setMakerMode(true);
     setStatus('maker flow');
   }, [initialCompressed, initialCastHash]);
+
+  useEffect(() => {
+    if (!parsed) return;
+    const fee = Number(parsed.protocolFee || 0);
+    if (Number.isFinite(fee) && fee > 0) setMakerProtocolFeeBps(fee);
+  }, [parsed?.protocolFee]);
 
   useEffect(() => {
     async function loadFromCastHash() {
@@ -1313,9 +1320,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function openTokenSelector(panel) {
     if (!makerMode) return;
+    const isPublicCounterpartyPanel = panel === 'signer' && makerMode && !parsed;
     const panelWallet = panel === 'sender' ? parsed?.senderWallet : parsed?.signerWallet;
     const wallet = panelWallet || address || '';
-    if (!wallet) {
+    if (!wallet && !isPublicCounterpartyPanel) {
       setStatus('connect wallet');
       return;
     }
@@ -1324,12 +1332,31 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalOpen(true);
     setTokenModalStep('grid');
     setTokenModalLoading(true);
-    dbg(`maker selector open panel=${panel} wallet=${wallet}`);
+    dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicCounterpartyPanel}`);
 
     const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
     const cacheTtlMs = 15 * 60 * 1000;
 
     try {
+      if (isPublicCounterpartyPanel) {
+        const list = TOKEN_CATALOG.map((entry) => {
+          const tokenAddr = normalizeAddr(entry?.token || '');
+          return {
+            token: tokenAddr,
+            symbol: entry?.symbol || guessSymbol(tokenAddr),
+            decimals: Number(entry?.decimals ?? guessDecimals(tokenAddr)),
+            balance: '0',
+            availableAmount: 0,
+            availableRaw: 0n,
+            usdValue: 0,
+            priceUsd: 0,
+            amountDisplay: '',
+            imgUrl: entry?.iconArt || tokenIconUrl(8453, tokenAddr) || null,
+          };
+        });
+        setTokenOptions(list);
+        return;
+      }
       if (typeof window !== 'undefined') {
         try {
           const raw = window.localStorage.getItem(cacheKey);
@@ -1754,7 +1781,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
-  const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : 0n;
+  const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : BigInt(makerProtocolFeeBps || 30);
   const senderAmountFallback = parsed ? BigInt(parsed.senderAmount) : 0n;
   const feeFallback = (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
   const senderTotalFallback = senderAmountFallback + feeFallback;
