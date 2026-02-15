@@ -22,6 +22,7 @@ html, body {
 }
 
 .rs-topbar {
+  position: relative;
   text-align: center;
   padding: 12px 14px;
   border-bottom: 2px solid #31291f;
@@ -31,6 +32,26 @@ html, body {
   font-size: 14px;
   letter-spacing: 0.8px;
   text-shadow: 1px 1px 0 #2a2218;
+}
+
+.rs-topbar-close {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  width: 28px;
+  height: 24px;
+  border: 2px solid #2f271d;
+  background: #6d5f4d;
+  color: #f0c46e;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #2a2218;
+}
+
+.rs-topbar-close:active {
+  transform: translateY(1px);
 }
 
 .rs-grid {
@@ -654,6 +675,14 @@ textarea { width: 100%; font-size: 42px; }
   .rs-topbar {
     font-size: 12px;
     padding: 10px 8px;
+  }
+
+  .rs-topbar-close {
+    top: 4px;
+    left: 6px;
+    width: 24px;
+    height: 22px;
+    font-size: 12px;
   }
 
   .rs-grid {

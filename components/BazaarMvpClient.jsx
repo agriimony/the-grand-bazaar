@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import { useAccount, useConnect, usePublicClient, useSendTransaction, useSignTypedData } from 'wagmi';
 import { decodeCompressedOrder, encodeCompressedOrder } from '../lib/orders';
@@ -399,6 +400,7 @@ function errText(e) {
 }
 
 export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '' }) {
+  const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
     if (!initialCompressed) return null;
@@ -446,6 +448,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
   };
 
+  function resetToMainMakerFlow() {
+    setCompressed('');
+    setOrderData(null);
+    setChecks(null);
+    setLastSwapTxHash('');
+    setMakerMode(true);
+    setMakerOverrides({});
+    setMakerStep('approve');
+    setMakerCompressedOrder('');
+    setMakerCastText('');
+    setMakerOfferCastHash('');
+    setMakerEmbedPosted(false);
+    setStatus('maker flow');
+    router.replace('/');
+  }
+
   useEffect(() => {
     if (!makerMode) return;
     setMakerStep('approve');
@@ -460,6 +478,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     makerOverrides.senderDecimals,
     makerExpirySec,
   ]);
+
+  useEffect(() => {
+    if (initialCompressed || initialCastHash) return;
+    setMakerMode(true);
+    setStatus('maker flow');
+  }, [initialCompressed, initialCastHash]);
 
   useEffect(() => {
     async function loadFromCastHash() {
@@ -1828,7 +1852,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   return (
     <>
       <section className="rs-window">
-        <div className="rs-topbar">Trading with {parsed ? counterpartyName : 'Counterparty'}</div>
+        <div className="rs-topbar">
+          <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button>
+          <span>Trading with {parsed ? counterpartyName : 'Counterparty'}</span>
+        </div>
 
         <div className="rs-grid">
           <TradePanel
