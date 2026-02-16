@@ -1610,7 +1610,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const n = String(d?.name || '').replace(/^@/, '');
       const wallet = String(d?.address || '');
       if (!n) {
-        setCounterpartyError('fname not found');
+        setCounterpartyError('User not found');
         setStatus('counterparty not found');
         return;
       }

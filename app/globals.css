@@ -687,11 +687,13 @@ html, body {
 .rs-inline-error {
   width: min(360px, 86%);
   margin: 2px auto 6px;
-  color: #ffb3a8;
+  color: #ff5b5b;
   text-align: center;
-  font-family: var(--font-pixel-body), monospace;
+  font-family: var(--font-pixel-heading), monospace;
   font-size: 18px;
-  text-shadow: 1px 1px 0 #2a2218;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  text-shadow: 1px 1px 0 #000;
 }
 
 .meta-block {
