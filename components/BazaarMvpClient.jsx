@@ -20,6 +20,7 @@ const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
   'function requiredSenderKind() view returns (bytes4)',
   'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
+  'function cancel(uint256[] nonces) external',
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
 const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
@@ -884,8 +885,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         ? (Boolean(connectedNorm) && !connectedIsSigner)
         : (Boolean(connectedNorm) && connectedNorm === senderNorm);
       const ownerMatches = connectedIsSender || connectedIsSigner;
-      const takerBalanceOk = connectedIsSender ? takerBalance >= totalRequired : false;
-      const takerApprovalOk = connectedIsSender ? takerAllowance >= totalRequired : false;
+      const takerBalanceOk = connectedIsSender
+        ? (takerBalance >= totalRequired)
+        : connectedIsSigner
+        ? (isOpenOrder ? true : takerBalance >= totalRequired)
+        : false;
+      const takerApprovalOk = connectedIsSender
+        ? (takerAllowance >= totalRequired)
+        : connectedIsSigner
+        ? (isOpenOrder ? true : takerAllowance >= totalRequired)
+        : false;
 
       const senderIsWeth = normalizeAddr(parsed.senderToken) === BASE_WETH.toLowerCase();
       const wrapAmountNeeded = ownerMatches && senderIsWeth && takerBalance < totalRequired ? (totalRequired - takerBalance) : 0n;
@@ -1426,6 +1435,122 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       await publishEmbedStep(offerCastHash);
     } catch (e) {
       setStatus(`compose error: ${errText(e)}`);
+    }
+  }
+
+  async function onParsedSignerPublishOrder() {
+    if (!parsed) {
+      setStatus('order not loaded');
+      return;
+    }
+
+    try {
+      const mod = await import('@farcaster/miniapp-sdk');
+      const sdk = mod?.sdk || mod?.default || mod;
+      const compose = sdk?.actions?.composeCast;
+      if (!compose) throw new Error('composeCast unavailable');
+
+      const signerDecimals = guessDecimals(parsed.signerToken);
+      const senderDecimals = guessDecimals(parsed.senderToken);
+      const signerAmountHuman = ethers.formatUnits(parsed.signerAmount, signerDecimals);
+      const senderAmountHuman = ethers.formatUnits(parsed.senderAmount, senderDecimals);
+      const orderPayload = (compressed || '').trim() || encodeCompressedOrder(parsed);
+      const remaining = Math.max(0, Number(parsed.expiry || 0) - Math.floor(Date.now() / 1000));
+      const castText = [
+        `WTS: ${formatTokenAmount(signerAmountHuman)} ${guessSymbol(parsed.signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${guessSymbol(parsed.senderToken)}`,
+        `Offer expires in ${offerExpiryInLabel(remaining)}`,
+        `GBZ1:${orderPayload}`,
+      ].join('\n');
+
+      const publishEmbedStep = async (offerCastHash) => {
+        const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
+        const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
+        try {
+          await compose({
+            text: embedText,
+            embeds: [deeplink],
+            parent: { type: 'cast', hash: offerCastHash },
+          });
+          setStatus('order published');
+        } catch {
+          await compose(embedText);
+          setStatus('order published');
+        }
+      };
+
+      let offerCastHash = '';
+      const parentHash = String(initialCastHash || '').trim();
+      const parent = parentHash ? { type: 'cast', hash: parentHash } : undefined;
+      try {
+        const first = await compose({ text: castText, ...(parent ? { parent } : {}) });
+        offerCastHash = String(first?.cast?.hash || '').trim();
+      } catch {
+        const first = await compose(castText);
+        offerCastHash = String(first?.cast?.hash || '').trim();
+      }
+
+      if (!offerCastHash) {
+        setStatus('offer composer closed or not posted');
+        return;
+      }
+
+      await publishEmbedStep(offerCastHash);
+    } catch (e) {
+      setStatus(`compose error: ${errText(e)}`);
+    }
+  }
+
+  async function onParsedSignerCancelOrder() {
+    if (!parsed) {
+      setStatus('order not loaded');
+      return;
+    }
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
+      return;
+    }
+
+    const cancelData = SWAP_IFACE.encodeFunctionData('cancel', [[BigInt(parsed.nonce)]]);
+
+    try {
+      setStatus('cancelling order');
+      let txHash;
+      try {
+        txHash = await sendTransactionAsync({
+          account: address,
+          chainId: 8453,
+          to: parsed.swapContract,
+          data: cancelData,
+          value: 0n,
+        });
+      } catch (e1) {
+        const msg = errText(e1);
+        if (!/getChainId is not a function/i.test(msg)) throw e1;
+
+        let eip1193 = walletProvider;
+        if (!eip1193?.request && typeof window !== 'undefined' && window.ethereum?.request) {
+          eip1193 = window.ethereum;
+        }
+        if (!eip1193?.request) throw e1;
+
+        const hash = await eip1193.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: address,
+            to: parsed.swapContract,
+            data: cancelData,
+            value: '0x0',
+          }],
+        });
+        txHash = String(hash || '');
+      }
+
+      setStatus('cancelling order: confirming');
+      await waitForTxConfirmation({ publicClient, txHash });
+      setChecks((prev) => ({ ...(prev || {}), nonceUsed: true }));
+      setStatus(`order cancelled: ${String(txHash).slice(0, 10)}...`);
+    } catch (e) {
+      setStatus(`cancel error: ${errText(e)}`);
     }
   }
 
@@ -1995,6 +2120,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const publicCounterpartyLabel = hasSpecificMakerCounterparty
     ? (counterpartyName || 'counterparty')
     : 'anybody';
+  const isConnectedSignerView = !makerMode && checks?.connectedRole === 'signer';
+  const topbarCounterpartyLabel = isConnectedSignerView ? senderPartyName : counterpartyName;
 
   const loadingStage = /loading order/i.test(status)
     ? 'loading order'
@@ -2114,6 +2241,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   const flipForSigner = !makerMode && checks?.connectedRole === 'signer';
+  const showSignerOwnerActions = Boolean(parsed) && !makerMode && checks?.connectedRole === 'signer';
   const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
   const topTitle = isNeitherParty
     ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} offers`
@@ -2212,7 +2340,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           ) : (
             <span className="rs-topbar-title">
               <span>Trading with</span>
-              <span>{parsed ? counterpartyName : 'Counterparty'}</span>
+              <span>{parsed ? topbarCounterpartyLabel : 'Counterparty'}</span>
             </span>
           )}
         </div>
@@ -2285,6 +2413,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   <button className="rs-btn" onClick={cycleMakerExpiry}>{makerExpiryLabel(makerExpirySec)}</button>
                 </div>
               )
+            ) : showSignerOwnerActions ? (
+              <div className="rs-btn-stack">
+                <button className="rs-btn rs-btn-positive" onClick={onParsedSignerPublishOrder}>Publish order</button>
+                <button className="rs-btn decline" onClick={onParsedSignerCancelOrder}>Cancel</button>
+              </div>
             ) : (
               <div className="rs-btn-stack">
                 <button className={`rs-btn ${primaryLabel === 'Connect' || primaryLabel === 'Approve' || primaryLabel === 'Swap' || primaryLabel === 'Wrap' ? 'rs-btn-positive' : ''} ${isErrorState ? 'rs-btn-error' : ''}`} onClick={onPrimaryAction} disabled={isExpired || isTaken || isProtocolFeeMismatch}>{primaryLabel}</button>
