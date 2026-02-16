@@ -2304,7 +2304,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     className="rs-counterparty-result"
                     onClick={() => applyCounterpartySelection(u)}
                   >
-                    {u?.pfpUrl ? <img src={u.pfpUrl} alt={u?.name || 'user'} className="rs-counterparty-result-pfp" /> : <span className="rs-counterparty-result-pfp rs-counterparty-result-pfp-fallback">?</span>}
+                    {u?.pfpUrl ? (
+                      <>
+                        <img
+                          src={u.pfpUrl}
+                          alt={u?.name || 'user'}
+                          className="rs-counterparty-result-pfp"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fb = e.currentTarget.nextElementSibling;
+                            if (fb) fb.style.display = 'inline-flex';
+                          }}
+                        />
+                        <span className="rs-counterparty-result-pfp rs-counterparty-result-pfp-fallback" style={{ display: 'none' }}>?</span>
+                      </>
+                    ) : <span className="rs-counterparty-result-pfp rs-counterparty-result-pfp-fallback">?</span>}
                     <span>@{String(u?.name || '').replace(/^@/, '')}</span>
                   </button>
                 ))}
@@ -2479,23 +2493,41 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
   const valueMatch = String(valueText).match(/^Value:\s\$(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
+  const renderTitleAvatar = () => {
+    if (!titleAvatarUrl) return null;
+    return (
+      <>
+        <img
+          src={titleAvatarUrl}
+          alt={title}
+          className="rs-title-pfp"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            const fb = e.currentTarget.nextElementSibling;
+            if (fb) fb.style.display = 'inline-flex';
+          }}
+        />
+        <span className="rs-title-pfp rs-title-pfp-fallback" style={{ display: 'none' }}>?</span>
+      </>
+    );
+  };
 
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">
         {titleLink ? (
           <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link rs-title-with-pfp">
-            {titleAvatarUrl ? <img src={titleAvatarUrl} alt={title} className="rs-title-pfp" /> : null}
+            {renderTitleAvatar()}
             <span>{title}</span>
           </a>
         ) : onTitleClick ? (
           <button className="rs-title-btn rs-title-with-pfp" onClick={onTitleClick}>
-            {titleAvatarUrl ? <img src={titleAvatarUrl} alt={title} className="rs-title-pfp" /> : null}
+            {renderTitleAvatar()}
             <span>{title}</span>
           </button>
         ) : (
           <span className="rs-title-with-pfp">
-            {titleAvatarUrl ? <img src={titleAvatarUrl} alt={title} className="rs-title-pfp" /> : null}
+            {renderTitleAvatar()}
             <span>{title}</span>
           </span>
         )}
