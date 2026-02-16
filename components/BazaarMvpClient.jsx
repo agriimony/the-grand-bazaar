@@ -47,6 +47,7 @@ const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+const BASE_SWAP_CONTRACT = '0x00000000006c3852cbEf3e08E8dF289169EdE581';
 const TOKEN_CATALOG = [
   { token: BASE_ETH, symbol: 'ETH', decimals: 18, native: true, iconArt: '/eth-icon.png' },
   { token: BASE_USDC, symbol: 'USDC', decimals: 6 },
@@ -438,7 +439,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
-  const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(30);
+  const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(50);
   const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
   const [counterpartyInput, setCounterpartyInput] = useState('');
   const [counterpartyLoading, setCounterpartyLoading] = useState(false);
@@ -502,6 +503,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const fee = Number(orderData?.protocolFee || 0);
     if (Number.isFinite(fee) && fee > 0) setMakerProtocolFeeBps(fee);
   }, [orderData?.protocolFee]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLiveProtocolFee() {
+      if (!makerMode || parsed) return;
+      try {
+        const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+        const swap = new ethers.Contract(BASE_SWAP_CONTRACT, SWAP_ABI, rp);
+        const fee = Number((await swap.protocolFee()).toString());
+        if (!cancelled && Number.isFinite(fee) && fee > 0) {
+          setMakerProtocolFeeBps(fee);
+        }
+      } catch {
+        // keep fallback state
+      }
+    }
+    loadLiveProtocolFee();
+    return () => { cancelled = true; };
+  }, [makerMode, parsed]);
 
   useEffect(() => {
     async function loadFromCastHash() {
@@ -1878,7 +1898,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
-  const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : BigInt(makerProtocolFeeBps || 30);
+  const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : BigInt(makerProtocolFeeBps || 50);
   const senderAmountFallback = parsed ? BigInt(parsed.senderAmount) : 0n;
   const feeFallback = (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
   const senderTotalFallback = senderAmountFallback + feeFallback;
