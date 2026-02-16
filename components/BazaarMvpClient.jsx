@@ -507,7 +507,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   useEffect(() => {
     let cancelled = false;
     async function loadLiveProtocolFee() {
-      if (!makerMode || parsed) return;
+      if (!makerMode || orderData) return;
       try {
         const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
         const swap = new ethers.Contract(BASE_SWAP_CONTRACT, SWAP_ABI, rp);
@@ -521,7 +521,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     loadLiveProtocolFee();
     return () => { cancelled = true; };
-  }, [makerMode, parsed]);
+  }, [makerMode, orderData]);
 
   useEffect(() => {
     async function loadFromCastHash() {
