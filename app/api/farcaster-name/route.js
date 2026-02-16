@@ -45,12 +45,14 @@ export async function GET(req) {
       const name = u?.username || u?.display_name || '';
       const primaryAddress = getPrimaryAddress(u);
       const profileUrl = name ? `https://warpcast.com/${String(name).replace(/^@/, '')}` : '';
-      return Response.json({ name, fallback: query, profileUrl, address: primaryAddress || '' });
+      const pfpUrl = u?.pfp_url || u?.pfp?.url || '';
+      return Response.json({ name, fallback: query, profileUrl, address: primaryAddress || '', pfpUrl });
     }
 
     const addrTypes = ['verified_address', 'custody_address'];
     let name = '';
     let primaryAddress = address || '';
+    let pfpUrl = '';
 
     for (const t of addrTypes) {
       const url = `https://api.neynar.com/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=${t}`;
@@ -68,11 +70,12 @@ export async function GET(req) {
       const u = users?.[0];
       name = u?.username || u?.display_name || '';
       primaryAddress = getPrimaryAddress(u) || primaryAddress;
+      pfpUrl = u?.pfp_url || u?.pfp?.url || pfpUrl;
       if (name) break;
     }
 
     const profileUrl = name ? `https://warpcast.com/${String(name).replace(/^@/, '')}` : '';
-    return Response.json({ name, fallback: truncateAddress(address), profileUrl, address: primaryAddress || '' });
+    return Response.json({ name, fallback: truncateAddress(address), profileUrl, address: primaryAddress || '', pfpUrl });
   } catch {
     return Response.json({ name: '', fallback: '', profileUrl: '', address: '' });
   }

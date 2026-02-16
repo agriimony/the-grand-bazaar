@@ -103,6 +103,28 @@ html, body {
   text-decoration: underline;
 }
 
+.rs-topbar-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rs-title-with-pfp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rs-title-pfp {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid #2f271d;
+}
+
 .rs-box {
   border: 2px solid #342b21;
   background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
@@ -698,6 +720,20 @@ textarea { width: 100%; font-size: 42px; }
     width: 24px;
     height: 22px;
     font-size: 12px;
+  }
+
+  .rs-topbar-title {
+    gap: 6px;
+  }
+
+  .rs-title-with-pfp {
+    gap: 6px;
+  }
+
+  .rs-title-pfp {
+    width: 18px;
+    height: 18px;
+    border-width: 1px;
   }
 
   .rs-grid {
