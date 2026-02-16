@@ -427,6 +427,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyHandle, setCounterpartyHandle] = useState('');
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [counterpartyPfpUrl, setCounterpartyPfpUrl] = useState('');
+  const [userPfpUrl, setUserPfpUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
   const [makerMode, setMakerMode] = useState(false);
@@ -459,6 +460,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   function openCounterpartySelector() {
     setCounterpartyError('');
+    if (hasSpecificMakerCounterparty) {
+      setCounterpartyInput(String(counterpartyHandle || counterpartyName || '').replace(/^@/, ''));
+    } else {
+      setCounterpartyInput('Anybody');
+    }
     setCounterpartyModalOpen(true);
   }
 
@@ -639,6 +645,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   useEffect(() => {
     if (wagmiAddress && wagmiAddress !== address) setAddress(wagmiAddress);
   }, [wagmiAddress]);
+
+  useEffect(() => {
+    async function resolveUserPfp() {
+      if (!address) {
+        setUserPfpUrl('');
+        return;
+      }
+      try {
+        const r = await fetch(`/api/farcaster-name?address=${encodeURIComponent(address)}`, { cache: 'no-store' });
+        const d = await r.json();
+        setUserPfpUrl(d?.pfpUrl || '');
+      } catch {
+        setUserPfpUrl('');
+      }
+    }
+    resolveUserPfp();
+  }, [address]);
 
   useEffect(() => {
     async function autoConnectIfMiniApp() {
@@ -1549,8 +1572,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onSelectCounterparty() {
     const raw = String(counterpartyInput || '').trim();
+    const normalized = raw.toLowerCase();
     setCounterpartyError('');
-    if (!raw) {
+    if (!raw || normalized === 'anybody') {
       setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
       setCounterpartyName('Anybody');
       setCounterpartyHandle('');
@@ -2017,6 +2041,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-grid">
           <TradePanel
             title="You offer"
+            titleAvatarUrl={userPfpUrl}
             amount={yourAmountDisplayFinal}
             symbol={senderSymbolDisplay}
             tokenAddress={senderTokenAddressFinal}
@@ -2150,7 +2175,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             <button className="rs-modal-close" onClick={() => setCounterpartyModalOpen(false)}>✕</button>
             <div className="rs-modal-titlebar">Select Counterparty</div>
             <input
-              className="rs-amount-input"
+              className="rs-amount-input rs-counterparty-input"
               placeholder="Enter fname or 0x wallet"
               value={counterpartyInput}
               onChange={(e) => {

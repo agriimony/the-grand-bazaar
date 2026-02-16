@@ -651,6 +651,10 @@ html, body {
   opacity: 0.85;
 }
 
+.rs-counterparty-input {
+  font-size: 16px;
+}
+
 .rs-token-confirm-btn {
   display: block;
   width: min(360px, 86%);
@@ -785,6 +789,10 @@ textarea { width: 100%; font-size: 42px; }
   .rs-selected-token-icon {
     width: 58px;
     height: 58px;
+  }
+
+  .rs-counterparty-input {
+    font-size: 14px;
   }
 
   .rs-item {
