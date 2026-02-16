@@ -1667,13 +1667,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const r = await fetch(`/api/farcaster-name?query=${encodeURIComponent(raw)}`, { cache: 'no-store' });
       const d = await r.json();
       const users = Array.isArray(d?.users) ? d.users : [];
-      const q = raw.replace(/^@+/, '').toLowerCase();
-      const exact = users.find((u) => String(u?.name || '').toLowerCase() === q);
-
-      if (exact) {
-        applyCounterpartySelection(exact);
-        return;
-      }
 
       if (users.length > 1) {
         setCounterpartyResults(users.slice(0, 6));
