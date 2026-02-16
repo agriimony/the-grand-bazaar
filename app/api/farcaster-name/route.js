@@ -19,7 +19,8 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const address = (searchParams.get('address') || '').trim();
-    const query = (searchParams.get('query') || '').trim();
+    const queryRaw = (searchParams.get('query') || '').trim();
+    const query = queryRaw.replace(/^@+/, '').trim();
     if (!address && !query) return Response.json({ name: '', fallback: '', profileUrl: '', address: '' });
 
     const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
@@ -34,19 +35,25 @@ export async function GET(req) {
     }
 
     if (query && !address) {
-      const url = `https://api.neynar.com/v2/farcaster/user/search?q=${encodeURIComponent(query)}&limit=5`;
+      const url = `https://api.neynar.com/v2/farcaster/user/search?q=${encodeURIComponent(query)}&limit=8`;
       const r = await fetch(url, {
         headers: { accept: 'application/json', api_key: apiKey },
         cache: 'no-store',
       });
-      if (!r.ok) return Response.json({ name: '', fallback: query, profileUrl: '', address: '' });
+      if (!r.ok) return Response.json({ name: '', fallback: query, profileUrl: '', address: '', users: [] });
       const data = await r.json();
-      const u = data?.result?.users?.[0] || data?.users?.[0] || null;
-      const name = u?.username || u?.display_name || '';
-      const primaryAddress = getPrimaryAddress(u);
-      const profileUrl = name ? `https://warpcast.com/${String(name).replace(/^@/, '')}` : '';
-      const pfpUrl = u?.pfp_url || u?.pfp?.url || '';
-      return Response.json({ name, fallback: query, profileUrl, address: primaryAddress || '', pfpUrl });
+      const usersRaw = data?.result?.users || data?.users || [];
+      const users = usersRaw.map((u) => {
+        const username = u?.username || u?.display_name || '';
+        return {
+          name: username,
+          profileUrl: username ? `https://warpcast.com/${String(username).replace(/^@/, '')}` : '',
+          address: getPrimaryAddress(u) || '',
+          pfpUrl: u?.pfp_url || u?.pfp?.url || '',
+        };
+      });
+      const first = users[0] || { name: '', profileUrl: '', address: '', pfpUrl: '' };
+      return Response.json({ ...first, fallback: query, users });
     }
 
     const addrTypes = ['verified_address', 'custody_address'];

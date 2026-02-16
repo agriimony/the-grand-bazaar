@@ -447,6 +447,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyInput, setCounterpartyInput] = useState('');
   const [counterpartyLoading, setCounterpartyLoading] = useState(false);
   const [counterpartyError, setCounterpartyError] = useState('');
+  const [counterpartyResults, setCounterpartyResults] = useState([]);
   const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
   const [makerStep, setMakerStep] = useState('approve');
   const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
@@ -462,6 +463,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   function openCounterpartySelector() {
     setCounterpartyError('');
+    setCounterpartyResults([]);
     if (hasSpecificMakerCounterparty) {
       setCounterpartyInput(String(counterpartyHandle || counterpartyName || '').replace(/^@/, ''));
     } else {
@@ -1610,9 +1612,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     };
   }
 
+  function applyCounterpartySelection({ name, address: wallet, profileUrl, pfpUrl }) {
+    const n = String(name || '').replace(/^@/, '');
+    const handle = n ? `@${n}` : '';
+    setCounterpartyHandle(handle);
+    setCounterpartyName(handle ? fitName(handle) : 'Anybody');
+    setCounterpartyProfileUrl(profileUrl || (n ? `https://warpcast.com/${n}` : ''));
+    setCounterpartyPfpUrl(pfpUrl || '');
+    setMakerOverrides((prev) => ({
+      ...prev,
+      counterpartyWallet: /^0x[a-fA-F0-9]{40}$/.test(String(wallet || '')) ? ethers.getAddress(String(wallet)).toLowerCase() : ethers.ZeroAddress,
+    }));
+    setCounterpartyModalOpen(false);
+    setCounterpartyResults([]);
+    setStatus('counterparty set');
+  }
+
   async function onSelectCounterparty() {
     const raw = String(counterpartyInput || '').trim();
     setCounterpartyError('');
+    setCounterpartyResults([]);
     if (!raw) {
       setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
       setCounterpartyName('Anybody');
@@ -1647,24 +1666,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setCounterpartyLoading(true);
       const r = await fetch(`/api/farcaster-name?query=${encodeURIComponent(raw)}`, { cache: 'no-store' });
       const d = await r.json();
-      const n = String(d?.name || '').replace(/^@/, '');
-      const wallet = String(d?.address || '');
-      if (!n) {
-        setCounterpartyError('User not found');
-        setStatus('counterparty not found');
+      const users = Array.isArray(d?.users) ? d.users : [];
+      const q = raw.replace(/^@+/, '').toLowerCase();
+      const exact = users.find((u) => String(u?.name || '').toLowerCase() === q);
+
+      if (exact) {
+        applyCounterpartySelection(exact);
         return;
       }
-      const handle = `@${n}`;
-      setCounterpartyHandle(handle);
-      setCounterpartyName(fitName(handle));
-      setCounterpartyProfileUrl(d?.profileUrl || `https://warpcast.com/${n}`);
-      setCounterpartyPfpUrl(d?.pfpUrl || '');
-      setMakerOverrides((prev) => ({
-        ...prev,
-        counterpartyWallet: /^0x[a-fA-F0-9]{40}$/.test(wallet) ? ethers.getAddress(wallet).toLowerCase() : ethers.ZeroAddress,
-      }));
-      setCounterpartyModalOpen(false);
-      setStatus('counterparty set');
+
+      if (users.length > 1) {
+        setCounterpartyResults(users.slice(0, 6));
+        setCounterpartyError('Multiple users found. Select one below');
+        setStatus('multiple users found');
+        return;
+      }
+
+      if (users.length === 1) {
+        applyCounterpartySelection(users[0]);
+        return;
+      }
+
+      setCounterpartyError('User not found');
+      setStatus('counterparty not found');
     } catch {
       setCounterpartyError('Counterparty lookup failed');
       setStatus('counterparty lookup failed');
@@ -2274,10 +2298,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               onChange={(e) => {
                 setCounterpartyInput(e.target.value);
                 if (counterpartyError) setCounterpartyError('');
+                if (counterpartyResults.length) setCounterpartyResults([]);
               }}
               autoFocus
             />
             {counterpartyError ? <div className="rs-inline-error">{counterpartyError}</div> : null}
+            {counterpartyResults.length > 0 ? (
+              <div className="rs-counterparty-results">
+                {counterpartyResults.map((u, i) => (
+                  <button
+                    key={`${u?.name || 'user'}-${i}`}
+                    className="rs-counterparty-result"
+                    onClick={() => applyCounterpartySelection(u)}
+                  >
+                    {u?.pfpUrl ? <img src={u.pfpUrl} alt={u?.name || 'user'} className="rs-counterparty-result-pfp" /> : <span className="rs-counterparty-result-pfp rs-counterparty-result-pfp-fallback">?</span>}
+                    <span>@{String(u?.name || '').replace(/^@/, '')}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onSelectCounterparty} disabled={counterpartyLoading}>
               {counterpartyLoading ? 'Searching...' : 'Confirm'}
             </button>
