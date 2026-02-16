@@ -427,6 +427,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyHandle, setCounterpartyHandle] = useState('');
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
   const [counterpartyPfpUrl, setCounterpartyPfpUrl] = useState('');
+  const [senderPartyName, setSenderPartyName] = useState('Anybody');
+  const [senderPartyProfileUrl, setSenderPartyProfileUrl] = useState('');
   const [userPfpUrl, setUserPfpUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
@@ -590,6 +592,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     resolveName();
   }, [orderData?.signerWallet, makerMode]);
+
+  useEffect(() => {
+    async function resolveSenderName() {
+      const senderWallet = String(orderData?.senderWallet || '');
+      if (!senderWallet || normalizeAddr(senderWallet) === ethers.ZeroAddress.toLowerCase()) {
+        setSenderPartyName('Anybody');
+        setSenderPartyProfileUrl('');
+        return;
+      }
+      try {
+        const r = await fetch(`/api/farcaster-name?address=${encodeURIComponent(senderWallet)}`);
+        const d = await r.json();
+        const rawHandle = d?.name ? `@${String(d.name).replace(/^@/, '')}` : '';
+        const label = rawHandle ? fitName(rawHandle) : (d?.fallback || short(senderWallet));
+        setSenderPartyName(label || short(senderWallet));
+        setSenderPartyProfileUrl(d?.profileUrl || '');
+      } catch {
+        setSenderPartyName(short(senderWallet));
+        setSenderPartyProfileUrl('');
+      }
+    }
+    resolveSenderName();
+  }, [orderData?.senderWallet]);
 
   const parsed = useMemo(() => {
     if (!orderData) return null;
@@ -818,12 +843,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('checking wallet');
 
-      const senderOwner = parsed.senderWallet || ethers.ZeroAddress;
+      const configuredSenderOwner = parsed.senderWallet || ethers.ZeroAddress;
+      const connectedNormPre = normalizeAddr(address);
+      const signerNormPre = normalizeAddr(parsed.signerWallet);
+      const senderNormPre = normalizeAddr(configuredSenderOwner);
+      const isOpenOrder = senderNormPre === ethers.ZeroAddress.toLowerCase();
+      const connectedIsSignerPre = Boolean(connectedNormPre) && connectedNormPre === signerNormPre;
+      const effectiveSenderOwner = isOpenOrder && !connectedIsSignerPre
+        ? (address || ethers.ZeroAddress)
+        : configuredSenderOwner;
+
       const pairRead = await readPairBatch({
         signerToken: parsed.signerToken,
         signerOwner: parsed.signerWallet,
         senderToken: parsed.senderToken,
-        senderOwner,
+        senderOwner: effectiveSenderOwner,
         spender: parsed.swapContract,
       });
       const signerRead = pairRead.signer;
@@ -841,10 +875,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerBalance = senderRead.balance;
       const takerAllowance = senderRead.allowance;
       const connectedNorm = normalizeAddr(address);
-      const ownerNorm = normalizeAddr(senderOwner);
-      const ownerMatches = Boolean(connectedNorm) && connectedNorm === ownerNorm;
-      const takerBalanceOk = ownerMatches ? takerBalance >= totalRequired : false;
-      const takerApprovalOk = ownerMatches ? takerAllowance >= totalRequired : false;
+      const signerNorm = normalizeAddr(parsed.signerWallet);
+      const senderNorm = normalizeAddr(configuredSenderOwner);
+      const connectedIsSigner = Boolean(connectedNorm) && connectedNorm === signerNorm;
+      const connectedIsSender = isOpenOrder
+        ? (Boolean(connectedNorm) && !connectedIsSigner)
+        : (Boolean(connectedNorm) && connectedNorm === senderNorm);
+      const ownerMatches = connectedIsSender || connectedIsSigner;
+      const takerBalanceOk = connectedIsSender ? takerBalance >= totalRequired : false;
+      const takerApprovalOk = connectedIsSender ? takerAllowance >= totalRequired : false;
 
       const senderIsWeth = normalizeAddr(parsed.senderToken) === BASE_WETH.toLowerCase();
       const wrapAmountNeeded = ownerMatches && senderIsWeth && takerBalance < totalRequired ? (totalRequired - takerBalance) : 0n;
@@ -856,6 +895,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         nonceUsed: false,
         protocolFeeMismatch: false,
         ownerMatches,
+        connectedRole: connectedIsSender ? 'sender' : (connectedIsSigner ? 'signer' : 'none'),
         senderIsWeth,
         wrapAmountNeeded,
         takerEthBalance,
@@ -2019,6 +2059,92 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     } catch {}
   }
 
+  const flipForSigner = !makerMode && checks?.connectedRole === 'signer';
+  const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
+  const topTitle = isNeitherParty
+    ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} offers`
+    : 'You offer';
+  const topAmount = flipForSigner ? counterpartyAmountDisplayFinal : yourAmountDisplayFinal;
+  const topSymbol = flipForSigner ? signerSymbolDisplay : senderSymbolDisplay;
+  const topTokenAddress = flipForSigner ? signerTokenAddressFinal : senderTokenAddressFinal;
+  const topTokenImage = flipForSigner ? signerTokenImgFinal : senderTokenImgFinal;
+  const topDanger = makerMode ? makerSenderInsufficient : Boolean(checks && (flipForSigner ? !checks.makerBalanceOk : !checks.takerBalanceOk));
+  const topInsufficient = topDanger;
+  const topValueText = flipForSigner ? counterpartyValueTextFinal : yourValueTextFinal;
+  const topFeeText = makerMode
+    ? ''
+    : (flipForSigner
+      ? ''
+      : (checks?.protocolFeeMismatch
+        ? 'Incorrect protocol fees'
+        : checks?.protocolFeeBps != null
+        ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+        : parsed
+        ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+        : ''));
+  const topFooter = makerMode
+    ? (makerStep === 'cast' ? 'You have accepted' : 'You have not yet accepted')
+    : checks
+    ? (flipForSigner
+      ? (checks.makerAccepted ? 'You have accepted' : 'You have not yet accepted')
+      : (checks.takerBalanceOk && checks.takerApprovalOk ? 'You have accepted' : 'You have not yet accepted'))
+    : '';
+  const topFooterTone = makerMode
+    ? (makerStep === 'cast' ? 'ok' : 'bad')
+    : checks
+    ? (flipForSigner
+      ? (checks.makerAccepted ? 'ok' : 'bad')
+      : (checks.takerBalanceOk && checks.takerApprovalOk ? 'ok' : 'bad'))
+    : 'ok';
+
+  const bottomTitle = makerMode && !parsed && !hasSpecificMakerCounterparty
+    ? 'Anybody offers'
+    : (flipForSigner && senderPartyName === 'Anybody'
+      ? 'Anybody offers'
+      : `${fitOfferName(flipForSigner ? senderPartyName : counterpartyName)} offers`);
+  const bottomTitleLink = makerMode && !parsed && !hasSpecificMakerCounterparty
+    ? ''
+    : (flipForSigner ? senderPartyProfileUrl : counterpartyProfileUrl);
+  const bottomTitleAvatar = makerMode && !parsed && !hasSpecificMakerCounterparty
+    ? ''
+    : (flipForSigner ? '' : counterpartyPfpUrl);
+  const bottomAmount = flipForSigner ? yourAmountDisplayFinal : counterpartyAmountDisplayFinal;
+  const bottomSymbol = flipForSigner ? senderSymbolDisplay : signerSymbolDisplay;
+  const bottomTokenAddress = flipForSigner ? senderTokenAddressFinal : signerTokenAddressFinal;
+  const bottomTokenImage = flipForSigner ? senderTokenImgFinal : signerTokenImgFinal;
+  const bottomDanger = makerMode ? makerSignerInsufficient : Boolean(checks && (flipForSigner ? !checks.takerBalanceOk : !checks.makerBalanceOk));
+  const bottomInsufficient = bottomDanger;
+  const bottomValueText = flipForSigner ? yourValueTextFinal : counterpartyValueTextFinal;
+  const bottomFeeText = makerMode
+    ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+    : (flipForSigner
+      ? (checks?.protocolFeeMismatch
+        ? 'Incorrect protocol fees'
+        : checks?.protocolFeeBps != null
+        ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+        : parsed
+        ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+        : '')
+      : '');
+  const bottomFooter = makerMode
+    ? (hasSpecificMakerCounterparty ? `${fitOfferName(counterpartyName)} has not yet accepted` : 'Nobody has accepted yet')
+    : checks
+    ? (flipForSigner
+      ? (checks.takerBalanceOk && checks.takerApprovalOk
+        ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} accepted`
+        : `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} has not yet accepted`)
+      : (checks.makerAccepted
+        ? `${fitOfferName(counterpartyName)} accepted`
+        : `${fitOfferName(counterpartyName)} has not yet accepted`))
+    : '';
+  const bottomFooterTone = makerMode
+    ? 'bad'
+    : checks
+    ? (flipForSigner
+      ? (checks.takerBalanceOk && checks.takerApprovalOk ? 'ok' : 'bad')
+      : (checks.makerAccepted ? 'ok' : 'bad'))
+    : 'ok';
+
   return (
     <>
       <section className="rs-window">
@@ -2039,44 +2165,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
         <div className="rs-grid">
           <TradePanel
-            title="You offer"
-            titleAvatarUrl={userPfpUrl}
-            amount={yourAmountDisplayFinal}
-            symbol={senderSymbolDisplay}
-            tokenAddress={senderTokenAddressFinal}
-            tokenImage={senderTokenImgFinal}
+            title={topTitle}
+            titleAvatarUrl={isNeitherParty ? '' : (flipForSigner ? '' : userPfpUrl)}
+            amount={topAmount}
+            symbol={topSymbol}
+            tokenAddress={topTokenAddress}
+            tokenImage={topTokenImage}
             chainId={parsed?.chainId}
             editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('sender')}
-            danger={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
-            insufficientBalance={makerMode ? makerSenderInsufficient : Boolean(checks && !checks.takerBalanceOk)}
-            valueText={yourValueTextFinal}
-            feeText={makerMode ? '' : checks?.protocolFeeMismatch
-              ? 'Incorrect protocol fees'
-              : checks?.protocolFeeBps != null
-              ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-              : parsed
-              ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-              : ''}
+            danger={topDanger}
+            insufficientBalance={topInsufficient}
+            valueText={topValueText}
+            feeText={topFeeText}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
-            wrapHint={showWrapHint}
-            wrapAmount={showWrapHint ? formatTokenAmount(ethers.formatUnits(wrapAmountNeeded, 18)) : ''}
+            wrapHint={!flipForSigner && showWrapHint}
+            wrapAmount={!flipForSigner && showWrapHint ? formatTokenAmount(ethers.formatUnits(wrapAmountNeeded, 18)) : ''}
             onWrap={onWrapFromEth}
             wrapBusy={isWrapping}
-            footer={makerMode
-              ? (makerStep === 'cast' ? 'You have accepted' : 'You have not yet accepted')
-              : checks
-              ? checks.takerBalanceOk && checks.takerApprovalOk
-                ? 'You have accepted'
-                : 'You have not yet accepted'
-              : ''}
-            footerTone={makerMode
-              ? (makerStep === 'cast' ? 'ok' : 'bad')
-              : checks
-              ? checks.takerBalanceOk && checks.takerApprovalOk
-                ? 'ok'
-                : 'bad'
-              : 'ok'}
+            footer={topFooter}
+            footerTone={topFooterTone}
           />
 
           <div className="rs-center">
@@ -2132,38 +2240,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title={makerMode && !parsed && !hasSpecificMakerCounterparty ? 'Anybody offers' : `${fitOfferName(counterpartyName)} offers`}
-            titleLink={makerMode && !parsed && !hasSpecificMakerCounterparty ? '' : counterpartyProfileUrl}
-            titleAvatarUrl={makerMode && !parsed && !hasSpecificMakerCounterparty ? '' : counterpartyPfpUrl}
+            title={bottomTitle}
+            titleLink={bottomTitleLink}
+            titleAvatarUrl={bottomTitleAvatar}
             onTitleClick={makerMode && !parsed ? openCounterpartySelector : undefined}
-            amount={counterpartyAmountDisplayFinal}
-            symbol={signerSymbolDisplay}
-            tokenAddress={signerTokenAddressFinal}
-            tokenImage={signerTokenImgFinal}
+            amount={bottomAmount}
+            symbol={bottomSymbol}
+            tokenAddress={bottomTokenAddress}
+            tokenImage={bottomTokenImage}
             chainId={parsed?.chainId}
             editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('signer')}
-            danger={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
-            insufficientBalance={makerMode ? makerSignerInsufficient : Boolean(checks && !checks.makerBalanceOk)}
-            valueText={counterpartyValueTextFinal}
-            feeText={makerMode
-              ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-              : ''}
+            danger={bottomDanger}
+            insufficientBalance={bottomInsufficient}
+            valueText={bottomValueText}
+            feeText={bottomFeeText}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
-            footer={makerMode
-              ? (hasSpecificMakerCounterparty ? `${fitOfferName(counterpartyName)} has not yet accepted` : 'Nobody has accepted yet')
-              : checks
-              ? checks.makerAccepted
-                ? `${fitOfferName(counterpartyName)} accepted`
-                : `${fitOfferName(counterpartyName)} has not yet accepted`
-              : ''}
-            footerTone={makerMode
-              ? 'bad'
-              : checks
-              ? checks.makerAccepted
-                ? 'ok'
-                : 'bad'
-              : 'ok'}
+            footer={bottomFooter}
+            footerTone={bottomFooterTone}
           />
         </div>
       </section>
