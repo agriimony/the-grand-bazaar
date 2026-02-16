@@ -660,6 +660,16 @@ html, body {
   padding: 14px 16px;
 }
 
+.rs-inline-error {
+  width: min(360px, 86%);
+  margin: 2px auto 6px;
+  color: #ffb3a8;
+  text-align: center;
+  font-family: var(--font-pixel-body), monospace;
+  font-size: 18px;
+  text-shadow: 1px 1px 0 #2a2218;
+}
+
 .meta-block {
   margin-top: 26px;
   overflow-x: hidden;

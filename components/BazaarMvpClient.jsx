@@ -442,6 +442,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
   const [counterpartyInput, setCounterpartyInput] = useState('');
   const [counterpartyLoading, setCounterpartyLoading] = useState(false);
+  const [counterpartyError, setCounterpartyError] = useState('');
   const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
   const [makerStep, setMakerStep] = useState('approve');
   const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
@@ -454,6 +455,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   };
 
   const showTopbarClose = Boolean(initialCompressed || initialCastHash);
+
+  function openCounterpartySelector() {
+    setCounterpartyError('');
+    setCounterpartyModalOpen(true);
+  }
 
   function resetToMainMakerFlow() {
     setCompressed('');
@@ -1523,6 +1529,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onSelectCounterparty() {
     const raw = String(counterpartyInput || '').trim();
+    setCounterpartyError('');
     if (!raw) {
       setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
       setCounterpartyName('Anybody');
@@ -1539,6 +1546,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       try {
         wallet = ethers.getAddress(raw).toLowerCase();
       } catch {
+        setCounterpartyError('Invalid wallet address');
         setStatus('invalid wallet address');
         return;
       }
@@ -1559,6 +1567,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const n = String(d?.name || '').replace(/^@/, '');
       const wallet = String(d?.address || '');
       if (!n) {
+        setCounterpartyError('fname not found');
         setStatus('counterparty not found');
         return;
       }
@@ -1574,6 +1583,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setCounterpartyModalOpen(false);
       setStatus('counterparty set');
     } catch {
+      setCounterpartyError('Counterparty lookup failed');
       setStatus('counterparty lookup failed');
     } finally {
       setCounterpartyLoading(false);
@@ -1972,7 +1982,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-topbar">
           {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
           {makerMode && !parsed ? (
-            <button className="rs-title-btn rs-topbar-title" onClick={() => setCounterpartyModalOpen(true)}>
+            <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
               <span>Trading with</span>
               <span>{publicCounterpartyLabel}</span>
             </button>
@@ -2081,7 +2091,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             title={makerMode && !parsed && !hasSpecificMakerCounterparty ? 'Anybody offers' : `${fitOfferName(counterpartyName)} offers`}
             titleLink={makerMode && !parsed && !hasSpecificMakerCounterparty ? '' : counterpartyProfileUrl}
             titleAvatarUrl={makerMode && !parsed && !hasSpecificMakerCounterparty ? '' : counterpartyPfpUrl}
-            onTitleClick={makerMode && !parsed ? () => setCounterpartyModalOpen(true) : undefined}
+            onTitleClick={makerMode && !parsed ? openCounterpartySelector : undefined}
             amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
             tokenAddress={signerTokenAddressFinal}
@@ -2123,26 +2133,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               className="rs-amount-input"
               placeholder="Enter fname or 0x wallet"
               value={counterpartyInput}
-              onChange={(e) => setCounterpartyInput(e.target.value)}
+              onChange={(e) => {
+                setCounterpartyInput(e.target.value);
+                if (counterpartyError) setCounterpartyError('');
+              }}
               autoFocus
             />
+            {counterpartyError ? <div className="rs-inline-error">{counterpartyError}</div> : null}
             <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onSelectCounterparty} disabled={counterpartyLoading}>
               {counterpartyLoading ? 'Searching...' : 'Confirm'}
-            </button>
-            <button
-              className="rs-btn rs-token-confirm-btn"
-              onClick={() => {
-                setCounterpartyInput('');
-                setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
-                setCounterpartyName('Anybody');
-                setCounterpartyHandle('');
-                setCounterpartyProfileUrl('');
-                setCounterpartyPfpUrl('');
-                setCounterpartyModalOpen(false);
-                setStatus('public order mode');
-              }}
-            >
-              Set Public Counterparty
             </button>
           </div>
         </div>
