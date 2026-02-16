@@ -2381,7 +2381,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <div className="rs-order-blocked">This trade is not meant for you!</div>
             ) : isExpired || isTaken ? (
               <div className="rs-order-blocked">
-                {isExpired ? 'Order Expired!' : 'Order Already Taken!'}
+                {isExpired ? 'Order Expired!' : 'Order no longer available!'}
               </div>
             ) : showLoadingBar ? (
               <div className="rs-loading-wrap">
