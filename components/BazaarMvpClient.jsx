@@ -1365,7 +1365,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             if (Array.isArray(parsedCache?.tokens) && age >= 0 && age < cacheTtlMs) {
               const hydrated = parsedCache.tokens.map((t) => ({
                 ...t,
-                amountDisplay: '',
                 availableRaw: t?.availableRaw ? BigInt(t.availableRaw) : 0n,
               }));
               dbg(`maker selector cache hit tokens=${hydrated.length} ageMs=${age}`);
@@ -1394,7 +1393,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             availableRaw,
             usdValue: Number(t.usdValue || 0),
             priceUsd: Number(t.priceUsd || 0),
-            amountDisplay: '',
+            amountDisplay: formatTokenAmount(String(t.balance || '0')),
             imgUrl: catalogIconArt(t.token) || t.imgUrl || tokenIconUrl(8453, t.token) || null,
           };
         });
@@ -1446,7 +1445,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           availableRaw: BigInt(r.balance),
           usdValue,
           priceUsd: availableAmount > 0 ? (usdValue / availableAmount) : 0,
-          amountDisplay: '',
+          amountDisplay: formatTokenAmount(balanceFormatted),
         };
       });
 
