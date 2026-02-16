@@ -438,6 +438,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
   const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(30);
+  const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
+  const [counterpartyInput, setCounterpartyInput] = useState('');
+  const [counterpartyLoading, setCounterpartyLoading] = useState(false);
   const [makerExpirySec, setMakerExpirySec] = useState(24 * 60 * 60);
   const [makerStep, setMakerStep] = useState('approve');
   const [makerCompressedOrder, setMakerCompressedOrder] = useState('');
@@ -526,7 +529,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   useEffect(() => {
     async function resolveName() {
       if (!orderData?.signerWallet) {
-        setCounterpartyName('Counterparty');
+        if (makerMode) {
+          setCounterpartyName('Anybody');
+        } else {
+          setCounterpartyName('Counterparty');
+        }
         setCounterpartyHandle('');
         setCounterpartyProfileUrl('');
         return;
@@ -546,7 +553,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
     }
     resolveName();
-  }, [orderData?.signerWallet]);
+  }, [orderData?.signerWallet, makerMode]);
 
   const parsed = useMemo(() => {
     if (!orderData) return null;
@@ -1050,6 +1057,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
       const expiry = Math.floor(Date.now() / 1000) + Number(makerExpirySec || 24 * 3600);
 
+      const selectedCounterpartyWallet = String(makerOverrides.counterpartyWallet || parsed.signerWallet || ethers.ZeroAddress);
+
       const typedOrder = {
         nonce,
         expiry,
@@ -1062,7 +1071,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           amount: signerAmount,
         },
         sender: {
-          wallet: parsed.signerWallet || ethers.ZeroAddress,
+          wallet: selectedCounterpartyWallet,
           token: senderToken,
           kind: requiredSenderKind,
           id: 0,
@@ -1153,7 +1162,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         signerToken,
         signerAmount,
         protocolFee: String(protocolFee),
-        senderWallet: parsed.signerWallet || ethers.ZeroAddress,
+        senderWallet: selectedCounterpartyWallet,
         senderToken,
         senderAmount,
         v: String(split.v),
@@ -1164,7 +1173,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       dbg('maker sign signature parsed, encoding compressed order');
       const compressed = encodeCompressedOrder(fullOrder);
       const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
-      const isPrivateOrder = String(parsed.signerWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+      const isPrivateOrder = String(selectedCounterpartyWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
       const mentionPrefix = isPrivateOrder && counterpartyHandle ? `${counterpartyHandle} ` : '';
       const lines = [
         `${mentionPrefix}WTS: ${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
@@ -1319,7 +1328,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function openTokenSelector(panel) {
     if (!makerMode) return;
-    const isPublicCounterpartyPanel = panel === 'signer' && makerMode && !parsed;
+    const hasSpecificCounterparty = Boolean(
+      makerMode
+      && !parsed
+      && makerOverrides?.counterpartyWallet
+      && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+    );
+    const isPublicCounterpartyPanel = panel === 'signer' && makerMode && !parsed && !hasSpecificCounterparty;
     const panelWallet = panel === 'sender' ? parsed?.senderWallet : parsed?.signerWallet;
     const wallet = panelWallet || address || '';
     if (!wallet && !isPublicCounterpartyPanel) {
@@ -1498,6 +1513,62 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       amountDisplay: formatTokenAmount(amount),
       imgUrl: catalogIconArt(tokenAddr) || tokenIconUrl(8453, tokenAddr),
     };
+  }
+
+  async function onSelectCounterparty() {
+    const raw = String(counterpartyInput || '').trim();
+    if (!raw) {
+      setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
+      setCounterpartyName('Anybody');
+      setCounterpartyHandle('');
+      setCounterpartyProfileUrl('');
+      setCounterpartyModalOpen(false);
+      setStatus('public order mode');
+      return;
+    }
+
+    if (/^0x[a-fA-F0-9]{40}$/.test(raw)) {
+      let wallet = '';
+      try {
+        wallet = ethers.getAddress(raw).toLowerCase();
+      } catch {
+        setStatus('invalid wallet address');
+        return;
+      }
+      setCounterpartyName(short(wallet));
+      setCounterpartyHandle('');
+      setCounterpartyProfileUrl('');
+      setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: wallet }));
+      setCounterpartyModalOpen(false);
+      setStatus('counterparty set');
+      return;
+    }
+
+    try {
+      setCounterpartyLoading(true);
+      const r = await fetch(`/api/farcaster-name?query=${encodeURIComponent(raw)}`, { cache: 'no-store' });
+      const d = await r.json();
+      const n = String(d?.name || '').replace(/^@/, '');
+      const wallet = String(d?.address || '');
+      if (!n) {
+        setStatus('counterparty not found');
+        return;
+      }
+      const handle = `@${n}`;
+      setCounterpartyHandle(handle);
+      setCounterpartyName(fitName(handle));
+      setCounterpartyProfileUrl(d?.profileUrl || `https://warpcast.com/${n}`);
+      setMakerOverrides((prev) => ({
+        ...prev,
+        counterpartyWallet: /^0x[a-fA-F0-9]{40}$/.test(wallet) ? ethers.getAddress(wallet).toLowerCase() : ethers.ZeroAddress,
+      }));
+      setCounterpartyModalOpen(false);
+      setStatus('counterparty set');
+    } catch {
+      setStatus('counterparty lookup failed');
+    } finally {
+      setCounterpartyLoading(false);
+    }
   }
 
   async function onAddCustomToken() {
@@ -1759,6 +1830,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const isProtocolFeeMismatch = Boolean(checks?.protocolFeeMismatch) || /incorrect protocol fees/i.test(status || '');
   const isWrongWallet = Boolean(checks && checks.ownerMatches === false);
   const isErrorState = isExpired || isTaken || isOrderNotFound || isProtocolFeeMismatch || isWrongWallet || /error|expired|taken/i.test(status || '');
+  const hasSpecificMakerCounterparty = Boolean(
+    makerMode
+    && !parsed
+    && makerOverrides?.counterpartyWallet
+    && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+  );
+  const publicCounterpartyLabel = hasSpecificMakerCounterparty
+    ? (counterpartyName || 'counterparty')
+    : 'anybody';
 
   const loadingStage = /loading order/i.test(status)
     ? 'loading order'
@@ -1882,7 +1962,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       <section className="rs-window">
         <div className="rs-topbar">
           {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
-          <span>Trading with {makerMode && !parsed ? 'anyone' : (parsed ? counterpartyName : 'Counterparty')}</span>
+          {makerMode && !parsed ? (
+            <button className="rs-title-btn" onClick={() => setCounterpartyModalOpen(true)}>Trading with {publicCounterpartyLabel}</button>
+          ) : (
+            <span>Trading with {parsed ? counterpartyName : 'Counterparty'}</span>
+          )}
         </div>
 
         <div className="rs-grid">
@@ -1979,8 +2063,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           </div>
 
           <TradePanel
-            title={makerMode && !parsed ? 'Anybody offers' : `${fitOfferName(counterpartyName)} offers`}
-            titleLink={makerMode && !parsed ? '' : counterpartyProfileUrl}
+            title={makerMode && !parsed && !hasSpecificMakerCounterparty ? 'Anybody offers' : `${fitOfferName(counterpartyName)} offers`}
+            titleLink={makerMode && !parsed && !hasSpecificMakerCounterparty ? '' : counterpartyProfileUrl}
+            onTitleClick={makerMode && !parsed ? () => setCounterpartyModalOpen(true) : undefined}
             amount={counterpartyAmountDisplayFinal}
             symbol={signerSymbolDisplay}
             tokenAddress={signerTokenAddressFinal}
@@ -1996,7 +2081,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               : ''}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
             footer={makerMode
-              ? 'Nobody has accepted yet'
+              ? (hasSpecificMakerCounterparty ? `${fitOfferName(counterpartyName)} has not yet accepted` : 'Nobody has accepted yet')
               : checks
               ? checks.makerAccepted
                 ? `${fitOfferName(counterpartyName)} accepted`
@@ -2012,6 +2097,39 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           />
         </div>
       </section>
+
+      {counterpartyModalOpen ? (
+        <div className="rs-modal-backdrop">
+          <div className="rs-modal rs-panel">
+            <button className="rs-modal-close" onClick={() => setCounterpartyModalOpen(false)}>✕</button>
+            <div className="rs-modal-titlebar">Select Counterparty</div>
+            <input
+              className="rs-amount-input"
+              placeholder="Enter fname or 0x wallet"
+              value={counterpartyInput}
+              onChange={(e) => setCounterpartyInput(e.target.value)}
+              autoFocus
+            />
+            <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onSelectCounterparty} disabled={counterpartyLoading}>
+              {counterpartyLoading ? 'Searching...' : 'Confirm'}
+            </button>
+            <button
+              className="rs-btn rs-token-confirm-btn"
+              onClick={() => {
+                setCounterpartyInput('');
+                setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
+                setCounterpartyName('Anybody');
+                setCounterpartyHandle('');
+                setCounterpartyProfileUrl('');
+                setCounterpartyModalOpen(false);
+                setStatus('public order mode');
+              }}
+            >
+              Set Public Counterparty
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {tokenModalOpen ? (
         <div className="rs-modal-backdrop">
@@ -2170,7 +2288,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, onTitleClick, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenImage || tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -2178,7 +2296,7 @@ function TradePanel({ title, titleLink, amount, symbol, footer, footerTone = 'ok
 
   return (
     <div className="rs-panel">
-      <div className="rs-panel-title">{titleLink ? <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link">{title}</a> : title}</div>
+      <div className="rs-panel-title">{titleLink ? <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link">{title}</a> : (onTitleClick ? <button className="rs-title-btn" onClick={onTitleClick}>{title}</button> : title)}</div>
       <div className={`rs-box ${danger ? 'rs-danger' : ''}`} onClick={editable ? onEdit : undefined}>
         <p className="rs-value">
           {valueMatch ? (
