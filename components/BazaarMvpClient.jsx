@@ -463,7 +463,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (hasSpecificMakerCounterparty) {
       setCounterpartyInput(String(counterpartyHandle || counterpartyName || '').replace(/^@/, ''));
     } else {
-      setCounterpartyInput('Anybody');
+      setCounterpartyInput('');
     }
     setCounterpartyModalOpen(true);
   }
@@ -1572,9 +1572,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onSelectCounterparty() {
     const raw = String(counterpartyInput || '').trim();
-    const normalized = raw.toLowerCase();
     setCounterpartyError('');
-    if (!raw || normalized === 'anybody') {
+    if (!raw) {
       setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
       setCounterpartyName('Anybody');
       setCounterpartyHandle('');
@@ -2176,7 +2175,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             <div className="rs-modal-titlebar">Select Counterparty</div>
             <input
               className="rs-amount-input rs-counterparty-input"
-              placeholder="Enter fname or 0x wallet"
+              placeholder="Anybody"
               value={counterpartyInput}
               onChange={(e) => {
                 setCounterpartyInput(e.target.value);
