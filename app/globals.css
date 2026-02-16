@@ -36,22 +36,26 @@ html, body {
 
 .rs-topbar-close {
   position: absolute;
-  top: 6px;
-  left: 8px;
-  width: 28px;
-  height: 24px;
+  top: 4px;
+  right: 8px;
+  width: 30px;
+  height: 26px;
   border: 2px solid #2f271d;
-  background: #6d5f4d;
+  background: linear-gradient(180deg, #7a6a56 0%, #645644 100%);
   color: #f0c46e;
   font-family: var(--font-pixel-heading), monospace;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 900;
   line-height: 1;
   cursor: pointer;
   text-shadow: 1px 1px 0 #2a2218;
+  box-shadow: 0 2px 0 #2f271d;
+  transform: translateY(-1px);
 }
 
 .rs-topbar-close:active {
   transform: translateY(1px);
+  box-shadow: 0 0 0 #2f271d;
 }
 
 .rs-grid {
@@ -729,11 +733,11 @@ textarea { width: 100%; font-size: 42px; }
   }
 
   .rs-topbar-close {
-    top: 4px;
-    left: 6px;
+    top: 3px;
+    right: 6px;
     width: 24px;
     height: 22px;
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .rs-topbar-title {
