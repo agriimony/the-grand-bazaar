@@ -47,7 +47,7 @@ const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
-const BASE_SWAP_CONTRACT = '0x00000000006c3852cbEf3e08E8dF289169EdE581';
+const BASE_SWAP_CONTRACT = '0x8a9969ed0A9bb3cDA7521DDaA614aE86e72e0A57';
 const TOKEN_CATALOG = [
   { token: BASE_ETH, symbol: 'ETH', decimals: 18, native: true, iconArt: '/eth-icon.png' },
   { token: BASE_USDC, symbol: 'USDC', decimals: 6 },
@@ -1054,7 +1054,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onMakerApprove() {
     if (!makerMode) return;
-    if (!parsed?.swapContract) {
+    const swapContract = parsed?.swapContract || BASE_SWAP_CONTRACT;
+    if (!swapContract) {
       setStatus('order not loaded');
       return;
     }
@@ -1079,7 +1080,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const rawAmount = ethers.parseUnits(String(amount), decimals);
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
       setStatus(`approving ${sym}`);
-      const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, rawAmount]);
+      const approveData = ERC20_IFACE.encodeFunctionData('approve', [swapContract, rawAmount]);
       const txHash = await sendTransactionAsync({
         account: address,
         chainId: 8453,
@@ -1118,20 +1119,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onMakerSign() {
     dbg('maker sign clicked');
-    if (!makerMode || !parsed) { dbg('maker sign aborted: no makerMode/parsed'); return; }
+    if (!makerMode) { dbg('maker sign aborted: no makerMode'); return; }
     if (!address) {
       dbg('maker sign aborted: no address');
       setStatus('connect wallet');
       return;
     }
 
-    const signerToken = makerOverrides.senderToken || parsed.senderToken;
+    const signerToken = makerOverrides.senderToken || parsed?.senderToken;
     const signerDecimals = Number(makerOverrides.senderDecimals ?? checks?.senderDecimals ?? guessDecimals(signerToken));
-    const signerAmountHuman = makerOverrides.senderAmount || ethers.formatUnits(parsed.senderAmount, signerDecimals);
+    const signerAmountHuman = makerOverrides.senderAmount || (parsed ? ethers.formatUnits(parsed.senderAmount, signerDecimals) : '');
 
-    const senderToken = makerOverrides.signerToken || parsed.signerToken;
+    const senderToken = makerOverrides.signerToken || parsed?.signerToken;
     const senderDecimals = Number(makerOverrides.signerDecimals ?? checks?.signerDecimals ?? guessDecimals(senderToken));
-    const senderAmountHuman = makerOverrides.signerAmount || ethers.formatUnits(parsed.signerAmount, senderDecimals);
+    const senderAmountHuman = makerOverrides.signerAmount || (parsed ? ethers.formatUnits(parsed.signerAmount, senderDecimals) : '');
 
     if (!signerToken || !signerAmountHuman || !senderToken || !senderAmountHuman) {
       setStatus('select your offer token and amount first');
@@ -1141,7 +1142,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       setStatus('signing maker order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
+      const swapContract = parsed?.swapContract || BASE_SWAP_CONTRACT;
+      const swap = new ethers.Contract(swapContract, SWAP_ABI, readProvider);
       const [protocolFee, requiredSenderKind] = await Promise.all([
         swap.protocolFee(),
         swap.requiredSenderKind(),
@@ -1152,7 +1154,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
       const expiry = Math.floor(Date.now() / 1000) + Number(makerExpirySec || 24 * 3600);
 
-      const selectedCounterpartyWallet = String(makerOverrides.counterpartyWallet || parsed.signerWallet || ethers.ZeroAddress);
+      const selectedCounterpartyWallet = String(makerOverrides.counterpartyWallet || parsed?.signerWallet || ethers.ZeroAddress);
 
       const typedOrder = {
         nonce,
@@ -1180,7 +1182,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         name: 'SWAP',
         version: '4.2',
         chainId: 8453,
-        verifyingContract: parsed.swapContract,
+        verifyingContract: swapContract,
       };
 
       let sig;
@@ -1250,7 +1252,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const fullOrder = {
         chainId: 8453,
-        swapContract: parsed.swapContract,
+        swapContract,
         nonce,
         expiry: String(expiry),
         signerWallet: address,
