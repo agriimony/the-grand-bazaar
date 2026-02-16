@@ -489,10 +489,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }, [initialCompressed, initialCastHash]);
 
   useEffect(() => {
-    if (!parsed) return;
-    const fee = Number(parsed.protocolFee || 0);
+    const fee = Number(orderData?.protocolFee || 0);
     if (Number.isFinite(fee) && fee > 0) setMakerProtocolFeeBps(fee);
-  }, [parsed?.protocolFee]);
+  }, [orderData?.protocolFee]);
 
   useEffect(() => {
     async function loadFromCastHash() {
