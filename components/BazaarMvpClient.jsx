@@ -1670,7 +1670,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       if (users.length > 1) {
         setCounterpartyResults(users.slice(0, 6));
-        setCounterpartyError('Multiple users found. Select one below');
+        setCounterpartyError('');
         setStatus('multiple users found');
         return;
       }
@@ -2498,6 +2498,7 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
     return (
       <>
         <img
+          key={`title-pfp-${titleAvatarUrl}`}
           src={titleAvatarUrl}
           alt={title}
           className="rs-title-pfp"
@@ -2507,7 +2508,7 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
             if (fb) fb.style.display = 'inline-flex';
           }}
         />
-        <span className="rs-title-pfp rs-title-pfp-fallback" style={{ display: 'none' }}>?</span>
+        <span key={`title-pfp-fallback-${titleAvatarUrl}`} className="rs-title-pfp rs-title-pfp-fallback" style={{ display: 'none' }}>?</span>
       </>
     );
   };
