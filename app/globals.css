@@ -476,7 +476,6 @@ html, body {
   box-shadow: inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912;
 }
 
-.rs-modal-close,
 .rs-modal-back {
   border: 0;
   background: transparent;
@@ -490,7 +489,24 @@ html, body {
   right: 10px;
   top: 8px;
   z-index: 20;
+  width: 30px;
+  height: 26px;
+  border: 2px solid #2f271d;
+  background: linear-gradient(180deg, #7a6a56 0%, #645644 100%);
+  color: #f0c46e;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 13px;
+  font-weight: 900;
   line-height: 1;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #2a2218;
+  box-shadow: 0 2px 0 #2f271d;
+  transform: translateY(-1px);
+}
+
+.rs-modal-close:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 #2f271d;
 }
 
 .rs-modal-titlebar {
@@ -735,6 +751,14 @@ textarea { width: 100%; font-size: 42px; }
   .rs-topbar-close {
     top: 3px;
     right: 6px;
+    width: 24px;
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .rs-modal-close {
+    top: 6px;
+    right: 8px;
     width: 24px;
     height: 22px;
     font-size: 11px;
