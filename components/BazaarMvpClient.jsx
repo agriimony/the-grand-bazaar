@@ -179,6 +179,13 @@ function suffixClass(suffix = '') {
   return 'amt-n';
 }
 
+function renderAmountColored(amountText) {
+  const m = String(amountText || '').match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
+  if (!m) return <>{amountText}</>;
+  const cls = suffixClass(m[2]);
+  return <><span className={cls}>{m[1]}</span><span className={`amt-sfx ${cls}`}>{m[2]}</span></>;
+}
+
 function tokenInitials(symbol = '??') {
   return String(symbol || '??').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || '??';
 }
@@ -2545,7 +2552,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                         {tokenOptions.slice(0, 23).map((t) => (
                           <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
                             <div className="rs-token-wrap rs-token-cell-wrap">
-                              <div className="rs-amount-overlay rs-token-cell-amount">{t.amountDisplay}</div>
+                              <div className="rs-amount-overlay rs-token-cell-amount">{renderAmountColored(t.amountDisplay)}</div>
                               <img
                                 src={t.imgUrl || tokenIconUrl(8453, t.token)}
                                 alt={t.symbol}
@@ -2573,7 +2580,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div className="rs-token-center">
                   <div className="rs-modal-wrap-row">
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
+                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(pendingAmountDisplay)}</div>
                       {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
@@ -2596,7 +2603,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       <>
                         <button type="button" className="rs-wrap-arrow" onClick={onModalWrapEth}>➡️</button>
                         <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                          <div className="rs-amount-overlay rs-selected-token-amount">{pendingAmountDisplay}</div>
+                          <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(pendingAmountDisplay)}</div>
                           <img
                             src={tokenIconUrl(8453, BASE_WETH) || ethIconUrl()}
                             alt="WETH"
@@ -2775,7 +2782,7 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
           {wrapHint ? (
             <div className="rs-token-wrap rs-token-wrap-secondary">
               <div className="rs-amount-overlay">
-                {wrapAmount}
+                {renderAmountColored(wrapAmount)}
               </div>
               <div className="rs-symbol-overlay">ETH</div>
               <img
