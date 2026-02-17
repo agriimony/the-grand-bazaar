@@ -2728,14 +2728,14 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
       <div className={`rs-box ${danger ? 'rs-danger' : ''}`} onClick={editable ? onEdit : undefined}>
         <p className="rs-value">
           {valueMatch ? (
-            <>Value: ${valueMatch[1]}<span className={`amt-sfx ${suffixClass(valueMatch[2])}`}>{valueMatch[2]}</span></>
+            <>Value: $<span className={suffixClass(valueMatch[2])}>{valueMatch[1]}</span><span className={`amt-sfx ${suffixClass(valueMatch[2])}`}>{valueMatch[2]}</span></>
           ) : valueText}
         </p>
         <div className="rs-asset-stage">
           <div className={`rs-token-wrap ${editable ? 'rs-token-editable' : ''}`}>
             <div className="rs-amount-overlay">
               {amountMatch ? (
-                <>{amountMatch[1]}<span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></>
+                <><span className={suffixClass(amountMatch[2])}>{amountMatch[1]}</span><span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></>
               ) : (
                 <>{amount}</>
               )}
