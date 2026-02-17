@@ -446,6 +446,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [tokenModalStep, setTokenModalStep] = useState('grid');
   const [tokenModalPanel, setTokenModalPanel] = useState('sender');
   const [tokenModalWallet, setTokenModalWallet] = useState('');
+  const [customTokenInput, setCustomTokenInput] = useState('');
+  const [customTokenError, setCustomTokenError] = useState('');
   const [tokenOptions, setTokenOptions] = useState([]);
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
@@ -1633,6 +1635,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalWallet(wallet);
     setTokenModalOpen(true);
     setTokenModalStep('grid');
+    setCustomTokenInput('');
+    setCustomTokenError('');
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicCounterpartyPanel}`);
 
@@ -1881,14 +1885,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
-  async function onAddCustomToken() {
-    const tokenInput = prompt('Token contract address');
-    if (!tokenInput) return;
+  function onAddCustomToken() {
+    setCustomTokenInput('');
+    setCustomTokenError('');
+    setTokenModalStep('custom');
+  }
+
+  async function onConfirmCustomToken() {
+    const tokenInput = String(customTokenInput || '').trim();
+    if (!tokenInput) {
+      setCustomTokenError('Enter token address');
+      return;
+    }
 
     let tokenAddr = '';
     try {
-      tokenAddr = ethers.getAddress(tokenInput.trim()).toLowerCase();
+      tokenAddr = ethers.getAddress(tokenInput).toLowerCase();
     } catch {
+      setCustomTokenError('Invalid token address');
       setStatus('invalid token address');
       return;
     }
@@ -1902,6 +1916,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       });
       onTokenSelect(option);
     } catch (e) {
+      setCustomTokenError('Lookup failed');
       setStatus('custom token lookup failed');
       dbg(`custom token lookup failed ${tokenAddr}: ${errText(e)}`);
     } finally {
@@ -2573,6 +2588,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     </div>
                   </>
                 )}
+              </>
+            ) : tokenModalStep === 'custom' ? (
+              <>
+                <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
+                <div className="rs-modal-titlebar">Custom Token</div>
+                <input
+                  className="rs-amount-input rs-counterparty-input"
+                  placeholder="0x token address"
+                  value={customTokenInput}
+                  onChange={(e) => {
+                    setCustomTokenInput(e.target.value);
+                    if (customTokenError) setCustomTokenError('');
+                  }}
+                />
+                {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
+                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomToken} disabled={tokenModalLoading}>
+                  {tokenModalLoading ? 'Loading...' : 'Confirm'}
+                </button>
               </>
             ) : (
               <>
