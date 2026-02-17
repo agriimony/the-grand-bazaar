@@ -766,15 +766,45 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
-      const [requiredSenderKind, protocolFeeOnchain, nonceUsed] = await Promise.all([
-        swap.requiredSenderKind(),
-        swap.protocolFee(),
-        swap.nonceUsed(parsed.signerWallet, parsed.nonce).catch(() => false),
-      ]);
+
+      const configuredSenderOwner = parsed.senderWallet || ethers.ZeroAddress;
+      const connectedNormPre = normalizeAddr(address);
+      const signerNormPre = normalizeAddr(parsed.signerWallet);
+      const senderNormPre = normalizeAddr(configuredSenderOwner);
+      const isOpenOrder = senderNormPre === ethers.ZeroAddress.toLowerCase();
+      const connectedIsSignerPre = Boolean(connectedNormPre) && connectedNormPre === signerNormPre;
+      const effectiveSenderOwner = isOpenOrder && !connectedIsSignerPre
+        ? (address || ethers.ZeroAddress)
+        : configuredSenderOwner;
+
+      const checkReq = await fetch('/api/order-check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          swapContract: parsed.swapContract,
+          senderWallet: effectiveSenderOwner,
+          order: {
+            nonce: parsed.nonce,
+            expiry: parsed.expiry,
+            signer: { wallet: parsed.signerWallet, token: parsed.signerToken, id: 0, amount: parsed.signerAmount },
+            sender: { wallet: parsed.senderWallet, token: parsed.senderToken, id: 0, amount: parsed.senderAmount },
+            affiliateWallet: ethers.ZeroAddress,
+            affiliateAmount: 0,
+            v: parsed.v,
+            r: parsed.r,
+            s: parsed.s,
+          },
+        }),
+      });
+      const checkData = await checkReq.json();
+      if (!checkReq.ok || !checkData?.ok) throw new Error(checkData?.error || 'order check failed');
+
+      const requiredSenderKind = checkData.requiredSenderKind;
+      const nonceUsed = Boolean(checkData.nonceUsed);
+      const checkErrors = Array.isArray(checkData.checkErrors) ? checkData.checkErrors : [];
 
       const encodedProtocolFee = BigInt(parsed.protocolFee || 0);
-      const onchainProtocolFee = BigInt(protocolFeeOnchain.toString());
+      const onchainProtocolFee = BigInt(checkData.protocolFeeOnchain || 0);
       const protocolFeeMismatch = encodedProtocolFee !== onchainProtocolFee;
 
       if (Number(parsed.expiry) <= Math.floor(Date.now() / 1000)) {
@@ -846,16 +876,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('checking wallet');
 
-      const configuredSenderOwner = parsed.senderWallet || ethers.ZeroAddress;
-      const connectedNormPre = normalizeAddr(address);
-      const signerNormPre = normalizeAddr(parsed.signerWallet);
-      const senderNormPre = normalizeAddr(configuredSenderOwner);
-      const isOpenOrder = senderNormPre === ethers.ZeroAddress.toLowerCase();
-      const connectedIsSignerPre = Boolean(connectedNormPre) && connectedNormPre === signerNormPre;
-      const effectiveSenderOwner = isOpenOrder && !connectedIsSignerPre
-        ? (address || ethers.ZeroAddress)
-        : configuredSenderOwner;
-
       const pairRead = await readPairBatch({
         signerToken: parsed.signerToken,
         signerOwner: parsed.signerWallet,
@@ -876,7 +896,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const makerAccepted = makerBalanceOk && makerApprovalOk;
 
       const takerBalance = senderRead.balance;
-      const takerAllowance = senderRead.allowance;
       const connectedNorm = normalizeAddr(address);
       const signerNorm = normalizeAddr(parsed.signerWallet);
       const senderNorm = normalizeAddr(configuredSenderOwner);
@@ -885,15 +904,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         ? (Boolean(connectedNorm) && !connectedIsSigner)
         : (Boolean(connectedNorm) && connectedNorm === senderNorm);
       const ownerMatches = connectedIsSender || connectedIsSigner;
+      const senderBalanceLow = checkErrors.includes('SenderBalanceLow');
+      const senderAllowanceLow = checkErrors.includes('SenderAllowanceLow');
       const takerBalanceOk = connectedIsSender
-        ? (takerBalance >= totalRequired)
+        ? !senderBalanceLow
         : connectedIsSigner
-        ? (isOpenOrder ? true : takerBalance >= totalRequired)
+        ? (isOpenOrder ? true : !senderBalanceLow)
         : false;
       const takerApprovalOk = connectedIsSender
-        ? (takerAllowance >= totalRequired)
+        ? !senderAllowanceLow
         : connectedIsSigner
-        ? (isOpenOrder ? true : takerAllowance >= totalRequired)
+        ? (isOpenOrder ? true : !senderAllowanceLow)
         : false;
 
       const senderIsWeth = normalizeAddr(parsed.senderToken) === BASE_WETH.toLowerCase();
@@ -923,6 +944,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         totalRequired,
         feeAmount,
         protocolFeeBps: protocolFee,
+        checkErrors,
         signerAmount: BigInt(parsed.signerAmount),
         senderAmount: BigInt(parsed.senderAmount),
         signerUsdValue,
