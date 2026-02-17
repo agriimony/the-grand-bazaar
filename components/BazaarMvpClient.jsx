@@ -2086,20 +2086,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setPendingAmount('');
   }
 
-  function loadOrder() {
-    try {
-      const decoded = decodeCompressedOrder(compressed.trim());
-      setOrderData(decoded);
-      setChecks(null);
-      setMakerMode(false);
-      setMakerOverrides({});
-      setStatus('order loaded');
-    } catch (e) {
-      setStatus('order not found');
-      setOrderData(null);
-    }
-  }
-
   function applyDemoValues() {
     if (!parsed) return;
     const senderDecimals = guessDecimals(parsed.senderToken);
@@ -2692,11 +2678,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ) : null}
 
       <div className="meta-block">
-        <div style={{ display: 'grid', gap: 8 }}>
-          <label htmlFor="order">Compressed order</label>
-          <textarea id="order" name="order" rows={5} value={compressed} onChange={(e) => setCompressed(e.target.value)} placeholder="Paste compressed order" />
-          <button type="button" onClick={loadOrder}>Load into trade window</button>
-        </div>
         <p>Status: {status}</p>
         {lastSwapTxHash ? (
           <p>

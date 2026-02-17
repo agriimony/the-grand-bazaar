@@ -9,6 +9,7 @@
     "name": "The Grand Bazaar",
     "iconUrl": "https://the-grand-bazaar.vercel.app/icon.jpg",
     "homeUrl": "https://the-grand-bazaar.vercel.app/",
+    "castShareUrl": "https://the-grand-bazaar.vercel.app/share",
     "imageUrl": "https://the-grand-bazaar.vercel.app/api/og",
     "buttonTitle": "Enter the Bazaar",
     "splashImageUrl": "https://the-grand-bazaar.vercel.app/splash.jpg",

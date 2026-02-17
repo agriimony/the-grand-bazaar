@@ -134,7 +134,7 @@ export async function GET(req) {
       height: 800,
       headers: {
         'Cache-Control': castHash
-          ? 'public, max-age=120, s-maxage=600, stale-while-revalidate=86400'
+          ? 'public, max-age=1800, s-maxage=1800, stale-while-revalidate=86400'
           : 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
       },
     }
