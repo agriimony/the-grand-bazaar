@@ -9,7 +9,7 @@ const miniAppEmbed = {
   version: '1',
   imageUrl: 'https://the-grand-bazaar.vercel.app/api/og',
   button: {
-    title: 'Open Bazaar',
+    title: 'Enter the Bazaar',
     action: {
       type: 'launch_frame',
       name: 'The Grand Bazaar',
