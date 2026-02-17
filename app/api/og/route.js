@@ -12,110 +12,23 @@ function clampText(v, max = 24) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
-function tokenTile({ amount, symbol, icon, x, title }) {
+function sideText({ title, amount, symbol, x }) {
   return (
     <div
       style={{
         position: 'absolute',
         left: x,
-        top: 210,
-        width: 320,
+        top: 230,
+        width: 360,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 14,
+        gap: 10,
       }}
     >
-      <div
-        style={{
-          color: '#ffffff',
-          fontSize: 62,
-          fontWeight: 900,
-          textTransform: 'lowercase',
-          textShadow: '3px 3px 0 #000, 0 0 10px rgba(0,0,0,0.8)',
-        }}
-      >
-        {title}
-      </div>
-
-      <div
-        style={{
-          width: 220,
-          height: 220,
-          position: 'relative',
-          border: '4px solid #3a3024',
-          background: 'rgba(0,0,0,0.25)',
-          boxShadow: '0 8px 0 rgba(0,0,0,0.35), inset 0 0 0 2px rgba(255,225,156,0.1)',
-          overflow: 'hidden',
-        }}
-      >
-        {icon ? (
-          <img
-            src={icon}
-            alt=""
-            width={220}
-            height={220}
-            style={{
-              width: '220px',
-              height: '220px',
-              objectFit: 'cover',
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              background: '#1f1d1a',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffe19c',
-              fontSize: 70,
-              fontWeight: 900,
-              textShadow: '2px 2px 0 #000',
-            }}
-          >
-            {symbol.slice(0, 3)}
-          </div>
-        )}
-
-        <div
-          style={{
-            position: 'absolute',
-            top: 6,
-            left: 8,
-            zIndex: 2,
-            color: '#f4d77c',
-            fontSize: 52,
-            fontWeight: 900,
-            lineHeight: 1,
-            textShadow: '3px 3px 0 #000, 0 0 8px rgba(0,0,0,0.95)',
-          }}
-        >
-          {amount}
-        </div>
-
-        <div
-          style={{
-            position: 'absolute',
-            right: 8,
-            bottom: 6,
-            zIndex: 2,
-            maxWidth: 190,
-            color: '#ffe19c',
-            fontSize: 46,
-            fontWeight: 900,
-            lineHeight: 1,
-            textShadow: '3px 3px 0 #000, 0 0 8px rgba(0,0,0,0.95)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {symbol}
-        </div>
-      </div>
+      <div style={{ color: '#fff', fontSize: 60, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{title}</div>
+      <div style={{ color: '#fff', fontSize: 76, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{amount}</div>
+      <div style={{ color: '#fff', fontSize: 62, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{symbol}</div>
     </div>
   );
 }
@@ -123,13 +36,10 @@ function tokenTile({ amount, symbol, icon, x, title }) {
 export async function GET(req) {
   const url = new URL(req.url);
 
-  const signerAmount = clampText(qp(url, 'signerAmount', '-'), 12);
-  const signerSymbol = clampText(qp(url, 'signerSymbol', 'TOKEN'), 8);
-  const signerIcon = qp(url, 'signerIcon', '');
-
-  const senderAmount = clampText(qp(url, 'senderAmount', '-'), 12);
-  const senderSymbol = clampText(qp(url, 'senderSymbol', 'TOKEN'), 8);
-  const senderIcon = qp(url, 'senderIcon', '');
+  const signerAmount = clampText(qp(url, 'signerAmount', '-'), 14);
+  const signerSymbol = clampText(qp(url, 'signerSymbol', 'TOKEN'), 10);
+  const senderAmount = clampText(qp(url, 'senderAmount', '-'), 14);
+  const senderSymbol = clampText(qp(url, 'senderSymbol', 'TOKEN'), 10);
 
   const baseImage = `${url.origin}/og-base.jpg`;
 
@@ -141,9 +51,9 @@ export async function GET(req) {
           height: '800px',
           display: 'flex',
           position: 'relative',
-          fontFamily: 'Verdana, Arial, sans-serif',
-          backgroundColor: '#000',
+          fontFamily: 'Arial, sans-serif',
           overflow: 'hidden',
+          backgroundColor: '#000',
         }}
       >
         <img
@@ -158,8 +68,8 @@ export async function GET(req) {
           }}
         />
 
-        {tokenTile({ amount: signerAmount, symbol: signerSymbol, icon: signerIcon, x: 90, title: 'i receive' })}
-        {tokenTile({ amount: senderAmount, symbol: senderSymbol, icon: senderIcon, x: 790, title: 'you receive' })}
+        {sideText({ title: 'i receive', amount: signerAmount, symbol: signerSymbol, x: 80 })}
+        {sideText({ title: 'you receive', amount: senderAmount, symbol: senderSymbol, x: 760 })}
       </div>
     ),
     { width: 1200, height: 800 }
