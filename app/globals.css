@@ -536,6 +536,15 @@ html, body {
   transform: translateY(1px);
 }
 
+.rs-modal-subtitle {
+  text-align: center;
+  margin: 8px 0 10px;
+  color: #f0c46e;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 20px;
+  text-shadow: 1px 1px 0 #2a2218;
+}
+
 .rs-token-grid-wrap {
   border: 2px solid #342b21;
   background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
