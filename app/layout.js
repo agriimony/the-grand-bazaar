@@ -7,13 +7,13 @@ const vt323 = VT323({ subsets: ['latin'], weight: '400', variable: '--font-pixel
 
 const miniAppEmbed = {
   version: '1',
-  imageUrl: 'https://the-grand-bazaar.vercel.app/og.svg',
+  imageUrl: 'https://the-grand-bazaar.vercel.app/api/og',
   button: {
     title: 'Open Bazaar',
     action: {
       type: 'launch_frame',
       name: 'The Grand Bazaar',
-      splashImageUrl: 'https://the-grand-bazaar.vercel.app/splash.svg',
+      splashImageUrl: 'https://the-grand-bazaar.vercel.app/splash.jpg',
       splashBackgroundColor: '#111111',
     },
   },
