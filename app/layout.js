@@ -15,7 +15,7 @@ const miniAppEmbed = {
       type: 'launch_frame',
       name: 'The Grand Bazaar',
       splashImageUrl: 'https://the-grand-bazaar.vercel.app/splash.jpg',
-      splashBackgroundColor: '#1e4d2b',
+      splashBackgroundColor: '#A8CB58',
     },
   },
 };
