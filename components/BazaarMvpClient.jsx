@@ -96,6 +96,13 @@ function fitOfferName(v = '', max = 15) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+function formatTokenIdLabel(tokenId = '', maxDigits = 5) {
+  const raw = String(tokenId || '').replace(/^#/, '');
+  if (!raw) return '#0';
+  if (raw.length <= maxDigits) return `#${raw}`;
+  return `#${raw.slice(0, maxDigits)}…`;
+}
+
 function compactAmount(value, digits = 3) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -1944,7 +1951,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       availableRaw: 1n,
       usdValue: 0,
       priceUsd: 0,
-      amountDisplay: `#${String(tokenId)}`,
+      amountDisplay: formatTokenIdLabel(String(tokenId)),
       tokenId: String(tokenId),
       kind: KIND_ERC721,
       isNft: true,
@@ -1981,7 +1988,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               usdValue: Number(n?.usdValue || 0),
               floorUsd: Number(n?.floorUsd || 0),
               priceUsd: 0,
-              amountDisplay: `#${String(n?.tokenId || '')}`,
+              amountDisplay: formatTokenIdLabel(String(n?.tokenId || '')),
               tokenId: String(n?.tokenId || ''),
               kind: KIND_ERC721,
               isNft: true,
@@ -2574,7 +2581,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       : (Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts.map((n) => ({
           token: selectedNftCollection.collectionAddress || n.token,
           symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
-          amountDisplay: `#${n.tokenId}`,
+          amountDisplay: formatTokenIdLabel(n.tokenId),
           imgUrl: n.imgUrl || null,
           tokenId: String(n.tokenId),
           floorUsd: Number(n?.floorUsd || 0),
@@ -2595,11 +2602,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
 
   const yourAmountDisplayFinal = senderIsErc721Selected
-    ? `#${String(makerOverrides.senderTokenId)}`
+    ? formatTokenIdLabel(String(makerOverrides.senderTokenId))
     : (makerOverrides.senderAmount ? formatTokenAmount(makerOverrides.senderAmount) : yourAmountDisplay);
 
   let counterpartyAmountDisplayFinal = signerIsErc721Selected
-    ? `#${String(makerOverrides.signerTokenId)}`
+    ? formatTokenIdLabel(String(makerOverrides.signerTokenId))
     : (makerOverrides.signerAmount ? formatTokenAmount(makerOverrides.signerAmount) : counterpartyAmountDisplay);
   if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
     const n = Number(makerOverrides.signerAmount);
@@ -2992,7 +2999,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 {customTokenPreview ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">#{String(customTokenPreview.tokenId || '')}</div>
+                      <div className="rs-amount-overlay rs-selected-token-amount">{formatTokenIdLabel(String(customTokenPreview.tokenId || ''))}</div>
                       {customTokenError ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         src={customTokenPreview.imgUrl || tokenIconUrl(8453, customTokenPreview.token || '')}
