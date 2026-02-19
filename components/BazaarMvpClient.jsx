@@ -2139,9 +2139,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       });
       onTokenSelect(option);
     } catch (e) {
-      setCustomTokenError('Lookup failed');
-      setStatus('custom token lookup failed');
-      dbg(`custom token lookup failed ${tokenAddr}: ${errText(e)}`);
+      const msg = errText(e);
+      if (/unconfigured name/i.test(msg)) {
+        setCustomTokenNftContract(tokenAddr);
+        setCustomTokenError('Name metadata unavailable. Enter token id directly.');
+        setTokenModalStep('custom-id');
+        setStatus('name lookup unavailable; enter token id');
+      } else {
+        setCustomTokenError('Lookup failed');
+        setStatus('custom token lookup failed');
+      }
+      dbg(`custom token lookup failed ${tokenAddr}: ${msg}`);
     } finally {
       setTokenModalLoading(false);
     }
