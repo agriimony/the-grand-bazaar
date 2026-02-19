@@ -2945,7 +2945,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     {tokenModalView === 'nfts' && tokenNftSubView === 'items' ? (
                       <button className="rs-modal-back" onClick={() => { setTokenNftSubView('collections'); setSelectedNftCollection(null); }}>← Back</button>
                     ) : null}
-                    {modalDisplayOptions.length === 0 ? <p>{tokenModalView === 'nfts' ? `No NFTs found for ${short(tokenModalWallet)}` : (customTokenNftContract ? `No ERC721 holdings found for ${short(tokenModalWallet)}` : `No supported tokens with balance found for ${short(tokenModalWallet)}`)}</p> : null}
+                    {modalDisplayOptions.length === 0 ? <p>{tokenModalView === 'nfts' ? '' : (customTokenNftContract ? `No ERC721 holdings found for ${short(tokenModalWallet)}` : `No supported tokens with balance found for ${short(tokenModalWallet)}`)}</p> : null}
                     <div className="rs-token-grid-wrap">
                       <div className="rs-token-grid">
                         {modalDisplayOptions.slice(0, 23).map((t, idx) => (
