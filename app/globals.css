@@ -713,8 +713,34 @@ html, body {
   opacity: 0.85;
 }
 
+.rs-counterparty-input-wrap {
+  position: relative;
+  width: min(320px, 80%);
+  margin: 10px auto 14px;
+}
+
 .rs-counterparty-input {
   font-size: 16px;
+  width: 100%;
+  margin: 0;
+  padding-right: 36px;
+}
+
+.rs-counterparty-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid #342b21;
+  background: #5e513f;
+  color: #f4d77c;
+  font-size: 12px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
 }
 
 .rs-token-confirm-btn {

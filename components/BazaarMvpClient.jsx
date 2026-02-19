@@ -2873,17 +2873,32 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           <div className="rs-modal rs-panel">
             <button className="rs-modal-close" onClick={() => setCounterpartyModalOpen(false)}>✕</button>
             <div className="rs-modal-titlebar">Select Counterparty</div>
-            <input
-              className="rs-amount-input rs-counterparty-input"
-              placeholder="Anybody"
-              value={counterpartyInput}
-              onChange={(e) => {
-                setCounterpartyInput(e.target.value);
-                if (counterpartyError) setCounterpartyError('');
-                if (counterpartyResults.length) setCounterpartyResults([]);
-              }}
-              autoFocus
-            />
+            <div className="rs-counterparty-input-wrap">
+              <input
+                className="rs-amount-input rs-counterparty-input"
+                placeholder="Anybody"
+                value={counterpartyInput}
+                onChange={(e) => {
+                  setCounterpartyInput(e.target.value);
+                  if (counterpartyError) setCounterpartyError('');
+                  if (counterpartyResults.length) setCounterpartyResults([]);
+                }}
+                autoFocus
+              />
+              {makerMode && !parsed && hasSpecificMakerCounterparty && counterpartyInput ? (
+                <button
+                  className="rs-counterparty-clear"
+                  aria-label="Clear counterparty"
+                  onClick={() => {
+                    setCounterpartyInput('');
+                    setCounterpartyError('');
+                    setCounterpartyResults([]);
+                  }}
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
             {counterpartyError ? <div className="rs-inline-error">{counterpartyError}</div> : null}
             {counterpartyResults.length > 0 ? (
               <div className="rs-counterparty-results">
