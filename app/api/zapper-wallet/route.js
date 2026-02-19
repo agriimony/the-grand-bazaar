@@ -47,7 +47,7 @@ const QUERY = `
                 address
                 name
                 symbol
-                network
+                network { name }
               }
               tokens(first: 24, order: { by: USD_WORTH, direction: DESC }) {
                 edges {
@@ -138,7 +138,7 @@ export async function GET(req) {
     const nftCollections = collectionEdges
       .map((e) => e?.node)
       .filter(Boolean)
-      .filter((n) => String(n?.collection?.network || '').toUpperCase().includes('BASE'))
+      .filter((n) => (n?.collection?.network?.name || '').toLowerCase().includes('base'))
       .map((c) => {
         const nftRows = (c?.tokens?.edges || [])
           .map((e) => e?.node)
