@@ -2119,43 +2119,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
       const kind = await detectTokenKind(tokenAddr, rp);
       if (kind === KIND_ERC721) {
-        const rows = await fetchErc721Options(tokenAddr, tokenModalWallet, 24);
         setCustomTokenNftContract(tokenAddr);
-
-        if (!rows.length) {
-          setTokenModalStep('custom-id');
-          setCustomTokenError('No indexed holdings found. Enter token id.');
-          setStatus('erc721 loaded without enumerable/indexed list; enter token id');
-          return;
-        }
-
-        setTokenOptions(rows);
-        setTokenNftCollections([{ 
-          collectionAddress: tokenAddr,
-          collectionName: rows?.[0]?.symbol || 'NFT Collection',
-          symbol: rows?.[0]?.symbol || 'NFT',
-          totalBalanceUSD: rows.reduce((acc, r) => acc + Number(r?.floorUsd || r?.usdValue || 0), 0),
-          nfts: rows.map((r) => ({
-            token: r.token,
-            tokenId: String(r.tokenId || ''),
-            symbol: r.symbol || 'NFT',
-            name: '',
-            balance: '1',
-            usdValue: Number(r.usdValue || 0),
-            floorUsd: Number(r.floorUsd || 0),
-            imgUrl: r.imgUrl || null,
-          })),
-        }]);
-        setTokenModalView('nfts');
-        setSelectedNftCollection({
-          collectionAddress: tokenAddr,
-          collectionName: rows?.[0]?.symbol || 'NFT Collection',
-          symbol: rows?.[0]?.symbol || 'NFT',
-          nfts: rows.map((r) => ({ token: r.token, tokenId: String(r.tokenId || ''), symbol: r.symbol || 'NFT', imgUrl: r.imgUrl || null, floorUsd: Number(r.floorUsd || 0), usdValue: Number(r.usdValue || 0) })),
-        });
-        setTokenNftSubView('items');
-        setTokenModalStep('grid');
-        setStatus('erc721 loaded');
+        setCustomTokenError('');
+        setTokenModalStep('custom-id');
+        setStatus('erc721 contract set; enter token id');
         return;
       }
 
