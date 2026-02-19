@@ -1953,7 +1953,36 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ]);
 
     if (!isEnumerable) {
-      throw new Error('Collection is not ERC721Enumerable. Use + and enter token id.');
+      try {
+        const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(wallet)}`, { cache: 'no-store' });
+        const zd = await zr.json();
+        if (zr.ok && zd?.ok && Array.isArray(zd?.nftCollections)) {
+          const match = zd.nftCollections.find((col) => normalizeAddr(col?.collectionAddress || '') === normalizeAddr(tokenAddr));
+          const nfts = Array.isArray(match?.nfts) ? match.nfts : [];
+          if (nfts.length > 0) {
+            dbg(`erc721 non-enum loaded via zapper ${tokenAddr} rows=${nfts.length}`);
+            return nfts.slice(0, maxItems).map((n) => ({
+              token: tokenAddr,
+              symbol: String(symbol || n?.symbol || 'NFT'),
+              decimals: 0,
+              balance: '1',
+              availableAmount: 1,
+              availableRaw: 1n,
+              usdValue: Number(n?.usdValue || 0),
+              floorUsd: Number(n?.floorUsd || 0),
+              priceUsd: 0,
+              amountDisplay: `#${String(n?.tokenId || '')}`,
+              tokenId: String(n?.tokenId || ''),
+              kind: KIND_ERC721,
+              isNft: true,
+              imgUrl: n?.imgUrl || null,
+            })).filter((r) => r.tokenId);
+          }
+        }
+      } catch (e) {
+        dbg(`erc721 non-enum zapper load failed ${tokenAddr}: ${errText(e)}`);
+      }
+      throw new Error('Collection is not ERC721Enumerable and no indexed holdings found. Use + and enter token id.');
     }
 
     const count = Number(balance > BigInt(maxItems) ? BigInt(maxItems) : balance);
@@ -2092,6 +2121,30 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (kind === KIND_ERC721) {
         const rows = await fetchErc721Options(tokenAddr, tokenModalWallet, 24);
         setTokenOptions(rows);
+        setTokenNftCollections([{ 
+          collectionAddress: tokenAddr,
+          collectionName: rows?.[0]?.symbol || 'NFT Collection',
+          symbol: rows?.[0]?.symbol || 'NFT',
+          totalBalanceUSD: rows.reduce((acc, r) => acc + Number(r?.floorUsd || r?.usdValue || 0), 0),
+          nfts: rows.map((r) => ({
+            token: r.token,
+            tokenId: String(r.tokenId || ''),
+            symbol: r.symbol || 'NFT',
+            name: '',
+            balance: '1',
+            usdValue: Number(r.usdValue || 0),
+            floorUsd: Number(r.floorUsd || 0),
+            imgUrl: r.imgUrl || null,
+          })),
+        }]);
+        setTokenModalView('nfts');
+        setSelectedNftCollection({
+          collectionAddress: tokenAddr,
+          collectionName: rows?.[0]?.symbol || 'NFT Collection',
+          symbol: rows?.[0]?.symbol || 'NFT',
+          nfts: rows.map((r) => ({ token: r.token, tokenId: String(r.tokenId || ''), symbol: r.symbol || 'NFT', imgUrl: r.imgUrl || null, floorUsd: Number(r.floorUsd || 0), usdValue: Number(r.usdValue || 0) })),
+        });
+        setTokenNftSubView('items');
         setCustomTokenNftContract(tokenAddr);
         setTokenModalStep('grid');
         setStatus(rows.length > 0 ? 'erc721 loaded' : 'no nfts found for wallet');
