@@ -2776,8 +2776,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     {modalDisplayOptions.length === 0 ? <p>{tokenModalView === 'nfts' ? `No NFTs found for ${short(tokenModalWallet)}` : (customTokenNftContract ? `No ERC721 holdings found for ${short(tokenModalWallet)}` : `No supported tokens with balance found for ${short(tokenModalWallet)}`)}</p> : null}
                     <div className="rs-token-grid-wrap">
                       <div className="rs-token-grid">
-                        {modalDisplayOptions.slice(0, 23).map((t) => (
-                          <button key={t.token} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
+                        {modalDisplayOptions.slice(0, 23).map((t, idx) => (
+                          <button key={`${tokenModalView}-${t.token}-${t.tokenId || 'na'}-${idx}`} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
                             <div className="rs-token-wrap rs-token-cell-wrap">
                               <div className="rs-amount-overlay rs-token-cell-amount">{renderAmountColored(t.amountDisplay)}</div>
                               <img
