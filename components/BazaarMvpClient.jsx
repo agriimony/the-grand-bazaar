@@ -14,6 +14,14 @@ const ERC20_ABI = [
   'function approve(address spender,uint256 amount) returns (bool)',
 ];
 const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
+const ERC721_ABI = [
+  'function symbol() view returns (string)',
+  'function balanceOf(address owner) view returns (uint256)',
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function tokenURI(uint256 tokenId) view returns (string)',
+  'function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+];
 const WETH_IFACE = new ethers.Interface(['function deposit() payable']);
 
 const SWAP_ABI = [
@@ -234,6 +242,36 @@ async function resolveSwapForSenderToken(senderToken, provider) {
   if (kind === KIND_ERC721) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC721 };
   if (kind === KIND_ERC1155) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC1155 };
   return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
+}
+
+function ipfsToHttp(u = '') {
+  const s = String(u || '').trim();
+  if (!s) return '';
+  if (s.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${s.replace('ipfs://', '').replace(/^ipfs\//, '')}`;
+  return s;
+}
+
+async function readNftImageFromTokenUri(tokenUri = '') {
+  const uri = ipfsToHttp(tokenUri);
+  if (!uri) return '';
+  if (uri.startsWith('data:application/json')) {
+    try {
+      const b64 = uri.split(',')[1] || '';
+      const raw = atob(b64);
+      const j = JSON.parse(raw);
+      return ipfsToHttp(j?.image || j?.image_url || '');
+    } catch {
+      return '';
+    }
+  }
+  try {
+    const r = await fetch(uri, { cache: 'no-store' });
+    if (!r.ok) return '';
+    const j = await r.json();
+    return ipfsToHttp(j?.image || j?.image_url || '');
+  } catch {
+    return '';
+  }
 }
 
 function isStableToken(addr = '') {
@@ -1662,6 +1700,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalStep('grid');
     setCustomTokenInput('');
     setCustomTokenError('');
+    setCustomTokenNftContract('');
     setTokenModalLoading(true);
     dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicCounterpartyPanel}`);
 
@@ -1790,6 +1829,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   function onTokenSelect(option) {
+    if (option?.isNft) {
+      const panel = tokenModalPanel;
+      setMakerOverrides((prev) => ({
+        ...prev,
+        [`${panel}Token`]: option.token,
+        [`${panel}Symbol`]: option.symbol,
+        [`${panel}Decimals`]: 0,
+        [`${panel}ImgUrl`]: option.imgUrl || null,
+        [`${panel}AvailableRaw`]: '1',
+        [`${panel}Amount`]: '1',
+        [`${panel}Usd`]: null,
+        [`${panel}TokenId`]: String(option.tokenId || '0'),
+        [`${panel}Kind`]: KIND_ERC721,
+      }));
+      setTokenModalOpen(false);
+      setPendingToken(null);
+      setPendingAmount('');
+      return;
+    }
     setPendingToken(option);
     setPendingAmount('');
     setTokenModalStep('amount');
@@ -1831,6 +1889,69 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       imgUrl: catalogIconArt(tokenAddr) || tokenIconUrl(8453, tokenAddr),
     };
   }
+
+  async function fetchErc721Option(tokenAddr, wallet, tokenId, symbolHint = null) {
+    const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
+    const [owner, symbol, tokenUri] = await Promise.all([
+      c.ownerOf(tokenId),
+      c.symbol().catch(() => symbolHint || 'NFT'),
+      c.tokenURI(tokenId).catch(() => ''),
+    ]);
+    if (normalizeAddr(owner) !== normalizeAddr(wallet)) {
+      throw new Error('Token not owned by wallet');
+    }
+    const imgUrl = await readNftImageFromTokenUri(tokenUri);
+    return {
+      token: tokenAddr,
+      symbol: String(symbol || symbolHint || 'NFT'),
+      decimals: 0,
+      balance: '1',
+      availableAmount: 1,
+      availableRaw: 1n,
+      usdValue: 0,
+      priceUsd: 0,
+      amountDisplay: `#${String(tokenId)}`,
+      tokenId: String(tokenId),
+      kind: KIND_ERC721,
+      isNft: true,
+      imgUrl: imgUrl || null,
+    };
+  }
+
+  async function fetchErc721Options(tokenAddr, wallet, maxItems = 24) {
+    const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
+    const [symbol, balance, isEnumerable] = await Promise.all([
+      c.symbol().catch(() => 'NFT'),
+      c.balanceOf(wallet),
+      c.supportsInterface('0x780e9d63').catch(() => false),
+    ]);
+
+    if (!isEnumerable) {
+      throw new Error('Collection is not ERC721Enumerable. Use + and enter token id.');
+    }
+
+    const count = Number(balance > BigInt(maxItems) ? BigInt(maxItems) : balance);
+    const ids = [];
+    for (let i = 0; i < count; i += 1) {
+      const tokenId = await c.tokenOfOwnerByIndex(wallet, i);
+      ids.push(BigInt(tokenId).toString());
+    }
+    ids.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1));
+
+    const rows = [];
+    for (const id of ids) {
+      try {
+        const option = await fetchErc721Option(tokenAddr, wallet, id, String(symbol || 'NFT'));
+        rows.push(option);
+      } catch (e) {
+        dbg(`erc721 option skip ${tokenAddr}#${id}: ${errText(e)}`);
+      }
+    }
+    return rows;
+  }
+
 
   function applyCounterpartySelection({ name, address: wallet, profileUrl, pfpUrl }) {
     const n = String(name || '').replace(/^@/, '');
@@ -1913,7 +2034,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   function onAddCustomToken() {
     setCustomTokenInput('');
     setCustomTokenError('');
+    setCustomTokenNftContract('');
     setTokenModalStep('custom');
+  }
+
+  function onAddCustomTokenId() {
+    if (!customTokenNftContract) return;
+    setCustomTokenInput('');
+    setCustomTokenError('');
+    setTokenModalStep('custom-id');
   }
 
   async function onConfirmCustomToken() {
@@ -1934,6 +2063,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     try {
       setTokenModalLoading(true);
+      const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+      const kind = await detectTokenKind(tokenAddr, rp);
+      if (kind === KIND_ERC721) {
+        const rows = await fetchErc721Options(tokenAddr, tokenModalWallet, 24);
+        setTokenOptions(rows);
+        setCustomTokenNftContract(tokenAddr);
+        setTokenModalStep('grid');
+        setStatus(rows.length > 0 ? 'erc721 loaded' : 'no nfts found for wallet');
+        return;
+      }
+
+      if (kind === KIND_ERC1155) {
+        setCustomTokenError('ERC1155 coming next');
+        setStatus('erc1155 custom selector not enabled yet');
+        return;
+      }
+
       const option = await fetchTokenOption(tokenAddr, tokenModalWallet);
       setTokenOptions((prev) => {
         const dedup = prev.filter((t) => t.token !== tokenAddr);
@@ -1948,6 +2094,30 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setTokenModalLoading(false);
     }
   }
+
+  async function onConfirmCustomTokenId() {
+    const tokenId = String(customTokenInput || '').trim();
+    if (!tokenId || !/^\d+$/.test(tokenId)) {
+      setCustomTokenError('Enter token id');
+      return;
+    }
+    if (!customTokenNftContract) {
+      setCustomTokenError('Select ERC721 contract first');
+      return;
+    }
+    try {
+      setTokenModalLoading(true);
+      const option = await fetchErc721Option(customTokenNftContract, tokenModalWallet, tokenId);
+      onTokenSelect(option);
+    } catch (e) {
+      setCustomTokenError('Token id not found');
+      setStatus('erc721 token id lookup failed');
+      dbg(`erc721 token id lookup failed ${customTokenNftContract}#${tokenId}: ${errText(e)}`);
+    } finally {
+      setTokenModalLoading(false);
+    }
+  }
+
 
   async function swapPendingEthToWeth() {
     const n = Number(pendingAmount || 0);
@@ -2574,7 +2744,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   </div>
                 ) : (
                   <>
-                    {tokenOptions.length === 0 ? <p>No supported tokens with balance found for {short(tokenModalWallet)}</p> : null}
+                    {tokenOptions.length === 0 ? <p>{customTokenNftContract ? `No ERC721 holdings found for ${short(tokenModalWallet)}` : `No supported tokens with balance found for ${short(tokenModalWallet)}`}</p> : null}
                     <div className="rs-token-grid-wrap">
                       <div className="rs-token-grid">
                         {tokenOptions.slice(0, 23).map((t) => (
@@ -2596,7 +2766,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                             </div>
                           </button>
                         ))}
-                        <button className="rs-token-cell rs-token-cell-plus" onClick={onAddCustomToken}>+</button>
+                        <button className="rs-token-cell rs-token-cell-plus" onClick={customTokenNftContract ? onAddCustomTokenId : onAddCustomToken}>+</button>
                       </div>
                     </div>
                   </>
@@ -2605,7 +2775,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             ) : tokenModalStep === 'custom' ? (
               <>
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
-                <div className="rs-modal-subtitle">Custom Token</div>
+                <div className="rs-modal-subtitle">Custom Token Contract</div>
                 <input
                   className="rs-amount-input rs-counterparty-input"
                   placeholder="0x token address"
@@ -2617,6 +2787,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 />
                 {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
                 <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomToken} disabled={tokenModalLoading}>
+                  {tokenModalLoading ? 'Loading...' : 'Confirm'}
+                </button>
+              </>
+            
+            ) : tokenModalStep === 'custom-id' ? (
+              <>
+                <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
+                <div className="rs-modal-subtitle">Select Token ID</div>
+                <input
+                  className="rs-amount-input rs-counterparty-input"
+                  placeholder="token id"
+                  inputMode="numeric"
+                  value={customTokenInput}
+                  onChange={(e) => {
+                    setCustomTokenInput(e.target.value);
+                    if (customTokenError) setCustomTokenError('');
+                  }}
+                />
+                {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
+                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomTokenId} disabled={tokenModalLoading}>
                   {tokenModalLoading ? 'Loading...' : 'Confirm'}
                 </button>
               </>
