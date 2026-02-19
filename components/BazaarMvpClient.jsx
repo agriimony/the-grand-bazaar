@@ -2516,6 +2516,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const flipForSigner = !makerMode && checks?.connectedRole === 'signer';
   const showSignerOwnerActions = Boolean(parsed) && !makerMode && checks?.connectedRole === 'signer';
   const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
+  const isPublicMakerOffer = makerMode && !parsed && !hasSpecificMakerCounterparty;
   const topTitle = isNeitherParty
     ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} offers`
     : 'You offer';
@@ -2567,7 +2568,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const bottomSymbol = flipForSigner ? senderSymbolDisplay : signerSymbolDisplay;
   const bottomTokenAddress = flipForSigner ? senderTokenAddressFinal : signerTokenAddressFinal;
   const bottomTokenImage = flipForSigner ? senderTokenImgFinal : signerTokenImgFinal;
-  const bottomDanger = makerMode ? makerSignerInsufficient : Boolean(checks && (flipForSigner ? !checks.takerBalanceOk : !checks.makerBalanceOk));
+  const bottomDanger = makerMode
+    ? (isPublicMakerOffer ? false : makerSignerInsufficient)
+    : Boolean(checks && (flipForSigner ? !checks.takerBalanceOk : !checks.makerBalanceOk));
   const bottomInsufficient = bottomDanger;
   const bottomValueText = flipForSigner ? yourValueTextFinal : counterpartyValueTextFinal;
   const bottomFeeText = makerMode
