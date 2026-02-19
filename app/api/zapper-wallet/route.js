@@ -34,7 +34,7 @@ const QUERY = `
   query PortfolioV2Query($addresses: [Address!]!, $chainIds: [Int!]) {
     portfolioV2(addresses: $addresses, chainIds: $chainIds) {
       tokenBalances {
-        byToken(first: 100) {
+        byToken(first: 40) {
           edges {
             node {
               tokenAddress
@@ -48,16 +48,25 @@ const QUERY = `
         }
       }
       nftBalances {
-        byToken(first: 200) {
+        byCollection(first: 24) {
           edges {
             node {
-              tokenAddress
-              tokenId
-              symbol
+              collectionAddress
               name
-              balance
-              imgUrlV2
+              totalBalanceUSD
               network { name }
+              nfts(first: 24) {
+                edges {
+                  node {
+                    tokenAddress
+                    tokenId
+                    symbol
+                    name
+                    balance
+                    imgUrlV2
+                  }
+                }
+              }
             }
           }
         }
@@ -127,50 +136,49 @@ export async function GET(req) {
         };
       })
       .filter((n) => Number(n.balance) > 0)
-      .sort((a, b) => b.usdValue - a.usdValue);
+      .sort((a, b) => b.usdValue - a.usdValue)
+      .slice(0, 24);
 
-    const nftEdges = out?.data?.portfolioV2?.nftBalances?.byToken?.edges || [];
-    const nfts = nftEdges
+    const nftEdges = out?.data?.portfolioV2?.nftBalances?.byCollection?.edges || [];
+    const nftCollections = nftEdges
       .map((e) => e?.node)
       .filter(Boolean)
       .filter((n) => (n?.network?.name || '').toLowerCase().includes('base'))
-      .map((n) => ({
-        token: n.tokenAddress,
-        tokenId: String(n.tokenId || ''),
-        symbol: n.symbol || 'NFT',
-        name: n.name || '',
-        balance: String(n.balance || '1'),
-        imgUrl: n.imgUrlV2 || null,
-      }))
-      .filter((n) => n.token && n.tokenId);
+      .map((c) => {
+        const nftRows = (c?.nfts?.edges || [])
+          .map((e) => e?.node)
+          .filter(Boolean)
+          .map((n) => ({
+            token: n.tokenAddress,
+            tokenId: String(n.tokenId || ''),
+            symbol: n.symbol || 'NFT',
+            name: n.name || '',
+            balance: String(n.balance || '1'),
+            imgUrl: n.imgUrlV2 || null,
+          }))
+          .filter((n) => n.token && n.tokenId)
+          .sort((a, b) => {
+            try {
+              const aa = BigInt(a.tokenId);
+              const bb = BigInt(b.tokenId);
+              if (aa === bb) return 0;
+              return aa < bb ? -1 : 1;
+            } catch {
+              return String(a.tokenId).localeCompare(String(b.tokenId));
+            }
+          })
+          .slice(0, 24);
 
-    const byCollection = new Map();
-    for (const n of nfts) {
-      const key = String(n.token).toLowerCase();
-      if (!byCollection.has(key)) {
-        byCollection.set(key, {
-          collectionAddress: n.token,
-          collectionName: n.symbol || shortAddress(n.token),
-          symbol: n.symbol || 'NFT',
-          nfts: [],
-        });
-      }
-      byCollection.get(key).nfts.push(n);
-    }
-
-    const nftCollections = Array.from(byCollection.values()).map((c) => ({
-      ...c,
-      nfts: c.nfts.sort((a, b) => {
-        try {
-          const aa = BigInt(a.tokenId);
-          const bb = BigInt(b.tokenId);
-          if (aa === bb) return 0;
-          return aa < bb ? -1 : 1;
-        } catch {
-          return String(a.tokenId).localeCompare(String(b.tokenId));
-        }
-      }),
-    }));
+        return {
+          collectionAddress: c.collectionAddress,
+          collectionName: c.name || shortAddress(c.collectionAddress),
+          symbol: c.name || 'NFT',
+          totalBalanceUSD: Number(c.totalBalanceUSD || 0),
+          nfts: nftRows,
+        };
+      })
+      .sort((a, b) => (b.totalBalanceUSD || 0) - (a.totalBalanceUSD || 0))
+      .slice(0, 24);
 
     return Response.json({ ok: true, address, tokens, nftCollections, warnings: out?.errors || [] });
   } catch (e) {

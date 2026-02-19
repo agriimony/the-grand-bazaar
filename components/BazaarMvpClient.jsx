@@ -2755,10 +2755,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             {tokenModalStep === 'grid' ? (
               <>
                 <div className="rs-modal-titlebar">{tokenModalPanel === 'sender' ? 'Your Inventory' : `${fitOfferName(counterpartyName)}'s Inventory`}</div>
-                <div className="rs-inv-toggle-row">
-                  <button className={`rs-inv-toggle ${tokenModalView === 'tokens' ? 'active' : ''}`} onClick={() => setTokenModalView('tokens')}>Tokens</button>
-                  <button className={`rs-inv-toggle ${tokenModalView === 'nfts' ? 'active' : ''}`} onClick={() => setTokenModalView('nfts')}>NFTs</button>
-                </div>
+                {!tokenModalLoading ? (
+                  <div className="rs-inv-toggle-row">
+                    <button className={`rs-inv-toggle ${tokenModalView === 'tokens' ? 'active' : ''}`} onClick={() => setTokenModalView('tokens')}>Tokens</button>
+                    <button className={`rs-inv-toggle ${tokenModalView === 'nfts' ? 'active' : ''}`} onClick={() => setTokenModalView('nfts')}>NFTs</button>
+                  </div>
+                ) : null}
                 {tokenModalLoading ? (
                   <div className="rs-loading-wrap">
                     <div className="rs-loading-track">
