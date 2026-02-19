@@ -545,6 +545,29 @@ html, body {
   text-shadow: 1px 1px 0 #2a2218;
 }
 
+.rs-inv-toggle-row {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.rs-inv-toggle {
+  flex: 1;
+  border: 2px solid #3a3024;
+  background: linear-gradient(180deg, #7a6a52 0%, #5e513f 100%);
+  color: #f4d77c;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 3px 0 #2a2218;
+}
+
+.rs-inv-toggle.active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2a2218;
+  background: linear-gradient(180deg, #4c4131 0%, #3f3528 100%);
+}
+
 .rs-token-grid-wrap {
   border: 2px solid #342b21;
   background: radial-gradient(circle at 20% 15%, #6b5f4f 0%, #5a5043 100%);
