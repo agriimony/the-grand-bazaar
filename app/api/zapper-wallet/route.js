@@ -6,11 +6,7 @@ const ZAPPER_URL = 'https://public.zapper.xyz/graphql';
 const APP_ORIGIN = process.env.APP_ORIGIN || 'https://the-grand-bazaar.vercel.app';
 
 function normHost(v = '') {
-  try {
-    return new URL(v).host.toLowerCase();
-  } catch {
-    return String(v || '').toLowerCase();
-  }
+  try { return new URL(v).host.toLowerCase(); } catch { return String(v || '').toLowerCase(); }
 }
 
 function shortAddress(v = '') {
@@ -19,22 +15,17 @@ function shortAddress(v = '') {
 }
 
 function isAllowedOrigin(req) {
-  const origin = req.headers.get('origin') || '';
-  const referer = req.headers.get('referer') || '';
+  const originHost = normHost(req.headers.get('origin') || '');
+  const refererHost = normHost(req.headers.get('referer') || '');
   const appHost = normHost(APP_ORIGIN);
-  const originHost = normHost(origin);
-  const refererHost = normHost(referer);
-
-  if (originHost && originHost === appHost) return true;
-  if (refererHost && refererHost === appHost) return true;
-  return false;
+  return (originHost && originHost === appHost) || (refererHost && refererHost === appHost);
 }
 
 const QUERY = `
-  query PortfolioV2Query($addresses: [Address!]!, $chainIds: [Int!]) {
+  query PortfolioV2Combined($addresses: [Address!]!, $chainIds: [Int!]) {
     portfolioV2(addresses: $addresses, chainIds: $chainIds) {
       tokenBalances {
-        byToken(first: 40) {
+        byToken(first: 24) {
           edges {
             node {
               tokenAddress
@@ -48,22 +39,31 @@ const QUERY = `
         }
       }
       nftBalances {
-        byCollection(first: 24) {
+        byCollection(first: 24, order: { by: USD_WORTH, direction: DESC }) {
           edges {
             node {
-              collectionAddress
-              name
-              totalBalanceUSD
-              network { name }
-              nfts(first: 24) {
+              balanceUSD
+              collection {
+                address
+                name
+                symbol
+                network { name }
+              }
+              tokens(first: 24, order: { by: USD_WORTH, direction: DESC }) {
                 edges {
                   node {
-                    tokenAddress
                     tokenId
-                    symbol
-                    name
                     balance
-                    imgUrlV2
+                    balanceUSD
+                    token {
+                      name
+                      mediasV2 {
+                        ... on Image {
+                          thumbnail
+                          original
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -77,38 +77,21 @@ const QUERY = `
 
 export async function GET(req) {
   try {
-    if (!isAllowedOrigin(req)) {
-      return Response.json({ ok: false, error: 'forbidden origin' }, { status: 403 });
-    }
+    if (!isAllowedOrigin(req)) return Response.json({ ok: false, error: 'forbidden origin' }, { status: 403 });
 
     const apiKey = process.env.ZAPPER_API_KEY;
-    if (!apiKey) {
-      return Response.json({ ok: false, error: 'zapper api key missing' }, { status: 500 });
-    }
+    if (!apiKey) return Response.json({ ok: false, error: 'zapper api key missing' }, { status: 500 });
 
     const { searchParams } = new URL(req.url);
     const addressIn = searchParams.get('address') || '';
 
     let address;
-    try {
-      address = ethers.getAddress(addressIn);
-    } catch {
-      return Response.json({ ok: false, error: 'invalid address' }, { status: 400 });
-    }
+    try { address = ethers.getAddress(addressIn); } catch { return Response.json({ ok: false, error: 'invalid address' }, { status: 400 }); }
 
     const r = await fetch(ZAPPER_URL, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-zapper-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        query: QUERY,
-        variables: {
-          addresses: [address],
-          chainIds: [8453],
-        },
-      }),
+      headers: { 'content-type': 'application/json', 'x-zapper-api-key': apiKey },
+      body: JSON.stringify({ query: QUERY, variables: { addresses: [address], chainIds: [8453] } }),
       cache: 'no-store',
     });
 
@@ -116,6 +99,8 @@ export async function GET(req) {
     if (!r.ok || (!out?.data && out?.errors)) {
       return Response.json({ ok: false, error: 'zapper query failed', details: out?.errors || out }, { status: 502 });
     }
+
+    const warnings = Array.isArray(out?.errors) ? out.errors : [];
 
     const tokenEdges = out?.data?.portfolioV2?.tokenBalances?.byToken?.edges || [];
     const tokens = tokenEdges
@@ -139,48 +124,43 @@ export async function GET(req) {
       .sort((a, b) => b.usdValue - a.usdValue)
       .slice(0, 24);
 
-    const nftEdges = out?.data?.portfolioV2?.nftBalances?.byCollection?.edges || [];
-    const nftCollections = nftEdges
+    const collectionEdges = out?.data?.portfolioV2?.nftBalances?.byCollection?.edges || [];
+    const nftCollections = collectionEdges
       .map((e) => e?.node)
       .filter(Boolean)
-      .filter((n) => (n?.network?.name || '').toLowerCase().includes('base'))
+      .filter((n) => (n?.collection?.network?.name || '').toLowerCase().includes('base'))
       .map((c) => {
-        const nftRows = (c?.nfts?.edges || [])
+        const nftRows = (c?.tokens?.edges || [])
           .map((e) => e?.node)
           .filter(Boolean)
-          .map((n) => ({
-            token: n.tokenAddress,
-            tokenId: String(n.tokenId || ''),
-            symbol: n.symbol || 'NFT',
-            name: n.name || '',
-            balance: String(n.balance || '1'),
-            imgUrl: n.imgUrlV2 || null,
-          }))
-          .filter((n) => n.token && n.tokenId)
-          .sort((a, b) => {
-            try {
-              const aa = BigInt(a.tokenId);
-              const bb = BigInt(b.tokenId);
-              if (aa === bb) return 0;
-              return aa < bb ? -1 : 1;
-            } catch {
-              return String(a.tokenId).localeCompare(String(b.tokenId));
-            }
+          .map((n) => {
+            const media = Array.isArray(n?.token?.mediasV2) ? n.token.mediasV2.find((m) => m?.thumbnail || m?.original) : null;
+            return {
+              token: c?.collection?.address,
+              tokenId: String(n.tokenId || ''),
+              symbol: c?.collection?.symbol || 'NFT',
+              name: n?.token?.name || '',
+              balance: String(n.balance || '1'),
+              usdValue: Number(n.balanceUSD || 0),
+              imgUrl: media?.thumbnail || media?.original || null,
+            };
           })
+          .filter((n) => n.token && n.tokenId)
           .slice(0, 24);
 
         return {
-          collectionAddress: c.collectionAddress,
-          collectionName: c.name || shortAddress(c.collectionAddress),
-          symbol: c.name || 'NFT',
-          totalBalanceUSD: Number(c.totalBalanceUSD || 0),
+          collectionAddress: c?.collection?.address,
+          collectionName: c?.collection?.name || shortAddress(c?.collection?.address),
+          symbol: c?.collection?.symbol || 'NFT',
+          totalBalanceUSD: Number(c.balanceUSD || 0),
           nfts: nftRows,
         };
       })
+      .filter((c) => c.collectionAddress)
       .sort((a, b) => (b.totalBalanceUSD || 0) - (a.totalBalanceUSD || 0))
       .slice(0, 24);
 
-    return Response.json({ ok: true, address, tokens, nftCollections, warnings: out?.errors || [] });
+    return Response.json({ ok: true, address, tokens, nftCollections, warnings });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || 'zapper route failed' }, { status: 500 });
   }
