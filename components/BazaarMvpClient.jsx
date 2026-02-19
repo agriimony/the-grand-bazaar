@@ -1982,7 +1982,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       } catch (e) {
         dbg(`erc721 non-enum zapper load failed ${tokenAddr}: ${errText(e)}`);
       }
-      throw new Error('Collection is not ERC721Enumerable and no indexed holdings found. Use + and enter token id.');
+      return [];
     }
 
     const count = Number(balance > BigInt(maxItems) ? BigInt(maxItems) : balance);
@@ -2120,6 +2120,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const kind = await detectTokenKind(tokenAddr, rp);
       if (kind === KIND_ERC721) {
         const rows = await fetchErc721Options(tokenAddr, tokenModalWallet, 24);
+        setCustomTokenNftContract(tokenAddr);
+
+        if (!rows.length) {
+          setTokenModalStep('custom-id');
+          setCustomTokenError('No indexed holdings found. Enter token id.');
+          setStatus('erc721 loaded without enumerable/indexed list; enter token id');
+          return;
+        }
+
         setTokenOptions(rows);
         setTokenNftCollections([{ 
           collectionAddress: tokenAddr,
@@ -2145,9 +2154,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           nfts: rows.map((r) => ({ token: r.token, tokenId: String(r.tokenId || ''), symbol: r.symbol || 'NFT', imgUrl: r.imgUrl || null, floorUsd: Number(r.floorUsd || 0), usdValue: Number(r.usdValue || 0) })),
         });
         setTokenNftSubView('items');
-        setCustomTokenNftContract(tokenAddr);
         setTokenModalStep('grid');
-        setStatus(rows.length > 0 ? 'erc721 loaded' : 'no nfts found for wallet');
+        setStatus('erc721 loaded');
         return;
       }
 
