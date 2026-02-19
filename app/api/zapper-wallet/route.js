@@ -54,6 +54,7 @@ const QUERY = `
                     balance
                     balanceUSD
                     token {
+                      tokenId
                       name
                       mediasV2 {
                         ... on Image {
@@ -143,7 +144,7 @@ export async function GET(req) {
             const media = Array.isArray(n?.token?.mediasV2) ? n.token.mediasV2.find((m) => m?.thumbnail || m?.original) : null;
             return {
               token: c?.collection?.address,
-              tokenId: String(n.tokenId || ''),
+              tokenId: String(n?.token?.tokenId || n.tokenId || ''),
               symbol: c?.collection?.symbol || 'NFT',
               name: n?.token?.name || '',
               balance: String(n.balance || '1'),

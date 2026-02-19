@@ -2431,7 +2431,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ? tokenNftCollections.map((c, idx) => ({
           token: c.collectionAddress || `collection-${idx}`,
           symbol: fitName(c.collectionName || c.symbol || 'Collection', 12),
-          amountDisplay: `${Array.isArray(c?.nfts) ? c.nfts.length : 0} items`,
+          amountDisplay: `${Array.isArray(c?.nfts) ? c.nfts.length : 0}`,
           imgUrl: (Array.isArray(c?.nfts) ? c.nfts.find((n) => n?.imgUrl)?.imgUrl : null) || null,
           isCollection: true,
           collectionAddress: c.collectionAddress,
