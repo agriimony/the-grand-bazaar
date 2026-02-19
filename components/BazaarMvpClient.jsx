@@ -2881,7 +2881,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             
             ) : tokenModalStep === 'custom-id' ? (
               <>
-                <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
+                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom'); setCustomTokenInput(''); setCustomTokenError(''); }}>← Back</button>
                 <div className="rs-modal-subtitle">Select Token ID</div>
                 <input
                   className="rs-amount-input rs-counterparty-input"
