@@ -1789,7 +1789,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         }
         return;
       }
-      dbg(`maker selector zapper fallback reason=${zd?.error || zr.status}`);
+      const detail = Array.isArray(zd?.details)
+        ? zd.details.map((e) => e?.message || JSON.stringify(e)).join(' | ')
+        : (typeof zd?.details === 'string' ? zd.details : JSON.stringify(zd?.details || ''));
+      dbg(`maker selector zapper fallback reason=${zd?.error || zr.status} requestId=${zd?.requestId || 'none'} details=${detail || 'none'}`);
 
       const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
 

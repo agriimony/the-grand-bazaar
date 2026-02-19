@@ -88,6 +88,7 @@ export async function GET(req) {
     let address;
     try { address = ethers.getAddress(addressIn); } catch { return Response.json({ ok: false, error: 'invalid address' }, { status: 400 }); }
 
+    const requestId = `zw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const r = await fetch(ZAPPER_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-zapper-api-key': apiKey },
@@ -97,7 +98,16 @@ export async function GET(req) {
 
     const out = await r.json();
     if (!r.ok || (!out?.data && out?.errors)) {
-      return Response.json({ ok: false, error: 'zapper query failed', details: out?.errors || out }, { status: 502 });
+      console.error('[zapper-wallet] query failed', {
+        requestId,
+        status: r.status,
+        statusText: r.statusText,
+        address,
+        origin: req.headers.get('origin') || null,
+        referer: req.headers.get('referer') || null,
+        errors: out?.errors || null,
+      });
+      return Response.json({ ok: false, error: 'zapper query failed', requestId, details: out?.errors || out }, { status: 502 });
     }
 
     const warnings = Array.isArray(out?.errors) ? out.errors : [];
@@ -162,6 +172,7 @@ export async function GET(req) {
 
     return Response.json({ ok: true, address, tokens, nftCollections, warnings });
   } catch (e) {
+    console.error('[zapper-wallet] route exception', { message: e?.message, stack: e?.stack });
     return Response.json({ ok: false, error: e?.message || 'zapper route failed' }, { status: 500 });
   }
 }
