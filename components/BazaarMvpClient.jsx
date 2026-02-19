@@ -2425,7 +2425,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         isNft: true,
         kind: KIND_ERC721,
       })) : []))
-    : tokenOptions;
+    : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
   const pendingInsufficient =
