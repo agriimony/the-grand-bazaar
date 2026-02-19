@@ -513,6 +513,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [customTokenInput, setCustomTokenInput] = useState('');
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenNftContract, setCustomTokenNftContract] = useState('');
+  const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [tokenOptions, setTokenOptions] = useState([]);
   const [tokenNftCollections, setTokenNftCollections] = useState([]);
   const [tokenModalView, setTokenModalView] = useState('tokens');
@@ -1709,6 +1710,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenNftContract('');
+    setCustomTokenPreview(null);
     setTokenModalLoading(true);
     setTokenOptions([]);
     setTokenNftCollections([]);
@@ -2093,6 +2095,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenNftContract('');
+    setCustomTokenPreview(null);
     setTokenModalStep('custom');
   }
 
@@ -2100,6 +2103,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (!customTokenNftContract) return;
     setCustomTokenInput('');
     setCustomTokenError('');
+    setCustomTokenPreview(null);
     setTokenModalStep('custom-id');
   }
 
@@ -2182,30 +2186,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         null,
         { skipOwnershipCheck: isPublicCounterpartyPanel }
       );
+      setCustomTokenPreview(null);
       onTokenSelect(option);
     } catch (e) {
       const msg = errText(e);
       if (/not owned by wallet/i.test(msg)) {
-        const m = msg.match(/wallet\s+(0x[a-fA-F0-9]{40})\s+expected\s+(0x[a-fA-F0-9]{40})/i);
-        let enriched = msg;
-        if (m) {
-          const ownerAddr = m[1];
-          const expectedAddr = m[2];
-          try {
-            const [ownerRes, expectedRes] = await Promise.all([
-              fetch(`/api/farcaster-name?address=${encodeURIComponent(ownerAddr)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
-              fetch(`/api/farcaster-name?address=${encodeURIComponent(expectedAddr)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
-            ]);
-            const ownerName = ownerRes?.name ? `@${String(ownerRes.name).replace(/^@/, '')}` : short(ownerAddr);
-            const expectedName = expectedRes?.name ? `@${String(expectedRes.name).replace(/^@/, '')}` : short(expectedAddr);
-            enriched = `Token #${tokenId} owner is ${ownerName}. Expected ${expectedName}.`;
-          } catch {
-            enriched = `Token #${tokenId} owner is ${short(ownerAddr)}. Expected ${short(expectedAddr)}.`;
-          }
+        try {
+          const preview = await fetchErc721Option(
+            customTokenNftContract,
+            tokenModalWallet,
+            tokenId,
+            null,
+            { skipOwnershipCheck: true }
+          );
+          setCustomTokenPreview(preview);
+        } catch {
+          setCustomTokenPreview(null);
         }
-        setCustomTokenError(enriched);
+        setCustomTokenError("You don't own this NFT!");
         setStatus('erc721 token not owned by selected wallet');
       } else {
+        setCustomTokenPreview(null);
         setCustomTokenError('Token id not found on this contract');
         setStatus('erc721 token id lookup failed');
       }
@@ -2926,8 +2927,28 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             
             ) : tokenModalStep === 'custom-id' ? (
               <>
-                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom'); setCustomTokenInput(''); setCustomTokenError(''); }}>← Back</button>
+                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom'); setCustomTokenInput(''); setCustomTokenError(''); setCustomTokenPreview(null); }}>← Back</button>
                 <div className="rs-modal-subtitle">Select Token ID</div>
+                {customTokenPreview ? (
+                  <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
+                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
+                      <div className="rs-amount-overlay rs-selected-token-amount">#{String(customTokenPreview.tokenId || '')}</div>
+                      <div className="rs-insufficient-mark">❗</div>
+                      <img
+                        src={customTokenPreview.imgUrl || tokenIconUrl(8453, customTokenPreview.token || '')}
+                        alt={customTokenPreview.symbol || 'NFT'}
+                        className="rs-token-art rs-selected-token-icon"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fb = e.currentTarget.nextElementSibling;
+                          if (fb) fb.style.display = 'flex';
+                        }}
+                      />
+                      <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenPreview.symbol || 'NFT')}</div>
+                      <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenPreview.symbol || 'NFT'}</div>
+                    </div>
+                  </div>
+                ) : null}
                 <input
                   className="rs-amount-input rs-counterparty-input"
                   placeholder="token id"
@@ -2936,6 +2957,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   onChange={(e) => {
                     setCustomTokenInput(e.target.value);
                     if (customTokenError) setCustomTokenError('');
+                    if (customTokenPreview) setCustomTokenPreview(null);
                   }}
                 />
                 {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
