@@ -87,6 +87,32 @@ html, body {
   line-height: 1.2;
 }
 
+.rs-panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rs-panel-title-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rs-title-clear {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 2px solid #342b21;
+  background: #5e513f;
+  color: #f4d77c;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+}
+
 .rs-title-link {
   color: inherit;
   text-decoration: none;

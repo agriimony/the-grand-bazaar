@@ -549,6 +549,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const showTopbarClose = Boolean(initialCompressed || initialCastHash);
 
+  function clearCounterpartyToPublic() {
+    setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
+    setCounterpartyName('Anybody');
+    setCounterpartyHandle('');
+    setCounterpartyProfileUrl('');
+    setCounterpartyPfpUrl('');
+    setCounterpartyInput('');
+    setCounterpartyError('');
+    setCounterpartyResults([]);
+    setStatus('public order mode');
+  }
+
   function openCounterpartySelector() {
     setCounterpartyError('');
     setCounterpartyResults([]);
@@ -2044,13 +2056,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCounterpartyError('');
     setCounterpartyResults([]);
     if (!raw) {
-      setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: ethers.ZeroAddress }));
-      setCounterpartyName('Anybody');
-      setCounterpartyHandle('');
-      setCounterpartyProfileUrl('');
-      setCounterpartyPfpUrl('');
+      clearCounterpartyToPublic();
       setCounterpartyModalOpen(false);
-      setStatus('public order mode');
       return;
     }
 
@@ -2850,6 +2857,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             titleLink={bottomTitleLink}
             titleAvatarUrl={bottomTitleAvatar}
             onTitleClick={makerMode && !parsed ? openCounterpartySelector : undefined}
+            onTitleClear={makerMode && !parsed && hasSpecificMakerCounterparty ? clearCounterpartyToPublic : undefined}
             amount={bottomAmount}
             symbol={bottomSymbol}
             tokenAddress={bottomTokenAddress}
@@ -3163,7 +3171,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleClear, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenImage || tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -3190,23 +3198,28 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, amount, sy
 
   return (
     <div className="rs-panel">
-      <div className="rs-panel-title">
-        {titleLink ? (
-          <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link rs-title-with-pfp">
-            {renderTitleAvatar()}
-            <span>{title}</span>
-          </a>
-        ) : onTitleClick ? (
-          <button className="rs-title-btn rs-title-with-pfp" onClick={onTitleClick}>
-            {renderTitleAvatar()}
-            <span>{title}</span>
-          </button>
-        ) : (
-          <span className="rs-title-with-pfp">
-            {renderTitleAvatar()}
-            <span>{title}</span>
-          </span>
-        )}
+      <div className="rs-panel-title rs-panel-title-row">
+        <span className="rs-panel-title-main">
+          {titleLink ? (
+            <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link rs-title-with-pfp">
+              {renderTitleAvatar()}
+              <span>{title}</span>
+            </a>
+          ) : onTitleClick ? (
+            <button className="rs-title-btn rs-title-with-pfp" onClick={onTitleClick}>
+              {renderTitleAvatar()}
+              <span>{title}</span>
+            </button>
+          ) : (
+            <span className="rs-title-with-pfp">
+              {renderTitleAvatar()}
+              <span>{title}</span>
+            </span>
+          )}
+        </span>
+        {onTitleClear ? (
+          <button className="rs-title-clear" aria-label="Clear private counterparty" onClick={onTitleClear}>✕</button>
+        ) : null}
       </div>
       <div className={`rs-box ${danger ? 'rs-danger' : ''}`} onClick={editable ? onEdit : undefined}>
         <p className="rs-value">
