@@ -46,6 +46,9 @@ const QUERY = `
                 address
                 name
                 symbol
+                floorPrice {
+                  valueUsd
+                }
               }
               tokens(first: 24, order: { by: USD_WORTH, direction: DESC }) {
                 edges {
@@ -142,6 +145,7 @@ export async function GET(req) {
           .filter(Boolean)
           .map((n) => {
             const media = Array.isArray(n?.token?.mediasV2) ? n.token.mediasV2.find((m) => m?.thumbnail || m?.original) : null;
+            const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
             return {
               token: c?.collection?.address,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),
@@ -149,6 +153,7 @@ export async function GET(req) {
               name: n?.token?.name || '',
               balance: String(n.balance || '1'),
               usdValue: Number(n.balanceUSD || 0),
+              floorUsd: Number.isFinite(floorUsd) ? floorUsd : 0,
               imgUrl: media?.thumbnail || media?.original || null,
             };
           })

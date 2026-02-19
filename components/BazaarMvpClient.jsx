@@ -1854,6 +1854,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     if (option?.isNft) {
       const panel = tokenModalPanel;
+      const floorUsd = Number(option?.floorUsd || 0);
       setMakerOverrides((prev) => ({
         ...prev,
         [`${panel}Token`]: option.token,
@@ -1862,7 +1863,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         [`${panel}ImgUrl`]: option.imgUrl || null,
         [`${panel}AvailableRaw`]: '1',
         [`${panel}Amount`]: '1',
-        [`${panel}Usd`]: null,
+        [`${panel}Usd`]: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : null,
         [`${panel}TokenId`]: String(option.tokenId || '0'),
         [`${panel}Kind`]: KIND_ERC721,
       }));
@@ -2442,6 +2443,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           amountDisplay: `#${n.tokenId}`,
           imgUrl: n.imgUrl || null,
           tokenId: String(n.tokenId),
+          floorUsd: Number(n?.floorUsd || 0),
           isNft: true,
           kind: KIND_ERC721,
         })) : []))
