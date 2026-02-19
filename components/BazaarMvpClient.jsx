@@ -2455,14 +2455,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && pendingAvailableNum >= 0
     && pendingAmountNum > (pendingAvailableNum + 1e-12);
 
-  const yourAmountDisplayFinal = makerOverrides.senderAmount
-    ? formatTokenAmount(makerOverrides.senderAmount)
-    : yourAmountDisplay;
+  const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
+  const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
 
-  let counterpartyAmountDisplayFinal = makerOverrides.signerAmount
-    ? formatTokenAmount(makerOverrides.signerAmount)
-    : counterpartyAmountDisplay;
-  if (makerMode && makerOverrides.signerAmount) {
+  const yourAmountDisplayFinal = senderIsErc721Selected
+    ? `#${String(makerOverrides.senderTokenId)}`
+    : (makerOverrides.senderAmount ? formatTokenAmount(makerOverrides.senderAmount) : yourAmountDisplay);
+
+  let counterpartyAmountDisplayFinal = signerIsErc721Selected
+    ? `#${String(makerOverrides.signerTokenId)}`
+    : (makerOverrides.signerAmount ? formatTokenAmount(makerOverrides.signerAmount) : counterpartyAmountDisplay);
+  if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
     const n = Number(makerOverrides.signerAmount);
     if (Number.isFinite(n) && n >= 0) {
       const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
