@@ -2885,7 +2885,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 }}
                 autoFocus
               />
-              {makerMode && !parsed && hasSpecificMakerCounterparty && counterpartyInput ? (
+              {makerMode && !parsed && counterpartyInput ? (
                 <button
                   className="rs-counterparty-clear"
                   aria-label="Clear counterparty"
