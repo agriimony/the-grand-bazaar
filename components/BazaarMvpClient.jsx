@@ -516,6 +516,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [tokenOptions, setTokenOptions] = useState([]);
   const [tokenNftCollections, setTokenNftCollections] = useState([]);
   const [tokenModalView, setTokenModalView] = useState('tokens');
+  const [tokenNftSubView, setTokenNftSubView] = useState('collections');
+  const [selectedNftCollection, setSelectedNftCollection] = useState(null);
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
@@ -1702,6 +1704,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenModalOpen(true);
     setTokenModalStep('grid');
     setTokenModalView('tokens');
+    setTokenNftSubView('collections');
+    setSelectedNftCollection(null);
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenNftContract('');
@@ -1841,6 +1845,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   function onTokenSelect(option) {
+    if (option?.isCollection) {
+      const picked = tokenNftCollections.find((c) => c.collectionAddress === option.collectionAddress) || null;
+      setSelectedNftCollection(picked);
+      setTokenNftSubView('items');
+      return;
+    }
+
     if (option?.isNft) {
       const panel = tokenModalPanel;
       setMakerOverrides((prev) => ({
@@ -2416,15 +2427,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
   const modalDisplayOptions = tokenModalView === 'nfts'
-    ? tokenNftCollections.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts.map((n) => ({
-        token: c.collectionAddress || n.token,
-        symbol: c.symbol || n.symbol || 'NFT',
-        amountDisplay: `#${n.tokenId}`,
-        imgUrl: n.imgUrl || null,
-        tokenId: String(n.tokenId),
-        isNft: true,
-        kind: KIND_ERC721,
-      })) : []))
+    ? (tokenNftSubView === 'collections'
+      ? tokenNftCollections.map((c, idx) => ({
+          token: c.collectionAddress || `collection-${idx}`,
+          symbol: fitName(c.collectionName || c.symbol || 'Collection', 12),
+          amountDisplay: `${Array.isArray(c?.nfts) ? c.nfts.length : 0} items`,
+          imgUrl: (Array.isArray(c?.nfts) ? c.nfts.find((n) => n?.imgUrl)?.imgUrl : null) || null,
+          isCollection: true,
+          collectionAddress: c.collectionAddress,
+        }))
+      : (Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts.map((n) => ({
+          token: selectedNftCollection.collectionAddress || n.token,
+          symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
+          amountDisplay: `#${n.tokenId}`,
+          imgUrl: n.imgUrl || null,
+          tokenId: String(n.tokenId),
+          isNft: true,
+          kind: KIND_ERC721,
+        })) : []))
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
@@ -2760,8 +2780,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div className="rs-modal-titlebar">{tokenModalPanel === 'sender' ? 'Your Inventory' : `${fitOfferName(counterpartyName)}'s Inventory`}</div>
                 {!tokenModalLoading ? (
                   <div className="rs-inv-toggle-row">
-                    <button className={`rs-inv-toggle ${tokenModalView === 'tokens' ? 'active' : ''}`} onClick={() => setTokenModalView('tokens')}>Tokens</button>
-                    <button className={`rs-inv-toggle ${tokenModalView === 'nfts' ? 'active' : ''}`} onClick={() => setTokenModalView('nfts')}>NFTs</button>
+                    <button className={`rs-inv-toggle ${tokenModalView === 'tokens' ? 'active' : ''}`} onClick={() => { setTokenModalView('tokens'); setTokenNftSubView('collections'); setSelectedNftCollection(null); }}>Tokens</button>
+                    <button className={`rs-inv-toggle ${tokenModalView === 'nfts' ? 'active' : ''}`} onClick={() => { setTokenModalView('nfts'); setTokenNftSubView('collections'); setSelectedNftCollection(null); }}>NFTs</button>
                   </div>
                 ) : null}
                 {tokenModalLoading ? (
@@ -2773,6 +2793,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   </div>
                 ) : (
                   <>
+                    {tokenModalView === 'nfts' && tokenNftSubView === 'items' ? (
+                      <button className="rs-modal-back" onClick={() => { setTokenNftSubView('collections'); setSelectedNftCollection(null); }}>← Back</button>
+                    ) : null}
                     {modalDisplayOptions.length === 0 ? <p>{tokenModalView === 'nfts' ? `No NFTs found for ${short(tokenModalWallet)}` : (customTokenNftContract ? `No ERC721 holdings found for ${short(tokenModalWallet)}` : `No supported tokens with balance found for ${short(tokenModalWallet)}`)}</p> : null}
                     <div className="rs-token-grid-wrap">
                       <div className="rs-token-grid">
