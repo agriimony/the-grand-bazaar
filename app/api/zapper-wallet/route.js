@@ -33,7 +33,6 @@ const QUERY = `
               balance
               balanceUSD
               imgUrlV2
-              network
             }
           }
         }
@@ -47,7 +46,6 @@ const QUERY = `
                 address
                 name
                 symbol
-                network { name }
               }
               tokens(first: 24, order: { by: USD_WORTH, direction: DESC }) {
                 edges {
@@ -116,7 +114,6 @@ export async function GET(req) {
     const tokens = tokenEdges
       .map((e) => e?.node)
       .filter(Boolean)
-      .filter((n) => String(n?.network || '').toUpperCase().includes('BASE'))
       .map((n) => {
         const balance = Number(n.balance || 0);
         const usdValue = Number(n.balanceUSD || 0);
@@ -138,7 +135,6 @@ export async function GET(req) {
     const nftCollections = collectionEdges
       .map((e) => e?.node)
       .filter(Boolean)
-      .filter((n) => (n?.collection?.network?.name || '').toLowerCase().includes('base'))
       .map((c) => {
         const nftRows = (c?.tokens?.edges || [])
           .map((e) => e?.node)
