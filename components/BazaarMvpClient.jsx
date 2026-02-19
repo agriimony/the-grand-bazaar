@@ -1923,7 +1923,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       c.tokenURI(tokenId).catch(() => ''),
     ]);
     if (!skipOwnershipCheck && normalizeAddr(owner) !== normalizeAddr(wallet)) {
-      throw new Error(`Token #${tokenId} is not owned by ${short(wallet)} (owner: ${short(owner)})`);
+      throw new Error(`Token #${tokenId} is not owned by wallet ${owner} expected ${wallet}`);
     }
     const imgUrl = await readNftImageFromTokenUri(tokenUri);
     return {
@@ -2120,6 +2120,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const kind = await detectTokenKind(tokenAddr, rp);
       if (kind === KIND_ERC721) {
         setCustomTokenNftContract(tokenAddr);
+        setCustomTokenInput('');
         setCustomTokenError('');
         setTokenModalStep('custom-id');
         setStatus('erc721 contract set; enter token id');
@@ -2142,6 +2143,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const msg = errText(e);
       if (/unconfigured name/i.test(msg)) {
         setCustomTokenNftContract(tokenAddr);
+        setCustomTokenInput('');
         setCustomTokenError('Name metadata unavailable. Enter token id directly.');
         setTokenModalStep('custom-id');
         setStatus('name lookup unavailable; enter token id');
@@ -2178,8 +2180,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       onTokenSelect(option);
     } catch (e) {
       const msg = errText(e);
-      if (/not owned by/i.test(msg)) {
-        setCustomTokenError(msg);
+      if (/not owned by wallet/i.test(msg)) {
+        const m = msg.match(/wallet\s+(0x[a-fA-F0-9]{40})\s+expected\s+(0x[a-fA-F0-9]{40})/i);
+        let enriched = msg;
+        if (m) {
+          const ownerAddr = m[1];
+          const expectedAddr = m[2];
+          try {
+            const [ownerRes, expectedRes] = await Promise.all([
+              fetch(`/api/farcaster-name?address=${encodeURIComponent(ownerAddr)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
+              fetch(`/api/farcaster-name?address=${encodeURIComponent(expectedAddr)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
+            ]);
+            const ownerName = ownerRes?.name ? `@${String(ownerRes.name).replace(/^@/, '')}` : short(ownerAddr);
+            const expectedName = expectedRes?.name ? `@${String(expectedRes.name).replace(/^@/, '')}` : short(expectedAddr);
+            enriched = `Token #${tokenId} owner is ${ownerName}. Expected ${expectedName}.`;
+          } catch {
+            enriched = `Token #${tokenId} owner is ${short(ownerAddr)}. Expected ${short(expectedAddr)}.`;
+          }
+        }
+        setCustomTokenError(enriched);
         setStatus('erc721 token not owned by selected wallet');
       } else {
         setCustomTokenError('Token id not found on this contract');

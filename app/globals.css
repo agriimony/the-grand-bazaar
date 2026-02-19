@@ -732,9 +732,9 @@ html, body {
   color: #ff5b5b;
   text-align: center;
   font-family: var(--font-pixel-heading), monospace;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 900;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.2px;
   text-shadow: 1px 1px 0 #000;
 }
 
