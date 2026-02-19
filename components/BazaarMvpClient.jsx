@@ -514,6 +514,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenNftContract, setCustomTokenNftContract] = useState('');
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
+  const [customTokenResolvedOption, setCustomTokenResolvedOption] = useState(null);
   const [tokenOptions, setTokenOptions] = useState([]);
   const [tokenNftCollections, setTokenNftCollections] = useState([]);
   const [tokenModalView, setTokenModalView] = useState('tokens');
@@ -1711,6 +1712,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenError('');
     setCustomTokenNftContract('');
     setCustomTokenPreview(null);
+    setCustomTokenResolvedOption(null);
     setTokenModalLoading(true);
     setTokenOptions([]);
     setTokenNftCollections([]);
@@ -1946,6 +1948,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       tokenId: String(tokenId),
       kind: KIND_ERC721,
       isNft: true,
+      ownerWallet: String(owner || ''),
       imgUrl: imgUrl || null,
     };
   }
@@ -2096,6 +2099,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenError('');
     setCustomTokenNftContract('');
     setCustomTokenPreview(null);
+    setCustomTokenResolvedOption(null);
     setTokenModalStep('custom');
   }
 
@@ -2104,6 +2108,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenPreview(null);
+    setCustomTokenResolvedOption(null);
     setTokenModalStep('custom-id');
   }
 
@@ -2131,6 +2136,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         setCustomTokenNftContract(tokenAddr);
         setCustomTokenInput('');
         setCustomTokenError('');
+        setCustomTokenPreview(null);
+        setCustomTokenResolvedOption(null);
         setTokenModalStep('custom-id');
         setStatus('erc721 contract set; enter token id');
         return;
@@ -2153,6 +2160,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (/unconfigured name/i.test(msg)) {
         setCustomTokenNftContract(tokenAddr);
         setCustomTokenInput('');
+        setCustomTokenPreview(null);
+        setCustomTokenResolvedOption(null);
         setCustomTokenError('Name metadata unavailable. Enter token id directly.');
         setTokenModalStep('custom-id');
         setStatus('name lookup unavailable; enter token id');
@@ -2176,9 +2185,36 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setCustomTokenError('Select ERC721 contract first');
       return;
     }
+
+    const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+
     try {
       setTokenModalLoading(true);
-      const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+
+      const alreadyResolved = customTokenResolvedOption
+        && String(customTokenResolvedOption.tokenId || '') === tokenId
+        && normalizeAddr(customTokenResolvedOption.token || '') === normalizeAddr(customTokenNftContract);
+
+      if (isPublicCounterpartyPanel && alreadyResolved) {
+        const owner = String(customTokenResolvedOption.ownerWallet || '').toLowerCase();
+        if (/^0x[a-f0-9]{40}$/.test(owner)) {
+          try {
+            const r = await fetch(`/api/farcaster-name?address=${encodeURIComponent(owner)}`, { cache: 'no-store' });
+            const d = await r.json();
+            applyCounterpartySelection({
+              name: d?.name || '',
+              address: owner,
+              profileUrl: d?.profileUrl || '',
+              pfpUrl: d?.pfpUrl || '',
+            });
+          } catch {
+            applyCounterpartySelection({ name: '', address: owner, profileUrl: '', pfpUrl: '' });
+          }
+        }
+        onTokenSelect(customTokenResolvedOption);
+        return;
+      }
+
       const option = await fetchErc721Option(
         customTokenNftContract,
         tokenModalWallet,
@@ -2186,7 +2222,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         null,
         { skipOwnershipCheck: isPublicCounterpartyPanel }
       );
+
+      if (isPublicCounterpartyPanel) {
+        const owner = String(option?.ownerWallet || '').toLowerCase();
+        let ownerDisplay = short(owner);
+        if (/^0x[a-f0-9]{40}$/.test(owner)) {
+          try {
+            const r = await fetch(`/api/farcaster-name?address=${encodeURIComponent(owner)}`, { cache: 'no-store' });
+            const d = await r.json();
+            ownerDisplay = d?.name ? `@${String(d.name).replace(/^@/, '')}` : short(owner);
+          } catch {
+            ownerDisplay = short(owner);
+          }
+        }
+        const resolved = { ...option, ownerDisplay };
+        setCustomTokenPreview(resolved);
+        setCustomTokenResolvedOption(resolved);
+        setCustomTokenError('');
+        setStatus('owner found; confirm to set private counterparty');
+        return;
+      }
+
       setCustomTokenPreview(null);
+      setCustomTokenResolvedOption(null);
       onTokenSelect(option);
     } catch (e) {
       const msg = errText(e);
@@ -2203,10 +2261,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         } catch {
           setCustomTokenPreview(null);
         }
+        setCustomTokenResolvedOption(null);
         setCustomTokenError("You don't own this NFT!");
         setStatus('erc721 token not owned by selected wallet');
       } else {
         setCustomTokenPreview(null);
+        setCustomTokenResolvedOption(null);
         setCustomTokenError('Token id not found on this contract');
         setStatus('erc721 token id lookup failed');
       }
@@ -2927,13 +2987,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             
             ) : tokenModalStep === 'custom-id' ? (
               <>
-                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom'); setCustomTokenInput(''); setCustomTokenError(''); setCustomTokenPreview(null); }}>← Back</button>
+                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom'); setCustomTokenInput(''); setCustomTokenError(''); setCustomTokenPreview(null); setCustomTokenResolvedOption(null); }}>← Back</button>
                 <div className="rs-modal-subtitle">Select Token ID</div>
                 {customTokenPreview ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
                       <div className="rs-amount-overlay rs-selected-token-amount">#{String(customTokenPreview.tokenId || '')}</div>
-                      <div className="rs-insufficient-mark">❗</div>
+                      {customTokenError ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         src={customTokenPreview.imgUrl || tokenIconUrl(8453, customTokenPreview.token || '')}
                         alt={customTokenPreview.symbol || 'NFT'}
@@ -2947,6 +3007,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenPreview.symbol || 'NFT')}</div>
                       <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenPreview.symbol || 'NFT'}</div>
                     </div>
+                    {customTokenPreview?.ownerWallet ? (
+                      <div className="rs-token-balance-note">Owner: {customTokenPreview.ownerDisplay || short(customTokenPreview.ownerWallet)}</div>
+                    ) : null}
                   </div>
                 ) : null}
                 <input
@@ -2958,11 +3021,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     setCustomTokenInput(e.target.value);
                     if (customTokenError) setCustomTokenError('');
                     if (customTokenPreview) setCustomTokenPreview(null);
+                    if (customTokenResolvedOption) setCustomTokenResolvedOption(null);
                   }}
                 />
                 {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
                 <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomTokenId} disabled={tokenModalLoading}>
-                  {tokenModalLoading ? 'Loading...' : 'Confirm'}
+                  {tokenModalLoading
+                    ? 'Loading...'
+                    : ((tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty && customTokenResolvedOption)
+                      ? 'Confirm'
+                      : 'Lookup')}
                 </button>
               </>
             ) : (
