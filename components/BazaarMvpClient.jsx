@@ -1914,7 +1914,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     };
   }
 
-  async function fetchErc721Option(tokenAddr, wallet, tokenId, symbolHint = null) {
+  async function fetchErc721Option(tokenAddr, wallet, tokenId, symbolHint = null, { skipOwnershipCheck = false } = {}) {
     const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
     const [owner, symbol, tokenUri] = await Promise.all([
@@ -1922,8 +1922,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       c.symbol().catch(() => symbolHint || 'NFT'),
       c.tokenURI(tokenId).catch(() => ''),
     ]);
-    if (normalizeAddr(owner) !== normalizeAddr(wallet)) {
-      throw new Error('Token not owned by wallet');
+    if (!skipOwnershipCheck && normalizeAddr(owner) !== normalizeAddr(wallet)) {
+      throw new Error(`Token #${tokenId} is not owned by ${short(wallet)} (owner: ${short(owner)})`);
     }
     const imgUrl = await readNftImageFromTokenUri(tokenUri);
     return {
@@ -2167,12 +2167,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     try {
       setTokenModalLoading(true);
-      const option = await fetchErc721Option(customTokenNftContract, tokenModalWallet, tokenId);
+      const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+      const option = await fetchErc721Option(
+        customTokenNftContract,
+        tokenModalWallet,
+        tokenId,
+        null,
+        { skipOwnershipCheck: isPublicCounterpartyPanel }
+      );
       onTokenSelect(option);
     } catch (e) {
-      setCustomTokenError('Token id not found');
-      setStatus('erc721 token id lookup failed');
-      dbg(`erc721 token id lookup failed ${customTokenNftContract}#${tokenId}: ${errText(e)}`);
+      const msg = errText(e);
+      if (/not owned by/i.test(msg)) {
+        setCustomTokenError(msg);
+        setStatus('erc721 token not owned by selected wallet');
+      } else {
+        setCustomTokenError('Token id not found on this contract');
+        setStatus('erc721 token id lookup failed');
+      }
+      dbg(`erc721 token id lookup failed ${customTokenNftContract}#${tokenId}: ${msg}`);
     } finally {
       setTokenModalLoading(false);
     }
