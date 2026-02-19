@@ -49,6 +49,11 @@ const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const BASE_SWAP_CONTRACT = '0x8a9969ed0A9bb3cDA7521DDaA614aE86e72e0A57';
+const BASE_SWAP_CONTRACT_ERC721 = '0x2aa29F096257bc6B253bfA9F6404B20Ae0ef9C4d';
+const BASE_SWAP_CONTRACT_ERC1155 = '0xD19783B48b11AFE1544b001c6d807A513e5A95cf';
+const KIND_ERC20 = '0x36372b07';
+const KIND_ERC721 = '0x80ac58cd';
+const KIND_ERC1155 = '0xd9b67a26';
 const TOKEN_CATALOG = [
   { token: BASE_ETH, symbol: 'ETH', decimals: 18, native: true, iconArt: '/eth-icon.png' },
   { token: BASE_USDC, symbol: 'USDC', decimals: 6 },
@@ -208,6 +213,27 @@ function isEthSentinelAddr(addr = '') {
 
 function tokenKey(addr = '') {
   return isEthSentinelAddr(addr) ? canonAddr(BASE_ETH) : canonAddr(addr);
+}
+
+async function detectTokenKind(tokenAddr, provider) {
+  if (!tokenAddr || isEthSentinelAddr(tokenAddr)) return KIND_ERC20;
+  try {
+    const c = new ethers.Contract(tokenAddr, ['function supportsInterface(bytes4 interfaceId) view returns (bool)'], provider);
+    const [is721, is1155] = await Promise.all([
+      c.supportsInterface(KIND_ERC721).catch(() => false),
+      c.supportsInterface(KIND_ERC1155).catch(() => false),
+    ]);
+    if (is1155) return KIND_ERC1155;
+    if (is721) return KIND_ERC721;
+  } catch {}
+  return KIND_ERC20;
+}
+
+async function resolveSwapForSenderToken(senderToken, provider) {
+  const kind = await detectTokenKind(senderToken, provider);
+  if (kind === KIND_ERC721) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC721 };
+  if (kind === KIND_ERC1155) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC1155 };
+  return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
 }
 
 function isStableToken(addr = '') {
@@ -1094,11 +1120,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onMakerApprove() {
     if (!makerMode) return;
-    const swapContract = parsed?.swapContract || BASE_SWAP_CONTRACT;
-    if (!swapContract) {
-      setStatus('order not loaded');
-      return;
-    }
     if (!address || !sendTransactionAsync || !publicClient) {
       setStatus('wallet connector not ready');
       return;
@@ -1115,6 +1136,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('ETH does not require approve');
       return;
     }
+
+    const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+    const senderTokenForOrder = makerOverrides.signerToken || parsed?.signerToken;
+    const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, readProvider);
 
     try {
       const rawAmount = ethers.parseUnits(String(amount), decimals);
@@ -1217,7 +1242,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       setStatus('signing maker order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const swapContract = parsed?.swapContract || BASE_SWAP_CONTRACT;
+      const { kind: routedSenderKind, swapContract } = await resolveSwapForSenderToken(senderToken, readProvider);
       const swap = new ethers.Contract(swapContract, SWAP_ABI, readProvider);
       const [protocolFee, requiredSenderKind] = await Promise.all([
         swap.protocolFee(),
@@ -1245,7 +1270,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         sender: {
           wallet: selectedCounterpartyWallet,
           token: senderToken,
-          kind: requiredSenderKind,
+          kind: routedSenderKind || requiredSenderKind,
           id: 0,
           amount: senderAmount,
         },
@@ -2063,12 +2088,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (!insufficient && token && amount) {
         if (isEthSentinelAddr(token)) {
           setMakerStep('sign');
-        } else if (parsed?.swapContract && address) {
+        } else if (address) {
           try {
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
             const c = new ethers.Contract(token, ERC20_ABI, rp);
             const need = ethers.parseUnits(String(amount), dec);
-            const allowance = await c.allowance(address, parsed.swapContract);
+            const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
+            const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp);
+            const allowance = await c.allowance(address, swapContract);
             setMakerStep(allowance >= need ? 'sign' : 'approve');
           } catch {
             setMakerStep('approve');
