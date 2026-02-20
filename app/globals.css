@@ -108,9 +108,12 @@ html, body {
   background: #5e513f;
   color: #f4d77c;
   font-size: 11px;
+  font-family: var(--font-pixel-heading), monospace;
   line-height: 1;
-  display: inline-grid;
-  place-items: center;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rs-title-link {
@@ -764,9 +767,12 @@ html, body {
   background: #5e513f;
   color: #f4d77c;
   font-size: 12px;
+  font-family: var(--font-pixel-heading), monospace;
   line-height: 1;
-  display: grid;
-  place-items: center;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rs-token-confirm-btn {
