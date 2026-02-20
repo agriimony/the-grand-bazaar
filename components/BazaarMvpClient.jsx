@@ -500,6 +500,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const publicClient = usePublicClient();
   const [status, setStatus] = useState('ready');
   const [lastSwapTxHash, setLastSwapTxHash] = useState('');
+  const [swapThanksSent, setSwapThanksSent] = useState(false);
+  const [swapThanksBusy, setSwapThanksBusy] = useState(false);
   const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
@@ -1056,6 +1058,40 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     } catch (e) {
       setStatus(`check error: ${e.message}`);
       return null;
+    }
+  }
+
+  async function onSwapComposeThanks() {
+    const txHash = String(lastSwapTxHash || '').trim();
+    const parentHash = String(initialCastHash || '').trim();
+    if (!txHash || !parentHash) return;
+
+    try {
+      setSwapThanksBusy(true);
+      const mod = await import('@farcaster/miniapp-sdk');
+      const sdk = mod?.sdk || mod?.default || mod;
+      const compose = sdk?.actions?.composeCast;
+      if (!compose) throw new Error('composeCast unavailable');
+
+      const txUrl = `https://basescan.org/tx/${txHash}`;
+      const text = `Thanks for the swap 🤝\n${txUrl}`;
+
+      try {
+        await compose({
+          text,
+          embeds: [txUrl],
+          parent: { type: 'cast', hash: parentHash },
+        });
+      } catch {
+        await compose(text);
+      }
+
+      setSwapThanksSent(true);
+      setStatus('swap thanks reply composer opened');
+    } catch (e) {
+      setStatus(`compose error: ${errText(e)}`);
+    } finally {
+      setSwapThanksBusy(false);
     }
   }
 
@@ -2800,6 +2836,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <div className="rs-order-success">
                 <div>Swap Complete!</div>
                 <a href={`https://basescan.org/tx/${lastSwapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a>
+                {initialCastHash ? (
+                  <button className="rs-btn rs-btn-positive" onClick={onSwapComposeThanks} disabled={swapThanksBusy || swapThanksSent}>
+                    {swapThanksSent ? 'Thanks reply ready' : (swapThanksBusy ? 'Opening composer...' : 'Reply with thanks')}
+                  </button>
+                ) : null}
               </div>
             ) : isOrderNotFound ? (
               <div className="rs-order-blocked">Order Not Found</div>
