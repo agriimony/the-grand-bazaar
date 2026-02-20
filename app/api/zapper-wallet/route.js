@@ -137,6 +137,7 @@ export async function GET(req) {
       .slice(0, 24);
 
     const collectionEdges = out?.data?.portfolioV2?.nftBalances?.byCollection?.edges || [];
+    const nftDebugRows = [];
     const nftCollections = collectionEdges
       .map((e) => e?.node)
       .filter(Boolean)
@@ -149,6 +150,13 @@ export async function GET(req) {
             const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
             const tokenType = String(n?.token?.__typename || '');
             const kind = /1155/i.test(tokenType) ? '0xd9b67a26' : '0x80ac58cd';
+            nftDebugRows.push({
+              collection: c?.collection?.address || null,
+              tokenId: String(n?.token?.tokenId || n.tokenId || ''),
+              balance: String(n.balance || '1'),
+              __typename: tokenType || null,
+              inferredKind: kind,
+            });
             return {
               token: c?.collection?.address,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),
@@ -175,6 +183,12 @@ export async function GET(req) {
       .filter((c) => c.collectionAddress)
       .sort((a, b) => (b.totalBalanceUSD || 0) - (a.totalBalanceUSD || 0))
       .slice(0, 24);
+
+    console.log('[zapper-wallet] nft typename sample', {
+      address,
+      count: nftDebugRows.length,
+      sample: nftDebugRows.slice(0, 40),
+    });
 
     return Response.json({ ok: true, address, tokens, nftCollections, warnings });
   } catch (e) {
