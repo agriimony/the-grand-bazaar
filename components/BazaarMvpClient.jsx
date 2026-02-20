@@ -22,6 +22,10 @@ const ERC721_ABI = [
   'function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
 ];
+const NFT_APPROVAL_ABI = [
+  'function setApprovalForAll(address operator,bool approved)',
+];
+const NFT_APPROVAL_IFACE = new ethers.Interface(NFT_APPROVAL_ABI);
 const WETH_IFACE = new ethers.Interface(['function deposit() payable']);
 
 const SWAP_ABI = [
@@ -844,15 +848,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       signer: {
         wallet: parsed.signerWallet,
         token: parsed.signerToken,
-        kind: requiredSenderKind,
-        id: 0n,
+        kind: String(parsed.signerKind || KIND_ERC20),
+        id: BigInt(parsed.signerId || 0),
         amount: BigInt(parsed.signerAmount),
       },
       sender: {
         wallet: parsed.senderWallet,
         token: parsed.senderToken,
-        kind: requiredSenderKind,
-        id: 0n,
+        kind: String(parsed.senderKind || requiredSenderKind || KIND_ERC20),
+        id: BigInt(parsed.senderId || 0),
         amount: BigInt(parsed.senderAmount),
       },
       affiliateWallet: ethers.ZeroAddress,
@@ -893,8 +897,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           order: {
             nonce: parsed.nonce,
             expiry: parsed.expiry,
-            signer: { wallet: parsed.signerWallet, token: parsed.signerToken, id: 0, amount: parsed.signerAmount },
-            sender: { wallet: parsed.senderWallet, token: parsed.senderToken, id: 0, amount: parsed.senderAmount },
+            signer: { wallet: parsed.signerWallet, token: parsed.signerToken, kind: parsed.signerKind || KIND_ERC20, id: parsed.signerId || 0, amount: parsed.signerAmount },
+            sender: { wallet: parsed.senderWallet, token: parsed.senderToken, kind: parsed.senderKind || KIND_ERC20, id: parsed.senderId || 0, amount: parsed.senderAmount },
             affiliateWallet: ethers.ZeroAddress,
             affiliateAmount: 0,
             v: parsed.v,
@@ -1250,8 +1254,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       const rawAmount = ethers.parseUnits(String(amount), decimals);
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
+      const offeredKind = String(makerOverrides.senderKind || KIND_ERC20);
+      const isNftOffer = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
       setStatus(`approving ${sym}`);
-      const approveData = ERC20_IFACE.encodeFunctionData('approve', [swapContract, rawAmount]);
+      const approveData = isNftOffer
+        ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [swapContract, true])
+        : ERC20_IFACE.encodeFunctionData('approve', [swapContract, rawAmount]);
 
       let txHash;
       try {
@@ -1362,6 +1370,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const selectedCounterpartyWallet = String(makerOverrides.counterpartyWallet || parsed?.signerWallet || ethers.ZeroAddress);
 
+      const signerKind = String(makerOverrides.senderKind || KIND_ERC20);
+      const senderKind = String(makerOverrides.signerKind || routedSenderKind || requiredSenderKind || KIND_ERC20);
+      const signerTokenId = Number(makerOverrides.senderTokenId || 0);
+      const senderTokenId = Number(makerOverrides.signerTokenId || 0);
+
       const typedOrder = {
         nonce,
         expiry,
@@ -1369,15 +1382,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         signer: {
           wallet: address,
           token: signerToken,
-          kind: requiredSenderKind,
-          id: 0,
+          kind: signerKind,
+          id: signerTokenId,
           amount: signerAmount,
         },
         sender: {
           wallet: selectedCounterpartyWallet,
           token: senderToken,
-          kind: routedSenderKind || requiredSenderKind,
-          id: 0,
+          kind: senderKind,
+          id: senderTokenId,
           amount: senderAmount,
         },
         affiliateWallet: ethers.ZeroAddress,
@@ -1464,10 +1477,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         signerWallet: address,
         signerToken,
         signerAmount,
+        signerKind,
+        signerId: String(signerTokenId),
         protocolFee: String(protocolFee),
         senderWallet: selectedCounterpartyWallet,
         senderToken,
         senderAmount,
+        senderKind,
+        senderId: String(senderTokenId),
         v: String(split.v),
         r: split.r,
         s: split.s,
@@ -1925,17 +1942,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (option?.isNft) {
       const panel = tokenModalPanel;
       const floorUsd = Number(option?.floorUsd || 0);
+      const nftKind = String(option?.kind || KIND_ERC721);
+      const nftBalance = String(option?.balance || '1');
       setMakerOverrides((prev) => ({
         ...prev,
         [`${panel}Token`]: option.token,
         [`${panel}Symbol`]: option.symbol,
         [`${panel}Decimals`]: 0,
         [`${panel}ImgUrl`]: option.imgUrl || null,
-        [`${panel}AvailableRaw`]: '1',
-        [`${panel}Amount`]: '1',
+        [`${panel}AvailableRaw`]: nftBalance,
+        [`${panel}Amount`]: nftKind === KIND_ERC1155 ? nftBalance : '1',
         [`${panel}Usd`]: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : null,
         [`${panel}TokenId`]: String(option.tokenId || '0'),
-        [`${panel}Kind`]: KIND_ERC721,
+        [`${panel}Kind`]: nftKind,
       }));
       setTokenModalOpen(false);
       setPendingToken(null);
@@ -2627,16 +2646,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           isCollection: true,
           collectionAddress: c.collectionAddress,
         }))
-      : (Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts.map((n) => ({
-          token: selectedNftCollection.collectionAddress || n.token,
-          symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
-          amountDisplay: formatTokenIdLabel(n.tokenId),
-          imgUrl: n.imgUrl || null,
-          tokenId: String(n.tokenId),
-          floorUsd: Number(n?.floorUsd || 0),
-          isNft: true,
-          kind: KIND_ERC721,
-        })) : []))
+      : (Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts.map((n) => {
+          const kind = String(n?.kind || KIND_ERC721);
+          const balanceText = String(n?.balance || '1');
+          return {
+            token: selectedNftCollection.collectionAddress || n.token,
+            symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
+            amountDisplay: kind === KIND_ERC1155 ? `${formatTokenIdLabel(n.tokenId)} x${balanceText}` : formatTokenIdLabel(n.tokenId),
+            imgUrl: n.imgUrl || null,
+            tokenId: String(n.tokenId),
+            floorUsd: Number(n?.floorUsd || 0),
+            balance: balanceText,
+            isNft: true,
+            kind,
+          };
+        }) : []))
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);

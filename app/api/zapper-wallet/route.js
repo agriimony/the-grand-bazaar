@@ -57,6 +57,7 @@ const QUERY = `
                     balance
                     balanceUSD
                     token {
+                      __typename
                       tokenId
                       name
                       mediasV2 {
@@ -146,6 +147,8 @@ export async function GET(req) {
           .map((n) => {
             const media = Array.isArray(n?.token?.mediasV2) ? n.token.mediasV2.find((m) => m?.thumbnail || m?.original) : null;
             const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
+            const tokenType = String(n?.token?.__typename || '');
+            const kind = /1155/i.test(tokenType) ? '0xd9b67a26' : '0x80ac58cd';
             return {
               token: c?.collection?.address,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),
@@ -154,6 +157,7 @@ export async function GET(req) {
               balance: String(n.balance || '1'),
               usdValue: Number(n.balanceUSD || 0),
               floorUsd: Number.isFinite(floorUsd) ? floorUsd : 0,
+              kind,
               imgUrl: media?.thumbnail || media?.original || null,
             };
           })

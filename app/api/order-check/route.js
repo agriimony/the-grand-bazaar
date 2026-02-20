@@ -57,14 +57,14 @@ export async function POST(req) {
           signer: {
             wallet: norm(order.signer.wallet),
             token: norm(order.signer.token),
-            kind: requiredSenderKind,
+            kind: String(order.signer.kind || requiredSenderKind),
             id: BigInt(order.signer.id || 0),
             amount: BigInt(order.signer.amount),
           },
           sender: {
             wallet: norm(order.sender.wallet || ethers.ZeroAddress),
             token: norm(order.sender.token),
-            kind: requiredSenderKind,
+            kind: String(order.sender.kind || requiredSenderKind),
             id: BigInt(order.sender.id || 0),
             amount: BigInt(order.sender.amount),
           },
