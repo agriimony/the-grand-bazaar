@@ -3271,7 +3271,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 ) : null}
                 <input
                   className="rs-amount-input rs-counterparty-input"
-                  placeholder="token id dec or 0x"
+                  placeholder="token id"
                   inputMode="text"
                   value={customTokenInput}
                   onChange={(e) => {
