@@ -3369,7 +3369,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenResolvedOption.symbol || 'NFT')}</div>
                       <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenResolvedOption.symbol || 'NFT'}</div>
                     </div>
-                    <div className="rs-token-balance-note">Balance: {String(customTokenResolvedOption.balance || '0')}</div>
                   </div>
                 ) : null}
                 <input
