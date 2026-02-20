@@ -2082,7 +2082,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       usdValue: 0,
       floorUsd: 0,
       priceUsd: 0,
-      amountDisplay: String(bal),
+      amountDisplay: formatTokenAmount(String(bal)),
       tokenId: String(tokenId),
       kind: KIND_ERC1155,
       isNft: true,
@@ -2472,7 +2472,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       balance: String(want),
       availableRaw: want,
       availableAmount: Number(want),
-      amountDisplay: String(want),
+      amountDisplay: formatTokenAmount(String(want)),
       kind: KIND_ERC1155,
     };
     setCustomTokenError('');
@@ -2779,7 +2779,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           return {
             token: selectedNftCollection.collectionAddress || n.token,
             symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
-            amountDisplay: kind === KIND_ERC1155 ? balanceText : formatTokenIdLabel(n.tokenId),
+            amountDisplay: kind === KIND_ERC1155 ? formatTokenAmount(balanceText) : formatTokenIdLabel(n.tokenId),
             imgUrl: n.imgUrl || null,
             tokenId: String(n.tokenId),
             floorUsd: Number(n?.floorUsd || 0),
@@ -2807,8 +2807,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && Number.isFinite(customBalanceNum)
     && customAmountNum > customBalanceNum;
   const custom1155AmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
-    ? String(customAmountNum)
-    : String(customTokenResolvedOption?.balance || '0');
+    ? formatTokenAmount(String(customAmountNum))
+    : formatTokenAmount(String(customTokenResolvedOption?.balance || '0'));
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
