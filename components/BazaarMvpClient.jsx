@@ -22,6 +22,10 @@ const ERC721_ABI = [
   'function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
 ];
+const ERC1155_ABI = [
+  'function uri(uint256 id) view returns (string)',
+  'function balanceOf(address account,uint256 id) view returns (uint256)',
+];
 const NFT_APPROVAL_ABI = [
   'function setApprovalForAll(address operator,bool approved)',
 ];
@@ -526,6 +530,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [customTokenInput, setCustomTokenInput] = useState('');
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenNftContract, setCustomTokenNftContract] = useState('');
+  const [customTokenNftKind, setCustomTokenNftKind] = useState('');
+  const [customTokenAmountInput, setCustomTokenAmountInput] = useState('');
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [customTokenResolvedOption, setCustomTokenResolvedOption] = useState(null);
   const [tokenOptions, setTokenOptions] = useState([]);
@@ -1789,6 +1795,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenNftContract('');
+    setCustomTokenNftKind('');
+    setCustomTokenAmountInput('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
     setTokenModalLoading(true);
@@ -2033,6 +2041,42 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     };
   }
 
+  async function fetchErc1155Option(tokenAddr, wallet, tokenId, symbolHint = null, { skipOwnershipCheck = false } = {}) {
+    const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
+    const [balanceRaw, uri] = await Promise.all([
+      c.balanceOf(wallet, tokenId),
+      c.uri(tokenId).catch(() => ''),
+    ]);
+    const bal = BigInt(balanceRaw || 0n);
+    if (!skipOwnershipCheck && bal <= 0n) {
+      throw new Error(`Token #${tokenId} is not owned by wallet`);
+    }
+
+    let imgUrl = '';
+    try {
+      const tokenUri = String(uri || '').replace('{id}', String(tokenId));
+      imgUrl = await readNftImageFromTokenUri(tokenUri);
+    } catch {}
+
+    return {
+      token: tokenAddr,
+      symbol: String(symbolHint || 'NFT'),
+      decimals: 0,
+      balance: String(bal),
+      availableAmount: Number(bal),
+      availableRaw: bal,
+      usdValue: 0,
+      floorUsd: 0,
+      priceUsd: 0,
+      amountDisplay: String(bal),
+      tokenId: String(tokenId),
+      kind: KIND_ERC1155,
+      isNft: true,
+      imgUrl: imgUrl || null,
+    };
+  }
+
   async function fetchErc721Options(tokenAddr, wallet, maxItems = 24) {
     const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
@@ -2173,6 +2217,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenInput('');
     setCustomTokenError('');
     setCustomTokenNftContract('');
+    setCustomTokenNftKind('');
+    setCustomTokenAmountInput('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
     setTokenModalStep('custom');
@@ -2181,6 +2227,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   function onAddCustomTokenId() {
     if (!customTokenNftContract) return;
     setCustomTokenInput('');
+    setCustomTokenAmountInput('');
     setCustomTokenError('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
@@ -2207,20 +2254,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setTokenModalLoading(true);
       const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
       const kind = await detectTokenKind(tokenAddr, rp);
-      if (kind === KIND_ERC721) {
+      if (kind === KIND_ERC721 || kind === KIND_ERC1155) {
         setCustomTokenNftContract(tokenAddr);
+        setCustomTokenNftKind(kind);
         setCustomTokenInput('');
+        setCustomTokenAmountInput('');
         setCustomTokenError('');
         setCustomTokenPreview(null);
         setCustomTokenResolvedOption(null);
         setTokenModalStep('custom-id');
-        setStatus('erc721 contract set; enter token id');
-        return;
-      }
-
-      if (kind === KIND_ERC1155) {
-        setCustomTokenError('ERC1155 coming next');
-        setStatus('erc1155 custom selector not enabled yet');
+        setStatus(kind === KIND_ERC1155 ? 'erc1155 contract set; enter token id' : 'erc721 contract set; enter token id');
         return;
       }
 
@@ -2257,7 +2300,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
     if (!customTokenNftContract) {
-      setCustomTokenError('Select ERC721 contract first');
+      setCustomTokenError('Select NFT contract first');
       return;
     }
 
@@ -2290,13 +2333,32 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      const option = await fetchErc721Option(
-        customTokenNftContract,
-        tokenModalWallet,
-        tokenId,
-        null,
-        { skipOwnershipCheck: isPublicCounterpartyPanel }
-      );
+      const is1155 = String(customTokenNftKind || '') === KIND_ERC1155;
+      const option = is1155
+        ? await fetchErc1155Option(
+            customTokenNftContract,
+            tokenModalWallet,
+            tokenId,
+            null,
+            { skipOwnershipCheck: isPublicCounterpartyPanel }
+          )
+        : await fetchErc721Option(
+            customTokenNftContract,
+            tokenModalWallet,
+            tokenId,
+            null,
+            { skipOwnershipCheck: isPublicCounterpartyPanel }
+          );
+
+      if (is1155) {
+        setCustomTokenPreview(option);
+        setCustomTokenResolvedOption(option);
+        setCustomTokenAmountInput('');
+        setCustomTokenError('');
+        setTokenModalStep('custom-amount');
+        setStatus('enter 1155 amount');
+        return;
+      }
 
       if (isPublicCounterpartyPanel) {
         const owner = String(option?.ownerWallet || '').toLowerCase();
@@ -2325,32 +2387,69 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const msg = errText(e);
       if (/not owned by wallet/i.test(msg)) {
         try {
-          const preview = await fetchErc721Option(
-            customTokenNftContract,
-            tokenModalWallet,
-            tokenId,
-            null,
-            { skipOwnershipCheck: true }
-          );
+          const preview = String(customTokenNftKind || '') === KIND_ERC1155
+            ? await fetchErc1155Option(
+                customTokenNftContract,
+                tokenModalWallet,
+                tokenId,
+                null,
+                { skipOwnershipCheck: true }
+              )
+            : await fetchErc721Option(
+                customTokenNftContract,
+                tokenModalWallet,
+                tokenId,
+                null,
+                { skipOwnershipCheck: true }
+              );
           setCustomTokenPreview(preview);
         } catch {
           setCustomTokenPreview(null);
         }
         setCustomTokenResolvedOption(null);
         setCustomTokenError("You don't own this NFT!");
-        setStatus('erc721 token not owned by selected wallet');
+        setStatus('nft token not owned by selected wallet');
       } else {
         setCustomTokenPreview(null);
         setCustomTokenResolvedOption(null);
         setCustomTokenError('Token id not found on this contract');
-        setStatus('erc721 token id lookup failed');
+        setStatus('nft token id lookup failed');
       }
-      dbg(`erc721 token id lookup failed ${customTokenNftContract}#${tokenId}: ${msg}`);
+      dbg(`nft token id lookup failed ${customTokenNftContract}#${tokenId}: ${msg}`);
     } finally {
       setTokenModalLoading(false);
     }
   }
 
+
+  function onConfirmCustomTokenAmount() {
+    const n = String(customTokenAmountInput || '').trim();
+    if (!customTokenResolvedOption) {
+      setCustomTokenError('Lookup token id first');
+      return;
+    }
+    if (!/^\d+$/.test(n) || Number(n) <= 0) {
+      setCustomTokenError('Enter valid amount');
+      return;
+    }
+    const max = BigInt(customTokenResolvedOption.balance || '0');
+    const want = BigInt(n);
+    if (want > max) {
+      setCustomTokenError(`Amount exceeds balance (${String(max)})`);
+      return;
+    }
+
+    const option = {
+      ...customTokenResolvedOption,
+      balance: String(want),
+      availableRaw: want,
+      availableAmount: Number(want),
+      amountDisplay: String(want),
+      kind: KIND_ERC1155,
+    };
+    setCustomTokenError('');
+    onTokenSelect(option);
+  }
 
   async function swapPendingEthToWeth() {
     const n = Number(pendingAmount || 0);
@@ -2652,7 +2751,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           return {
             token: selectedNftCollection.collectionAddress || n.token,
             symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
-            amountDisplay: kind === KIND_ERC1155 ? `${formatTokenIdLabel(n.tokenId)} x${balanceText}` : formatTokenIdLabel(n.tokenId),
+            amountDisplay: kind === KIND_ERC1155 ? balanceText : formatTokenIdLabel(n.tokenId),
             imgUrl: n.imgUrl || null,
             tokenId: String(n.tokenId),
             floorUsd: Number(n?.floorUsd || 0),
@@ -3127,6 +3226,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     : ((tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty && customTokenResolvedOption)
                       ? 'Confirm'
                       : 'Lookup')}
+                </button>
+              </>
+            ) : tokenModalStep === 'custom-amount' ? (
+              <>
+                <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom-id'); setCustomTokenAmountInput(''); setCustomTokenError(''); }}>← Back</button>
+                <div className="rs-modal-subtitle">Enter Amount</div>
+                {customTokenResolvedOption ? (
+                  <div className="rs-token-balance-note">Balance: {String(customTokenResolvedOption.balance || '0')}</div>
+                ) : null}
+                <input
+                  className="rs-amount-input rs-counterparty-input"
+                  placeholder="amount"
+                  inputMode="numeric"
+                  value={customTokenAmountInput}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    if (v === '' || /^\d+$/.test(v)) setCustomTokenAmountInput(v);
+                    if (customTokenError) setCustomTokenError('');
+                  }}
+                />
+                {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
+                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomTokenAmount}>
+                  Confirm
                 </button>
               </>
             ) : (
