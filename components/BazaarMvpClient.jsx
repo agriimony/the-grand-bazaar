@@ -2832,6 +2832,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
   const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
   const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
+  const senderKindFinal = makerOverrides.senderKind || parsed?.senderKind || KIND_ERC20;
+  const signerKindFinal = makerOverrides.signerKind || parsed?.signerKind || KIND_ERC20;
+  const senderTokenIdFinal = String(makerOverrides.senderTokenId || parsed?.senderId || '0');
+  const signerTokenIdFinal = String(makerOverrides.signerTokenId || parsed?.signerId || '0');
 
   const hasMakerSenderUsd = Object.prototype.hasOwnProperty.call(makerOverrides, 'senderUsd');
   const makerSenderUsd = makerOverrides.senderUsd;
@@ -2879,6 +2883,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const topSymbol = flipForSigner ? signerSymbolDisplay : senderSymbolDisplay;
   const topTokenAddress = flipForSigner ? signerTokenAddressFinal : senderTokenAddressFinal;
   const topTokenImage = flipForSigner ? signerTokenImgFinal : senderTokenImgFinal;
+  const topTokenKind = flipForSigner ? signerKindFinal : senderKindFinal;
+  const topTokenId = flipForSigner ? signerTokenIdFinal : senderTokenIdFinal;
   const topDanger = makerMode ? makerSenderInsufficient : Boolean(checks && (flipForSigner ? !checks.makerBalanceOk : !checks.takerBalanceOk));
   const topInsufficient = topDanger;
   const topValueText = flipForSigner ? counterpartyValueTextFinal : yourValueTextFinal;
@@ -2923,6 +2929,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const bottomSymbol = flipForSigner ? senderSymbolDisplay : signerSymbolDisplay;
   const bottomTokenAddress = flipForSigner ? senderTokenAddressFinal : signerTokenAddressFinal;
   const bottomTokenImage = flipForSigner ? senderTokenImgFinal : signerTokenImgFinal;
+  const bottomTokenKind = flipForSigner ? senderKindFinal : signerKindFinal;
+  const bottomTokenId = flipForSigner ? senderTokenIdFinal : signerTokenIdFinal;
   const bottomDanger = makerMode
     ? (isPublicMakerOffer ? false : makerSignerInsufficient)
     : Boolean(checks && (flipForSigner ? !checks.takerBalanceOk : !checks.makerBalanceOk));
@@ -2984,6 +2992,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             symbol={topSymbol}
             tokenAddress={topTokenAddress}
             tokenImage={topTokenImage}
+            tokenKind={topTokenKind}
+            tokenId={topTokenId}
             chainId={parsed?.chainId}
             editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('sender')}
@@ -3067,6 +3077,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             symbol={bottomSymbol}
             tokenAddress={bottomTokenAddress}
             tokenImage={bottomTokenImage}
+            tokenKind={bottomTokenKind}
+            tokenId={bottomTokenId}
             chainId={parsed?.chainId}
             editable={makerMode && !makerEmbedPosted}
             onEdit={() => openTokenSelector('signer')}
@@ -3421,7 +3433,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
-function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleClear, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
+function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleClear, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, tokenKind, tokenId, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenImage || tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
   const amountMatch = String(amount).match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
@@ -3486,6 +3498,9 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleCle
                 <>{amount}</>
               )}
             </div>
+            {String(tokenKind || '') === KIND_ERC1155 && String(tokenId || '0') !== '0' ? (
+              <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(tokenId))}</div>
+            ) : null}
             <div className="rs-symbol-overlay">{symbol || '???'}</div>
             {insufficientBalance ? <div className="rs-insufficient-mark">❗</div> : null}
             <a
