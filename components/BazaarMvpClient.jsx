@@ -541,6 +541,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenNftContract, setCustomTokenNftContract] = useState('');
   const [customTokenNftKind, setCustomTokenNftKind] = useState('');
+  const [customTokenNftSymbol, setCustomTokenNftSymbol] = useState('');
   const [customTokenAmountInput, setCustomTokenAmountInput] = useState('');
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [customTokenResolvedOption, setCustomTokenResolvedOption] = useState(null);
@@ -1806,6 +1807,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenError('');
     setCustomTokenNftContract('');
     setCustomTokenNftKind('');
+    setCustomTokenNftSymbol('');
     setCustomTokenAmountInput('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
@@ -2229,6 +2231,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenError('');
     setCustomTokenNftContract('');
     setCustomTokenNftKind('');
+    setCustomTokenNftSymbol('');
     setCustomTokenAmountInput('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
@@ -2266,8 +2269,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
       const kind = await detectTokenKind(tokenAddr, rp);
       if (kind === KIND_ERC721 || kind === KIND_ERC1155) {
+        let nftSymbol = 'NFT';
+        try {
+          const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(tokenModalWallet)}`, { cache: 'no-store' });
+          const zd = await zr.json();
+          const match = Array.isArray(zd?.nftCollections)
+            ? zd.nftCollections.find((c) => normalizeAddr(c?.collectionAddress || '') === normalizeAddr(tokenAddr))
+            : null;
+          if (match?.symbol) nftSymbol = String(match.symbol);
+        } catch {}
+
         setCustomTokenNftContract(tokenAddr);
         setCustomTokenNftKind(kind);
+        setCustomTokenNftSymbol(nftSymbol);
         setCustomTokenInput('');
         setCustomTokenAmountInput('');
         setCustomTokenError('');
@@ -2288,6 +2302,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const msg = errText(e);
       if (/unconfigured name/i.test(msg)) {
         setCustomTokenNftContract(tokenAddr);
+        setCustomTokenNftSymbol('NFT');
         setCustomTokenInput('');
         setCustomTokenPreview(null);
         setCustomTokenResolvedOption(null);
@@ -2350,14 +2365,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             customTokenNftContract,
             tokenModalWallet,
             tokenId,
-            null,
+            customTokenNftSymbol || null,
             { skipOwnershipCheck: isPublicCounterpartyPanel }
           )
         : await fetchErc721Option(
             customTokenNftContract,
             tokenModalWallet,
             tokenId,
-            null,
+            customTokenNftSymbol || null,
             { skipOwnershipCheck: isPublicCounterpartyPanel }
           );
 
@@ -2403,14 +2418,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 customTokenNftContract,
                 tokenModalWallet,
                 tokenId,
-                null,
+                customTokenNftSymbol || null,
                 { skipOwnershipCheck: true }
               )
             : await fetchErc721Option(
                 customTokenNftContract,
                 tokenModalWallet,
                 tokenId,
-                null,
+                customTokenNftSymbol || null,
                 { skipOwnershipCheck: true }
               );
           setCustomTokenPreview(preview);
