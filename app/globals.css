@@ -308,6 +308,21 @@ html, body {
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
 }
 
+.rs-tokenid-overlay {
+  position: absolute;
+  left: 2px;
+  bottom: 1px;
+  z-index: 2;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffe19c;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.95);
+}
+
 .rs-insufficient-mark {
   position: absolute;
   top: 50%;
@@ -665,6 +680,13 @@ html, body {
   white-space: nowrap;
 }
 
+.rs-selected-token-tokenid {
+  left: 2px;
+  bottom: 1px;
+  max-width: 84px;
+  font-size: 14px;
+}
+
 .rs-token-cell-amount {
   top: 0;
   left: 2px;
@@ -683,6 +705,13 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rs-token-cell-tokenid {
+  left: 2px;
+  bottom: 0;
+  font-size: 11px;
+  max-width: 44px;
 }
 
 .rs-token-cell-icon {

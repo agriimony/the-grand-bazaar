@@ -2791,6 +2791,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && customAmountNum > 0
     && Number.isFinite(customBalanceNum)
     && customAmountNum > customBalanceNum;
+  const custom1155AmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
+    ? String(customAmountNum)
+    : String(customTokenResolvedOption?.balance || '0');
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
@@ -3173,6 +3176,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                                 }}
                               />
                               <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback" style={{ display: 'none' }}>{tokenInitials(t.symbol)}</div>
+                              {String(t?.kind || '') === KIND_ERC1155 && t?.tokenId ? (
+                                <div className="rs-tokenid-overlay rs-token-cell-tokenid">{formatTokenIdLabel(String(t.tokenId))}</div>
+                              ) : null}
                               <div className="rs-symbol-overlay rs-token-cell-symbol">{t.symbol}</div>
                             </div>
                           </button>
@@ -3257,7 +3263,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 {customTokenResolvedOption ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{String(customTokenResolvedOption.balance || '0')}</div>
+                      <div className="rs-amount-overlay rs-selected-token-amount">{custom1155AmountDisplay}</div>
+                      {customTokenResolvedOption?.tokenId ? <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(customTokenResolvedOption.tokenId))}</div> : null}
                       {custom1155Insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         src={customTokenResolvedOption.imgUrl || tokenIconUrl(8453, customTokenResolvedOption.token || '')}
