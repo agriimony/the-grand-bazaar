@@ -111,6 +111,16 @@ function formatTokenIdLabel(tokenId = '', maxDigits = 5) {
   return `#${raw.slice(0, maxDigits)}…`;
 }
 
+function normalizeTokenIdInput(v = '') {
+  const s = String(v || '').trim();
+  if (!s) return null;
+  if (/^0x[0-9a-fA-F]+$/.test(s)) {
+    try { return BigInt(s).toString(); } catch { return null; }
+  }
+  if (/^\d+$/.test(s)) return s;
+  return null;
+}
+
 function compactAmount(value, digits = 3) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -2044,8 +2054,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   async function fetchErc1155Option(tokenAddr, wallet, tokenId, symbolHint = null, { skipOwnershipCheck = false } = {}) {
     const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
+    const safeWallet = /^0x[a-fA-F0-9]{40}$/.test(String(wallet || '')) ? wallet : ethers.ZeroAddress;
     const [balanceRaw, uri] = await Promise.all([
-      c.balanceOf(wallet, tokenId),
+      c.balanceOf(safeWallet, tokenId).catch(() => 0n),
       c.uri(tokenId).catch(() => ''),
     ]);
     const bal = BigInt(balanceRaw || 0n);
@@ -2294,9 +2305,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   }
 
   async function onConfirmCustomTokenId() {
-    const tokenId = String(customTokenInput || '').trim();
-    if (!tokenId || !/^\d+$/.test(tokenId)) {
-      setCustomTokenError('Enter token id');
+    const tokenId = normalizeTokenIdInput(customTokenInput);
+    if (!tokenId) {
+      setCustomTokenError('Enter valid token id');
       return;
     }
     if (!customTokenNftContract) {
