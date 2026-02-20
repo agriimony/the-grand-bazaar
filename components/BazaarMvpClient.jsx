@@ -26,6 +26,10 @@ const ERC1155_ABI = [
   'function uri(uint256 id) view returns (string)',
   'function balanceOf(address account,uint256 id) view returns (uint256)',
 ];
+const NFT_LABEL_ABI = [
+  'function symbol() view returns (string)',
+  'function name() view returns (string)',
+];
 const NFT_APPROVAL_ABI = [
   'function setApprovalForAll(address operator,bool approved)',
 ];
@@ -260,6 +264,17 @@ async function detectTokenKind(tokenAddr, provider) {
     if (is721) return KIND_ERC721;
   } catch {}
   return KIND_ERC20;
+}
+
+async function readNftContractLabel(tokenAddr, provider) {
+  try {
+    const c = new ethers.Contract(tokenAddr, NFT_LABEL_ABI, provider);
+    const sym = await c.symbol().catch(() => '');
+    if (String(sym || '').trim()) return String(sym).trim();
+    const nm = await c.name().catch(() => '');
+    if (String(nm || '').trim()) return String(nm).trim();
+  } catch {}
+  return 'NFT';
 }
 
 async function resolveSwapForSenderToken(senderToken, provider) {
@@ -2269,15 +2284,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
       const kind = await detectTokenKind(tokenAddr, rp);
       if (kind === KIND_ERC721 || kind === KIND_ERC1155) {
-        let nftSymbol = 'NFT';
-        try {
-          const zr = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(tokenModalWallet)}`, { cache: 'no-store' });
-          const zd = await zr.json();
-          const match = Array.isArray(zd?.nftCollections)
-            ? zd.nftCollections.find((c) => normalizeAddr(c?.collectionAddress || '') === normalizeAddr(tokenAddr))
-            : null;
-          if (match?.symbol) nftSymbol = String(match.symbol);
-        } catch {}
+        const nftSymbol = await readNftContractLabel(tokenAddr, rp);
 
         setCustomTokenNftContract(tokenAddr);
         setCustomTokenNftKind(kind);
