@@ -25,6 +25,8 @@ const ERC721_ABI = [
 const ERC1155_ABI = [
   'function uri(uint256 id) view returns (string)',
   'function balanceOf(address account,uint256 id) view returns (uint256)',
+  'function exists(uint256 id) view returns (bool)',
+  'function totalSupply(uint256 id) view returns (uint256)',
 ];
 const NFT_LABEL_ABI = [
   'function symbol() view returns (string)',
@@ -311,6 +313,33 @@ async function readNftImageFromTokenUri(tokenUri = '') {
     return ipfsToHttp(j?.image || j?.image_url || '');
   } catch {
     return '';
+  }
+}
+
+async function hasValidErc1155Metadata(tokenUri = '', tokenId = '') {
+  const normalized = String(tokenId || '').toLowerCase();
+  const paddedHex = normalized ? BigInt(normalized).toString(16).padStart(64, '0') : '';
+  const uri = ipfsToHttp(String(tokenUri || '').replaceAll('{id}', paddedHex || normalized));
+  if (!uri) return false;
+
+  if (uri.startsWith('data:application/json')) {
+    try {
+      const b64 = uri.split(',')[1] || '';
+      const raw = atob(b64);
+      const j = JSON.parse(raw);
+      return Boolean(j && typeof j === 'object');
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    const r = await fetch(uri, { cache: 'no-store' });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return Boolean(j && typeof j === 'object');
+  } catch {
+    return false;
   }
 }
 
@@ -2077,8 +2106,35 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       c.uri(tokenId).catch(() => ''),
     ]);
     const bal = BigInt(balanceRaw || 0n);
+
     if (!skipOwnershipCheck && bal <= 0n) {
       throw new Error(`Token #${tokenId} is not owned by wallet`);
+    }
+
+    if (skipOwnershipCheck) {
+      let existsKnown = false;
+      let existsOk = false;
+
+      try {
+        const ex = await c.exists(tokenId);
+        existsKnown = true;
+        existsOk = Boolean(ex);
+      } catch {}
+
+      if (!existsKnown) {
+        try {
+          const ts = await c.totalSupply(tokenId);
+          existsKnown = true;
+          existsOk = BigInt(ts || 0n) > 0n;
+        } catch {}
+      }
+
+      if (!existsKnown) {
+        const metadataOk = await hasValidErc1155Metadata(uri, tokenId);
+        if (!metadataOk) throw new Error('Token id not found');
+      } else if (!existsOk) {
+        throw new Error('Token id not found');
+      }
     }
 
     let imgUrl = '';
