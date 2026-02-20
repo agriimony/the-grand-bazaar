@@ -2443,9 +2443,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setCustomTokenError('Enter valid amount');
       return;
     }
+
+    const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
     const max = BigInt(customTokenResolvedOption.balance || '0');
     const want = BigInt(n);
-    if (want > max) {
+    if (!isPublicCounterpartyPanel && want > max) {
       setCustomTokenError(`Amount exceeds balance (${String(max)})`);
       return;
     }
@@ -2751,7 +2753,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ? tokenNftCollections.map((c, idx) => ({
           token: c.collectionAddress || `collection-${idx}`,
           symbol: fitName(c.collectionName || c.symbol || 'Collection', 12),
-          amountDisplay: `${Array.isArray(c?.nfts) ? c.nfts.length : 0}`,
+          amountDisplay: `${Array.isArray(c?.nfts) ? c.nfts.reduce((acc, n) => acc + Number(n?.balance || 1), 0) : 0}`,
           imgUrl: (Array.isArray(c?.nfts) ? c.nfts.find((n) => n?.imgUrl)?.imgUrl : null) || null,
           isCollection: true,
           collectionAddress: c.collectionAddress,
@@ -2780,6 +2782,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && Number.isFinite(pendingAvailableNum)
     && pendingAvailableNum >= 0
     && pendingAmountNum > (pendingAvailableNum + 1e-12);
+  const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+  const customAmountNum = Number(customTokenAmountInput || 0);
+  const customBalanceNum = Number(customTokenResolvedOption?.balance || 0);
+  const custom1155Insufficient =
+    !isPublicCounterpartyPanel
+    && Number.isFinite(customAmountNum)
+    && customAmountNum > 0
+    && Number.isFinite(customBalanceNum)
+    && customAmountNum > customBalanceNum;
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
@@ -3220,8 +3231,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 ) : null}
                 <input
                   className="rs-amount-input rs-counterparty-input"
-                  placeholder="token id"
-                  inputMode="numeric"
+                  placeholder="token id dec or 0x"
+                  inputMode="text"
                   value={customTokenInput}
                   onChange={(e) => {
                     setCustomTokenInput(e.target.value);
@@ -3244,7 +3255,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <button className="rs-modal-back" onClick={() => { setTokenModalStep('custom-id'); setCustomTokenAmountInput(''); setCustomTokenError(''); }}>← Back</button>
                 <div className="rs-modal-subtitle">Enter Amount</div>
                 {customTokenResolvedOption ? (
-                  <div className="rs-token-balance-note">Balance: {String(customTokenResolvedOption.balance || '0')}</div>
+                  <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
+                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
+                      <div className="rs-amount-overlay rs-selected-token-amount">{String(customTokenResolvedOption.balance || '0')}</div>
+                      {custom1155Insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
+                      <img
+                        src={customTokenResolvedOption.imgUrl || tokenIconUrl(8453, customTokenResolvedOption.token || '')}
+                        alt={customTokenResolvedOption.symbol || 'NFT'}
+                        className="rs-token-art rs-selected-token-icon"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fb = e.currentTarget.nextElementSibling;
+                          if (fb) fb.style.display = 'flex';
+                        }}
+                      />
+                      <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenResolvedOption.symbol || 'NFT')}</div>
+                      <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenResolvedOption.symbol || 'NFT'}</div>
+                    </div>
+                    <div className="rs-token-balance-note">Balance: {String(customTokenResolvedOption.balance || '0')}</div>
+                  </div>
                 ) : null}
                 <input
                   className="rs-amount-input rs-counterparty-input"
