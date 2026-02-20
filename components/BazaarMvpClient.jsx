@@ -830,6 +830,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     runChecks();
   }, [parsed, provider, address, lastSwapTxHash]);
 
+  useEffect(() => {
+    if (!initialCastHash || !lastSwapTxHash) return;
+    if (swapThanksSent || swapThanksBusy) return;
+    onSwapComposeThanks();
+  }, [initialCastHash, lastSwapTxHash, swapThanksSent, swapThanksBusy]);
+
   function buildOrderForCall(requiredSenderKind) {
     if (!parsed) throw new Error('No order loaded');
     return {
@@ -2836,11 +2842,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               <div className="rs-order-success">
                 <div>Swap Complete!</div>
                 <a href={`https://basescan.org/tx/${lastSwapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a>
-                {initialCastHash ? (
-                  <button className="rs-btn rs-btn-positive" onClick={onSwapComposeThanks} disabled={swapThanksBusy || swapThanksSent}>
-                    {swapThanksSent ? 'Thanks reply ready' : (swapThanksBusy ? 'Opening composer...' : 'Reply with thanks')}
-                  </button>
-                ) : null}
               </div>
             ) : isOrderNotFound ? (
               <div className="rs-order-blocked">Order Not Found</div>
