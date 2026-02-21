@@ -217,9 +217,15 @@ function formatIntegerAmount(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value || '0');
   const v = Math.max(0, Math.floor(n));
-  if (v >= 1_000_000_000) return `${Math.floor(v / 1_000_000_000)}B`;
-  if (v >= 1_000_000) return `${Math.floor(v / 1_000_000)}M`;
-  if (v >= 1_000) return `${Math.floor(v / 1_000)}k`;
+
+  const fmt = (num, unit) => {
+    const s = Number(num).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    return `${s}${unit}`;
+  };
+
+  if (v >= 1_000_000_000) return fmt(v / 1_000_000_000, 'B');
+  if (v >= 1_000_000) return fmt(v / 1_000_000, 'M');
+  if (v >= 1_000) return fmt(v / 1_000, 'k');
   return String(v);
 }
 
