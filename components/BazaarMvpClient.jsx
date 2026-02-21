@@ -2611,7 +2611,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const appliesFee = makerMode && tokenModalPanel === 'signer';
     const required = appliesFee ? (want + ((want * feeBps) / 10000n)) : want;
     const available = BigInt(customTokenResolvedOption.balance || '0');
-    if (required > available) {
+    if (!isPublicCounterpartyPanel && required > available) {
       setCustomTokenError('Insufficient balance');
       return;
     }
@@ -2964,13 +2964,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
+  const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
   const pendingInsufficient =
-    Number.isFinite(pendingEffectiveNum)
+    !isPublicCounterpartyPanel
+    && Number.isFinite(pendingEffectiveNum)
     && pendingEffectiveNum > 0
     && Number.isFinite(pendingAvailableNum)
     && pendingAvailableNum >= 0
     && pendingEffectiveNum > (pendingAvailableNum + 1e-12);
-  const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
   const customAmountNum = Number(customTokenAmountInput || 0);
   const customBalanceNum = Number(customTokenResolvedOption?.balance || 0);
   const customFeeApplies = makerMode && tokenModalPanel === 'signer';
@@ -2979,7 +2980,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : customAmountNum;
   const customEffectiveNum = Math.floor(Math.max(0, customFeeAdjustedNum));
   const custom1155Insufficient =
-    Number.isFinite(customEffectiveNum)
+    !isPublicCounterpartyPanel
+    && Number.isFinite(customEffectiveNum)
     && customEffectiveNum > 0
     && Number.isFinite(customBalanceNum)
     && customEffectiveNum > customBalanceNum;
