@@ -223,6 +223,8 @@ function formatIntegerAmount(value) {
     return `${s}${unit}`;
   };
 
+  if (v >= 1_000_000_000_000_000) return fmt(v / 1_000_000_000_000_000, 'Q');
+  if (v >= 1_000_000_000_000) return fmt(v / 1_000_000_000_000, 'T');
   if (v >= 1_000_000_000) return fmt(v / 1_000_000_000, 'B');
   if (v >= 1_000_000) return fmt(v / 1_000_000, 'M');
   if (v >= 1_000) return fmt(v / 1_000, 'k');
