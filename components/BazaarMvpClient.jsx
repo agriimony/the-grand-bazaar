@@ -2881,7 +2881,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const uiProtocolFeeBps = checks?.protocolFeeBps != null ? BigInt(checks.protocolFeeBps) : protocolFeeBpsFallback;
 
   const pendingAmountNum = Number(pendingAmount || 0);
-  const pendingAmountDisplay = pendingAmount ? formatTokenAmount(pendingAmount) : (pendingToken?.amountDisplay || '0');
+  const pendingAmountDisplay = pendingAmount
+    ? (String(pendingToken?.kind || '') === KIND_ERC1155 ? formatIntegerAmount(pendingAmount) : formatTokenAmount(pendingAmount))
+    : (pendingToken?.amountDisplay || '0');
   const modalDisplayOptions = tokenModalView === 'nfts'
     ? (tokenNftSubView === 'collections'
       ? tokenNftCollections.map((c, idx) => ({
@@ -3465,6 +3467,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   <div className="rs-modal-wrap-row">
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
                       <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(pendingAmountDisplay)}</div>
+                      {pendingIsErc1155 && pendingToken?.tokenId ? (
+                        <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(pendingToken.tokenId))}</div>
+                      ) : null}
                       {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
