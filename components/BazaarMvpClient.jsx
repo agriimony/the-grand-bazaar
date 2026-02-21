@@ -2926,9 +2926,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && customAmountNum > 0
     && Number.isFinite(customBalanceNum)
     && customAmountNum > customBalanceNum;
-  const custom1155AmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
-    ? formatIntegerAmount(String(customAmountNum))
-    : formatIntegerAmount(String(customTokenResolvedOption?.balance || '0'));
+  const customAmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
+    ? (String(customTokenResolvedOption?.kind || '') === KIND_ERC1155
+      ? formatIntegerAmount(String(customAmountNum))
+      : formatTokenAmount(String(customAmountNum)))
+    : (String(customTokenResolvedOption?.kind || '') === KIND_ERC1155
+      ? formatIntegerAmount(String(customTokenResolvedOption?.balance || '0'))
+      : formatTokenAmount(String(customTokenResolvedOption?.balance || '0')));
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
@@ -3418,8 +3422,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 {customTokenResolvedOption ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(custom1155AmountDisplay)}</div>
-                      {customTokenResolvedOption?.tokenId ? <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(customTokenResolvedOption.tokenId))}</div> : null}
+                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(customAmountDisplay)}</div>
+                      {String(customTokenResolvedOption?.kind || '') === KIND_ERC1155 && customTokenResolvedOption?.tokenId ? (
+                        <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(customTokenResolvedOption.tokenId))}</div>
+                      ) : null}
                       {custom1155Insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
                         src={customTokenResolvedOption.imgUrl || tokenIconUrl(8453, customTokenResolvedOption.token || '')}
