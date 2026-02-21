@@ -167,8 +167,8 @@ export async function GET(req) {
           }}
         />
 
-        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 80 })}
-        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 760 })}
+        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 80 })}
+        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 760 })}
       </div>
     ),
     {
