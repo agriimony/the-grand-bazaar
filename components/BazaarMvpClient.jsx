@@ -2592,13 +2592,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
-    const max = BigInt(customTokenResolvedOption.balance || '0');
     const want = BigInt(n);
-    if (!isPublicCounterpartyPanel && want > max) {
-      setCustomTokenError(`Amount exceeds balance (${String(max)})`);
-      return;
-    }
 
     const option = {
       ...customTokenResolvedOption,
@@ -3022,7 +3016,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     } catch {}
     try {
       const dec = Number(makerOverrides.signerDecimals ?? 18);
-      const inRaw = makerOverrides.signerAmount ? ethers.parseUnits(String(makerOverrides.signerAmount), dec) : 0n;
+      const is1155 = String(makerOverrides.signerKind || '') === KIND_ERC1155;
+      const baseAmountNum = Number(makerOverrides.signerAmount || 0);
+      const withFeeNum = baseAmountNum * (1 + Number(uiProtocolFeeBps) / 10000);
+      const effectiveAmount = is1155 ? String(Math.floor(Math.max(0, withFeeNum))) : String(makerOverrides.signerAmount || '0');
+      const inRaw = effectiveAmount ? ethers.parseUnits(effectiveAmount, dec) : 0n;
       const availRaw = BigInt(makerOverrides.signerAvailableRaw || '0');
       makerSignerInsufficient = inRaw > 0n && inRaw > availRaw;
     } catch {}
