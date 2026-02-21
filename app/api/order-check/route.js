@@ -35,6 +35,17 @@ export async function POST(req) {
     const senderWallet = norm(body?.senderWallet || ethers.ZeroAddress);
     const order = body?.order || {};
 
+    console.log('[order-check][request]', {
+      swapContract,
+      senderWallet,
+      signerWallet: norm(order?.signer?.wallet || ''),
+      senderTargetWallet: norm(order?.sender?.wallet || ''),
+      nonce: String(order?.nonce || ''),
+      expiry: String(order?.expiry || ''),
+      signerKind: String(order?.signer?.kind || ''),
+      senderKind: String(order?.sender?.kind || ''),
+    });
+
     if (!swapContract || !order?.signer?.wallet || order?.nonce == null) {
       return Response.json({ ok: false, error: 'missing required params' }, { status: 400 });
     }
@@ -80,6 +91,16 @@ export async function POST(req) {
         const checkErrors = Array.isArray(rawErrors)
           ? rawErrors.map(toUtf8OrHex).filter(Boolean)
           : [];
+        const rawErrorsHex = Array.isArray(rawErrors) ? rawErrors.map((v) => String(v || '')) : [];
+
+        console.log('[order-check][result]', {
+          rpc,
+          requiredSenderKind,
+          protocolFeeOnchain: protocolFeeOnchain.toString(),
+          nonceUsed: Boolean(nonceUsed),
+          rawErrorsHex,
+          checkErrors,
+        });
 
         return Response.json({
           ok: true,
@@ -88,9 +109,16 @@ export async function POST(req) {
           protocolFeeOnchain: protocolFeeOnchain.toString(),
           nonceUsed: Boolean(nonceUsed),
           checkErrors,
+          debug: {
+            rawErrorsHex,
+            senderWallet,
+            signerWallet: onchainOrder.signer.wallet,
+            senderTargetWallet: onchainOrder.sender.wallet,
+          },
         });
       } catch (e) {
         lastErr = e;
+        console.log('[order-check][rpc-error]', { rpc, error: e?.message || 'order-check rpc failed' });
       }
     }
 
