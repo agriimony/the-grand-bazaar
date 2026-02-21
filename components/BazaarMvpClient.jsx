@@ -3029,12 +3029,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerKind = String(makerOverrides.signerKind || '');
       const is721 = signerKind === KIND_ERC721;
       const is1155 = signerKind === KIND_ERC1155;
-      const baseAmountNum = Number(makerOverrides.signerAmount || 0);
-      const withFeeNum = baseAmountNum * (1 + Number(uiProtocolFeeBps) / 10000);
-      const effectiveAmount = is721
-        ? String(makerOverrides.signerAmount || '0')
-        : (is1155 ? String(Math.floor(Math.max(0, withFeeNum))) : String(Math.max(0, withFeeNum)));
-      const inRaw = effectiveAmount ? ethers.parseUnits(effectiveAmount, dec) : 0n;
+      const feeBps = BigInt(uiProtocolFeeBps || 0);
+      const baseAmount = String(makerOverrides.signerAmount || '0');
+
+      let inRaw = 0n;
+      if (is721) {
+        inRaw = ethers.parseUnits(baseAmount, dec);
+      } else if (is1155) {
+        const baseUnits = BigInt(Math.max(0, Math.floor(Number(baseAmount) || 0)));
+        const feeUnits = (baseUnits * feeBps) / 10000n;
+        inRaw = baseUnits + feeUnits;
+      } else {
+        const baseRaw = ethers.parseUnits(baseAmount, dec);
+        const feeRaw = (baseRaw * feeBps) / 10000n;
+        inRaw = baseRaw + feeRaw;
+      }
+
       const availRaw = BigInt(makerOverrides.signerAvailableRaw || '0');
       makerSignerInsufficient = inRaw > 0n && inRaw > availRaw;
     } catch {}
