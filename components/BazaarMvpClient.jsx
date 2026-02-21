@@ -2028,6 +2028,25 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const floorUsd = Number(option?.floorUsd || 0);
       const nftKind = String(option?.kind || KIND_ERC721);
       const nftBalance = String(option?.balance || '1');
+
+      if (nftKind === KIND_ERC1155) {
+        let availableRaw = 0n;
+        try { availableRaw = BigInt(nftBalance || '0'); } catch {}
+        const pending1155 = {
+          ...option,
+          decimals: 0,
+          availableRaw,
+          availableAmount: Number(availableRaw),
+          amountDisplay: formatTokenAmount(nftBalance),
+          priceUsd: 0,
+          usdValue: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : 0,
+        };
+        setPendingToken(pending1155);
+        setPendingAmount('');
+        setTokenModalStep('amount');
+        return;
+      }
+
       setMakerOverrides((prev) => ({
         ...prev,
         [`${panel}Token`]: option.token,
@@ -2035,7 +2054,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         [`${panel}Decimals`]: 0,
         [`${panel}ImgUrl`]: option.imgUrl || null,
         [`${panel}AvailableRaw`]: nftBalance,
-        [`${panel}Amount`]: nftKind === KIND_ERC1155 ? nftBalance : '1',
+        [`${panel}Amount`]: '1',
         [`${panel}Usd`]: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : null,
         [`${panel}TokenId`]: String(option.tokenId || '0'),
         [`${panel}Kind`]: nftKind,
@@ -2689,6 +2708,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
       [`${panel}Amount`]: String(pendingToken?.kind === KIND_ERC1155 ? Math.floor(Number(pendingAmount || 0)) : pendingAmount),
       [`${panel}Usd`]: selectedUsd,
+      [`${panel}Kind`]: pendingToken?.kind || KIND_ERC20,
+      [`${panel}TokenId`]: pendingToken?.tokenId ? String(pendingToken.tokenId) : '0',
     };
     setMakerOverrides(nextOverrides);
 
