@@ -6,12 +6,21 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 const TOKEN_META = {
-  // Base common tokens
+  // Base token catalog first
   '0x4200000000000000000000000000000000000006': { symbol: 'WETH', decimals: 18 },
   '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': { symbol: 'USDC', decimals: 6 },
+  '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': { symbol: 'USDT', decimals: 6 },
+  '0x0578d8a44db98b23bf096a382e016e29a5ce0ffe': { symbol: 'HIGHER', decimals: 18 },
+  '0x4ed4e862860bed51a9570b96d89af5e1b0efefed': { symbol: 'DEGEN', decimals: 18 },
+  // legacy/common
   '0xcb327b99ff831bf8223cced12b1338ff3aa322ff': { symbol: 'USDbC', decimals: 6 },
   '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': { symbol: 'cbBTC', decimals: 8 },
 };
+
+const ERC20_IFACE = new ethers.Interface([
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
+]);
 
 function qp(url, key, fallback = '') {
   return (url.searchParams.get(key) || fallback).trim();
@@ -27,10 +36,41 @@ function shortAddr(a = '') {
   return s.length > 10 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
 }
 
-function guessMeta(addr = '') {
+async function readOnchainMeta(addr = '') {
+  const to = String(addr || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(to)) return null;
+  try {
+    const rpc = 'https://mainnet.base.org';
+    const [symbolData, decimalsData] = await Promise.all([
+      fetch(rpc, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data: ERC20_IFACE.encodeFunctionData('symbol', []) }, 'latest'] }),
+        cache: 'no-store',
+      }).then((r) => r.json()),
+      fetch(rpc, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'eth_call', params: [{ to, data: ERC20_IFACE.encodeFunctionData('decimals', []) }, 'latest'] }),
+        cache: 'no-store',
+      }).then((r) => r.json()),
+    ]);
+
+    const symbol = symbolData?.result ? String(ERC20_IFACE.decodeFunctionResult('symbol', symbolData.result)?.[0] || '') : '';
+    const decimals = decimalsData?.result ? Number(ERC20_IFACE.decodeFunctionResult('decimals', decimalsData.result)?.[0] || 18) : 18;
+    if (!symbol) return null;
+    return { symbol, decimals: Number.isFinite(decimals) ? decimals : 18 };
+  } catch {
+    return null;
+  }
+}
+
+async function guessMeta(addr = '') {
   const k = String(addr || '').toLowerCase();
   const m = TOKEN_META[k];
   if (m) return m;
+  const onchain = await readOnchainMeta(addr);
+  if (onchain) return onchain;
   return { symbol: shortAddr(addr), decimals: 18 };
 }
 
@@ -86,8 +126,10 @@ export async function GET(req) {
       const orderData = await orderRes.json();
       if (orderRes.ok && orderData?.ok && orderData?.compressedOrder) {
         const parsed = decodeCompressedOrder(orderData.compressedOrder);
-        const signerMeta = guessMeta(parsed.signerToken);
-        const senderMeta = guessMeta(parsed.senderToken);
+        const [signerMeta, senderMeta] = await Promise.all([
+          guessMeta(parsed.signerToken),
+          guessMeta(parsed.senderToken),
+        ]);
         signerAmount = clampText(formatAmount(parsed.signerAmount, signerMeta.decimals), 14);
         senderAmount = clampText(formatAmount(parsed.senderAmount, senderMeta.decimals), 14);
         signerSymbol = clampText(signerMeta.symbol, 10);
