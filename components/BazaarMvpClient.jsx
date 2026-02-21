@@ -2047,7 +2047,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           decimals: 0,
           availableRaw,
           availableAmount: Number(availableRaw),
-          amountDisplay: formatTokenAmount(nftBalance),
+          amountDisplay: formatIntegerAmount(nftBalance),
           priceUsd: 0,
           usdValue: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : 0,
         };
