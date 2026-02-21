@@ -2634,6 +2634,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (!pendingToken || !pendingAmount) return;
     const panel = tokenModalPanel;
 
+    if (String(pendingToken?.kind || '') === KIND_ERC1155 && !/^\d+$/.test(String(pendingAmount || '').trim())) {
+      setStatus('1155 amount must be an integer');
+      return;
+    }
+
     let selectedUsd = null;
     const amountNum = Number(pendingAmount || 0);
 
@@ -2682,7 +2687,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}Decimals`]: pendingToken.decimals,
       [`${panel}ImgUrl`]: pendingToken.imgUrl || null,
       [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
-      [`${panel}Amount`]: pendingAmount,
+      [`${panel}Amount`]: String(pendingToken?.kind === KIND_ERC1155 ? Math.floor(Number(pendingAmount || 0)) : pendingAmount),
       [`${panel}Usd`]: selectedUsd,
     };
     setMakerOverrides(nextOverrides);
@@ -2873,6 +2878,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         }) : []))
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
+  const pendingIsErc1155 = String(pendingToken?.kind || '') === KIND_ERC1155;
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
   const pendingInsufficient =
     Number.isFinite(pendingAmountNum)
@@ -3473,16 +3479,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <input
                   className="rs-amount-input"
                   placeholder="Amount"
-                  inputMode="decimal"
+                  inputMode={pendingIsErc1155 ? 'numeric' : 'decimal'}
                   value={pendingAmount}
                   onChange={(e) => {
                     const v = e.target.value.trim();
-                    if (v === '' || /^\d*\.?\d*$/.test(v)) setPendingAmount(v);
+                    if (pendingIsErc1155) {
+                      if (v === '' || /^\d+$/.test(v)) setPendingAmount(v);
+                    } else if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                      setPendingAmount(v);
+                    }
                   }}
                   onBlur={() => {
                     const n = Number(pendingAmount);
-                    if (Number.isFinite(n) && n >= 0) setPendingAmount(String(n));
-                    else if (pendingAmount !== '') setPendingAmount('');
+                    if (Number.isFinite(n) && n >= 0) {
+                      setPendingAmount(String(pendingIsErc1155 ? Math.floor(n) : n));
+                    } else if (pendingAmount !== '') setPendingAmount('');
                   }}
                   disabled={isWrapping}
                 />
