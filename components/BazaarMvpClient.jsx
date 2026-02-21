@@ -213,6 +213,16 @@ function formatTokenAmount(value) {
   return `${p.number}${p.suffix}`;
 }
 
+function formatIntegerAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value || '0');
+  const v = Math.max(0, Math.floor(n));
+  if (v >= 1_000_000_000) return `${Math.floor(v / 1_000_000_000)}B`;
+  if (v >= 1_000_000) return `${Math.floor(v / 1_000_000)}M`;
+  if (v >= 1_000) return `${Math.floor(v / 1_000)}k`;
+  return String(v);
+}
+
 function suffixClass(suffix = '') {
   const s = (suffix || '').toLowerCase();
   if (s === 'k') return 'amt-k';
@@ -2192,7 +2202,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       usdValue: 0,
       floorUsd: 0,
       priceUsd: 0,
-      amountDisplay: formatTokenAmount(String(bal)),
+      amountDisplay: formatIntegerAmount(String(bal)),
       tokenId: String(tokenId),
       kind: KIND_ERC1155,
       isNft: true,
@@ -2574,7 +2584,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       balance: String(want),
       availableRaw: want,
       availableAmount: Number(want),
-      amountDisplay: formatTokenAmount(String(want)),
+      amountDisplay: formatIntegerAmount(String(want)),
       kind: KIND_ERC1155,
     };
     setCustomTokenError('');
@@ -2888,7 +2898,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           return {
             token: selectedNftCollection.collectionAddress || n.token,
             symbol: selectedNftCollection.symbol || n.symbol || 'NFT',
-            amountDisplay: kind === KIND_ERC1155 ? formatTokenAmount(balanceText) : formatTokenIdLabel(n.tokenId),
+            amountDisplay: kind === KIND_ERC1155 ? formatIntegerAmount(balanceText) : formatTokenIdLabel(n.tokenId),
             imgUrl: n.imgUrl || null,
             tokenId: String(n.tokenId),
             floorUsd: Number(n?.floorUsd || 0),
@@ -2917,8 +2927,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && Number.isFinite(customBalanceNum)
     && customAmountNum > customBalanceNum;
   const custom1155AmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
-    ? formatTokenAmount(String(customAmountNum))
-    : formatTokenAmount(String(customTokenResolvedOption?.balance || '0'));
+    ? formatIntegerAmount(String(customAmountNum))
+    : formatIntegerAmount(String(customTokenResolvedOption?.balance || '0'));
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
@@ -2928,20 +2938,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const yourAmountDisplayFinal = senderIsErc721Selected
     ? formatTokenIdLabel(String(makerOverrides.senderTokenId))
     : (makerOverrides.senderAmount
-      ? (senderIsErc1155Selected ? formatTokenAmount(String(Math.max(0, Math.floor(Number(makerOverrides.senderAmount) || 0)))) : formatTokenAmount(makerOverrides.senderAmount))
+      ? (senderIsErc1155Selected ? formatIntegerAmount(String(Math.max(0, Math.floor(Number(makerOverrides.senderAmount) || 0)))) : formatTokenAmount(makerOverrides.senderAmount))
       : yourAmountDisplay);
 
   let counterpartyAmountDisplayFinal = signerIsErc721Selected
     ? formatTokenIdLabel(String(makerOverrides.signerTokenId))
     : (makerOverrides.signerAmount
-      ? (signerIsErc1155Selected ? formatTokenAmount(String(Math.max(0, Math.floor(Number(makerOverrides.signerAmount) || 0)))) : formatTokenAmount(makerOverrides.signerAmount))
+      ? (signerIsErc1155Selected ? formatIntegerAmount(String(Math.max(0, Math.floor(Number(makerOverrides.signerAmount) || 0)))) : formatTokenAmount(makerOverrides.signerAmount))
       : counterpartyAmountDisplay);
   if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
     const n = Number(makerOverrides.signerAmount);
     if (Number.isFinite(n) && n >= 0) {
       const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
       counterpartyAmountDisplayFinal = signerIsErc1155Selected
-        ? formatTokenAmount(String(Math.floor(withFee)))
+        ? formatIntegerAmount(String(Math.floor(withFee)))
         : formatTokenAmount(String(withFee));
     }
   }
