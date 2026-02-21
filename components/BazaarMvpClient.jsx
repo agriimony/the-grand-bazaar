@@ -645,6 +645,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [selectedNftCollection, setSelectedNftCollection] = useState(null);
   const [pendingToken, setPendingToken] = useState(null);
   const [pendingAmount, setPendingAmount] = useState('');
+  const [tokenAmountError, setTokenAmountError] = useState('');
   const [makerOverrides, setMakerOverrides] = useState({});
   const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(50);
   const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
@@ -1904,6 +1905,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setCustomTokenAmountInput('');
     setCustomTokenPreview(null);
     setCustomTokenResolvedOption(null);
+    setTokenAmountError('');
     setTokenModalLoading(true);
     setTokenOptions([]);
     setTokenNftCollections([]);
@@ -2084,6 +2086,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         };
         setPendingToken(pending1155);
         setPendingAmount('');
+        setTokenAmountError('');
         setTokenModalStep('amount');
         return;
       }
@@ -2107,6 +2110,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     setPendingToken(option);
     setPendingAmount('');
+    setTokenAmountError('');
     setTokenModalStep('amount');
   }
 
@@ -2603,6 +2607,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     const want = BigInt(n);
+    const feeBps = BigInt(uiProtocolFeeBps || 0);
+    const appliesFee = makerMode && tokenModalPanel === 'signer';
+    const required = appliesFee ? (want + ((want * feeBps) / 10000n)) : want;
+    const available = BigInt(customTokenResolvedOption.balance || '0');
+    if (required > available) {
+      setCustomTokenError('Insufficient balance');
+      return;
+    }
 
     const option = {
       ...customTokenResolvedOption,
@@ -2694,6 +2706,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
+    if (pendingInsufficient) {
+      setTokenAmountError('Insufficient balance');
+      return;
+    }
+
+    setTokenAmountError('');
     let selectedUsd = null;
     const amountNum = Number(pendingAmount || 0);
 
@@ -2907,8 +2925,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const uiProtocolFeeBps = checks?.protocolFeeBps != null ? BigInt(checks.protocolFeeBps) : protocolFeeBpsFallback;
 
   const pendingAmountNum = Number(pendingAmount || 0);
+  const pendingIsErc1155 = String(pendingToken?.kind || '') === KIND_ERC1155;
+  const pendingFeeApplies = makerMode && tokenModalPanel === 'signer';
+  const pendingFeeAdjustedNum = pendingFeeApplies
+    ? (pendingAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
+    : pendingAmountNum;
+  const pendingEffectiveNum = pendingIsErc1155 ? Math.floor(Math.max(0, pendingFeeAdjustedNum)) : pendingFeeAdjustedNum;
   const pendingAmountDisplay = pendingAmount
-    ? (String(pendingToken?.kind || '') === KIND_ERC1155 ? formatIntegerAmount(pendingAmount) : formatTokenAmount(pendingAmount))
+    ? (String(pendingToken?.kind || '') === KIND_ERC1155
+      ? formatIntegerAmount(String(pendingEffectiveNum))
+      : formatTokenAmount(String(pendingEffectiveNum)))
     : (pendingToken?.amountDisplay || '0');
   const modalDisplayOptions = tokenModalView === 'nfts'
     ? (tokenNftSubView === 'collections'
@@ -2937,27 +2963,30 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         }) : []))
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
-  const pendingIsErc1155 = String(pendingToken?.kind || '') === KIND_ERC1155;
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
   const pendingInsufficient =
-    Number.isFinite(pendingAmountNum)
-    && pendingAmountNum > 0
+    Number.isFinite(pendingEffectiveNum)
+    && pendingEffectiveNum > 0
     && Number.isFinite(pendingAvailableNum)
     && pendingAvailableNum >= 0
-    && pendingAmountNum > (pendingAvailableNum + 1e-12);
+    && pendingEffectiveNum > (pendingAvailableNum + 1e-12);
   const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
   const customAmountNum = Number(customTokenAmountInput || 0);
   const customBalanceNum = Number(customTokenResolvedOption?.balance || 0);
+  const customFeeApplies = makerMode && tokenModalPanel === 'signer';
+  const customFeeAdjustedNum = customFeeApplies
+    ? (customAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
+    : customAmountNum;
+  const customEffectiveNum = Math.floor(Math.max(0, customFeeAdjustedNum));
   const custom1155Insufficient =
-    !isPublicCounterpartyPanel
-    && Number.isFinite(customAmountNum)
-    && customAmountNum > 0
+    Number.isFinite(customEffectiveNum)
+    && customEffectiveNum > 0
     && Number.isFinite(customBalanceNum)
-    && customAmountNum > customBalanceNum;
+    && customEffectiveNum > customBalanceNum;
   const customAmountDisplay = (Number.isFinite(customAmountNum) && customAmountNum > 0)
     ? (String(customTokenResolvedOption?.kind || '') === KIND_ERC1155
-      ? formatIntegerAmount(String(customAmountNum))
-      : formatTokenAmount(String(customAmountNum)))
+      ? formatIntegerAmount(String(customEffectiveNum))
+      : formatTokenAmount(String(customFeeAdjustedNum)))
     : (String(customTokenResolvedOption?.kind || '') === KIND_ERC1155
       ? formatIntegerAmount(String(customTokenResolvedOption?.balance || '0'))
       : formatTokenAmount(String(customTokenResolvedOption?.balance || '0')));
@@ -3488,6 +3517,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     </div>
                   </div>
                 ) : null}
+                {customFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
                 <input
                   className="rs-amount-input rs-counterparty-input"
                   placeholder="amount"
@@ -3554,6 +3584,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     ) : null}
                   </div>
                 </div>
+                {pendingFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
+                {tokenAmountError ? <div className="rs-inline-error">{tokenAmountError}</div> : null}
                 {isWrapping ? (
                   <div className="rs-loading-wrap" style={{ marginTop: 8 }}>
                     <div className="rs-loading-track">
@@ -3574,6 +3606,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                     } else if (v === '' || /^\d*\.?\d*$/.test(v)) {
                       setPendingAmount(v);
                     }
+                    if (tokenAmountError) setTokenAmountError('');
                   }}
                   onBlur={() => {
                     const n = Number(pendingAmount);
