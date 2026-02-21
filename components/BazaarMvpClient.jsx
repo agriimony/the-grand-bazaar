@@ -2576,7 +2576,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           setCustomTokenPreview(null);
         }
         setCustomTokenResolvedOption(null);
-        setCustomTokenError("You don't own this NFT!");
+        setCustomTokenError(tokenModalPanel === 'signer' ? "They don't own this NFT!" : "You don't own this NFT!");
         setStatus('nft token not owned by selected wallet');
       } else {
         setCustomTokenPreview(null);
