@@ -3397,7 +3397,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             ) : tokenModalStep === 'custom' ? (
               <>
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
-                <div className="rs-modal-subtitle">Custom Token Contract</div>
+                <div className="rs-modal-subtitle">Contract Address</div>
                 <input
                   className="rs-amount-input rs-counterparty-input"
                   placeholder="0x token address"
