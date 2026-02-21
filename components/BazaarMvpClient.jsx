@@ -217,18 +217,30 @@ function formatIntegerAmount(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value || '0');
   const v = Math.max(0, Math.floor(n));
+  if (v < 1000) return String(v);
 
-  const fmt = (num, unit) => {
-    const s = Number(num).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-    return `${s}${unit}`;
-  };
+  const suffixes = ['', 'k', 'M', 'B', 'T', 'Q'];
+  let tier = 0;
+  while (tier < suffixes.length - 1 && v >= Math.pow(1000, tier + 1)) tier += 1;
 
-  if (v >= 1_000_000_000_000_000) return fmt(v / 1_000_000_000_000_000, 'Q');
-  if (v >= 1_000_000_000_000) return fmt(v / 1_000_000_000_000, 'T');
-  if (v >= 1_000_000_000) return fmt(v / 1_000_000_000, 'B');
-  if (v >= 1_000_000) return fmt(v / 1_000_000, 'M');
-  if (v >= 1_000) return fmt(v / 1_000, 'k');
-  return String(v);
+  let scaled = v / Math.pow(1000, tier);
+
+  // Prefer 4-digit style on lower tier when possible (e.g. 1.234M -> 1234k)
+  if (scaled < 1000 && tier > 0) {
+    const downScaled = v / Math.pow(1000, tier - 1);
+    if (downScaled < 10000) {
+      tier -= 1;
+      scaled = downScaled;
+    }
+  }
+
+  let decimals = 0;
+  if (scaled < 10) decimals = 3;
+  else if (scaled < 100) decimals = 2;
+  else if (scaled < 1000) decimals = 1;
+
+  const s = scaled.toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  return `${s}${suffixes[tier]}`;
 }
 
 function suffixClass(suffix = '') {
