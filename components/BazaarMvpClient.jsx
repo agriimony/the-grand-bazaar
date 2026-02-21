@@ -3418,7 +3418,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 {customTokenResolvedOption ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{custom1155AmountDisplay}</div>
+                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(custom1155AmountDisplay)}</div>
                       {customTokenResolvedOption?.tokenId ? <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(customTokenResolvedOption.tokenId))}</div> : null}
                       {custom1155Insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
                       <img
