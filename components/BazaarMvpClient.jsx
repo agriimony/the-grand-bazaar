@@ -2920,7 +2920,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const pendingFeeAdjustedNum = pendingFeeApplies
     ? (pendingAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
     : pendingAmountNum;
-  const pendingEffectiveNum = pendingIsErc1155 ? Math.floor(Math.max(0, pendingFeeAdjustedNum)) : pendingFeeAdjustedNum;
+  let pendingEffectiveNum = pendingFeeAdjustedNum;
+  if (pendingIsErc1155) {
+    const base = BigInt(Math.max(0, Math.floor(pendingAmountNum || 0)));
+    if (pendingFeeApplies) {
+      const fee = (base * BigInt(uiProtocolFeeBps || 0)) / 10000n;
+      pendingEffectiveNum = Number(base + fee);
+    } else {
+      pendingEffectiveNum = Number(base);
+    }
+  }
   const pendingAmountDisplay = pendingAmount
     ? (String(pendingToken?.kind || '') === KIND_ERC1155
       ? formatIntegerAmount(String(pendingEffectiveNum))
@@ -2968,7 +2977,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const customFeeAdjustedNum = customFeeApplies
     ? (customAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
     : customAmountNum;
-  const customEffectiveNum = Math.floor(Math.max(0, customFeeAdjustedNum));
+  const customBase = BigInt(Math.max(0, Math.floor(customAmountNum || 0)));
+  const customEffectiveNum = Number(customFeeApplies
+    ? (customBase + ((customBase * BigInt(uiProtocolFeeBps || 0)) / 10000n))
+    : customBase);
   const custom1155Insufficient =
     !isPublicCounterpartyPanel
     && Number.isFinite(customEffectiveNum)
@@ -3002,10 +3014,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
     const n = Number(makerOverrides.signerAmount);
     if (Number.isFinite(n) && n >= 0) {
-      const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
-      counterpartyAmountDisplayFinal = signerIsErc1155Selected
-        ? formatIntegerAmount(String(Math.floor(withFee)))
-        : formatTokenAmount(String(withFee));
+      if (signerIsErc1155Selected) {
+        const base = BigInt(Math.max(0, Math.floor(n)));
+        const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
+        counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
+      } else {
+        const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+        counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+      }
     }
   }
 
