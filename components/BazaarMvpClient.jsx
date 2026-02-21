@@ -2059,7 +2059,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const nftKind = String(option?.kind || KIND_ERC721);
       const nftBalance = String(option?.balance || '1');
 
-      if (nftKind === KIND_ERC1155) {
+      if (nftKind === KIND_ERC1155 && !option?.confirmedAmount) {
         let availableRaw = 0n;
         try { availableRaw = BigInt(nftBalance || '0'); } catch {}
         const pending1155 = {
@@ -2606,6 +2606,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       availableAmount: Number(want),
       amountDisplay: formatIntegerAmount(String(want)),
       kind: KIND_ERC1155,
+      confirmedAmount: true,
     };
     setCustomTokenError('');
     onTokenSelect(option);
