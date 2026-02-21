@@ -132,14 +132,10 @@ function compactAmount(value, digits = 3) {
   if (!Number.isFinite(n)) return String(value);
   const abs = Math.abs(n);
   const trim = (s) => s.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-  const truncTo = (x, dec) => {
-    const f = 10 ** dec;
-    return (x >= 0 ? Math.floor(x * f) : Math.ceil(x * f)) / f;
-  };
-  if (abs >= 1_000_000_000) return `${trim(truncTo(n / 1_000_000_000, digits).toFixed(digits))}B`;
-  if (abs >= 1_000_000) return `${trim(truncTo(n / 1_000_000, digits).toFixed(digits))}M`;
-  if (abs >= 1_000) return `${trim(truncTo(n / 1_000, digits).toFixed(digits))}k`;
-  if (abs >= 1) return trim(truncTo(n, digits).toFixed(digits));
+  if (abs >= 1_000_000_000) return `${trim((n / 1_000_000_000).toFixed(digits))}B`;
+  if (abs >= 1_000_000) return `${trim((n / 1_000_000).toFixed(digits))}M`;
+  if (abs >= 1_000) return `${trim((n / 1_000).toFixed(digits))}k`;
+  if (abs >= 1) return trim(n.toFixed(digits));
   return trim(n.toPrecision(3));
 }
 
@@ -182,15 +178,11 @@ function formatTokenAmountParts(value) {
   }
 
   const absScaled = Math.abs(scaled);
-  let decimals;
-  if (absScaled >= 1000) decimals = 0;
-  else if (absScaled >= 100) decimals = 1;
-  else if (absScaled >= 10) decimals = 2;
-  else decimals = 3;
-
-  const f = 10 ** decimals;
-  const truncated = (scaled >= 0 ? Math.floor(scaled * f) : Math.ceil(scaled * f)) / f;
-  const number = truncated.toFixed(decimals);
+  let number;
+  if (absScaled >= 1000) number = scaled.toFixed(0);
+  else if (absScaled >= 100) number = scaled.toFixed(1);
+  else if (absScaled >= 10) number = scaled.toFixed(2);
+  else number = scaled.toFixed(3);
 
   return { number, suffix: suffixes[tier] };
 }
@@ -247,9 +239,7 @@ function formatIntegerAmount(value) {
   else if (scaled < 100) decimals = 2;
   else if (scaled < 1000) decimals = 1;
 
-  const f = 10 ** decimals;
-  const truncated = Math.floor(scaled * f) / f;
-  const s = truncated.toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  const s = scaled.toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
   return `${s}${suffixes[tier]}`;
 }
 
