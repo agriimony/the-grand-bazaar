@@ -149,7 +149,8 @@ export async function GET(req) {
             const media = Array.isArray(n?.token?.mediasV2) ? n.token.mediasV2.find((m) => m?.thumbnail || m?.original) : null;
             const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
             const tokenType = String(n?.token?.__typename || '');
-            const kind = /1155/i.test(tokenType) ? '0xd9b67a26' : '0x80ac58cd';
+            const balNum = Number(n?.balance || 0);
+            const kind = /1155/i.test(tokenType) || balNum > 1 ? '0xd9b67a26' : '0x80ac58cd';
             nftDebugRows.push({
               collection: c?.collection?.address || null,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),

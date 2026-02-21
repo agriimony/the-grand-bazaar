@@ -286,6 +286,15 @@ async function resolveSwapForSenderToken(senderToken, provider) {
   return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
 }
 
+async function detectCollectionNftKind(tokenAddr) {
+  try {
+    const p = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    return await detectTokenKind(tokenAddr, p);
+  } catch {
+    return KIND_ERC721;
+  }
+}
+
 function ipfsToHttp(u = '') {
   const s = String(u || '').trim();
   if (!s) return '';
@@ -1995,10 +2004,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
-  function onTokenSelect(option) {
+  async function onTokenSelect(option) {
     if (option?.isCollection) {
       const picked = tokenNftCollections.find((c) => c.collectionAddress === option.collectionAddress) || null;
-      setSelectedNftCollection(picked);
+      if (!picked) return;
+      let resolvedKind = String(picked?.nfts?.[0]?.kind || '');
+      if (!resolvedKind || resolvedKind === KIND_ERC721) {
+        resolvedKind = await detectCollectionNftKind(picked.collectionAddress);
+      }
+      const withKind = {
+        ...picked,
+        nfts: Array.isArray(picked.nfts)
+          ? picked.nfts.map((n) => ({ ...n, kind: resolvedKind === KIND_ERC1155 ? KIND_ERC1155 : (n?.kind || KIND_ERC721) }))
+          : [],
+      };
+      setSelectedNftCollection(withKind);
       setTokenNftSubView('items');
       return;
     }
@@ -2875,19 +2895,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
+  const senderIsErc1155Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC1155;
+  const signerIsErc1155Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC1155;
 
   const yourAmountDisplayFinal = senderIsErc721Selected
     ? formatTokenIdLabel(String(makerOverrides.senderTokenId))
-    : (makerOverrides.senderAmount ? formatTokenAmount(makerOverrides.senderAmount) : yourAmountDisplay);
+    : (makerOverrides.senderAmount
+      ? (senderIsErc1155Selected ? formatTokenAmount(String(Math.max(0, Math.floor(Number(makerOverrides.senderAmount) || 0)))) : formatTokenAmount(makerOverrides.senderAmount))
+      : yourAmountDisplay);
 
   let counterpartyAmountDisplayFinal = signerIsErc721Selected
     ? formatTokenIdLabel(String(makerOverrides.signerTokenId))
-    : (makerOverrides.signerAmount ? formatTokenAmount(makerOverrides.signerAmount) : counterpartyAmountDisplay);
+    : (makerOverrides.signerAmount
+      ? (signerIsErc1155Selected ? formatTokenAmount(String(Math.max(0, Math.floor(Number(makerOverrides.signerAmount) || 0)))) : formatTokenAmount(makerOverrides.signerAmount))
+      : counterpartyAmountDisplay);
   if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
     const n = Number(makerOverrides.signerAmount);
     if (Number.isFinite(n) && n >= 0) {
       const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
-      counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+      counterpartyAmountDisplayFinal = signerIsErc1155Selected
+        ? formatTokenAmount(String(Math.floor(withFee)))
+        : formatTokenAmount(String(withFee));
     }
   }
 
