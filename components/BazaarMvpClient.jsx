@@ -2057,17 +2057,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const panel = tokenModalPanel;
       const floorUsd = Number(option?.floorUsd || 0);
       const nftKind = String(option?.kind || KIND_ERC721);
-      const nftBalance = String(option?.balance || '1');
+      const nftAvailable = String(option?.balance || option?.availableRaw || '1');
+      const nftSelected = String(option?.selectedAmount || (nftKind === KIND_ERC1155 ? nftAvailable : '1'));
 
       if (nftKind === KIND_ERC1155 && !option?.confirmedAmount) {
         let availableRaw = 0n;
-        try { availableRaw = BigInt(nftBalance || '0'); } catch {}
+        try { availableRaw = BigInt(nftAvailable || '0'); } catch {}
         const pending1155 = {
           ...option,
           decimals: 0,
           availableRaw,
           availableAmount: Number(availableRaw),
-          amountDisplay: formatIntegerAmount(nftBalance),
+          amountDisplay: formatIntegerAmount(nftAvailable),
           priceUsd: 0,
           usdValue: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : 0,
         };
@@ -2083,8 +2084,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         [`${panel}Symbol`]: option.symbol,
         [`${panel}Decimals`]: 0,
         [`${panel}ImgUrl`]: option.imgUrl || null,
-        [`${panel}AvailableRaw`]: nftBalance,
-        [`${panel}Amount`]: '1',
+        [`${panel}AvailableRaw`]: nftAvailable,
+        [`${panel}Amount`]: nftSelected,
         [`${panel}Usd`]: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : null,
         [`${panel}TokenId`]: String(option.tokenId || '0'),
         [`${panel}Kind`]: nftKind,
@@ -2601,9 +2602,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     const option = {
       ...customTokenResolvedOption,
-      balance: String(want),
-      availableRaw: want,
-      availableAmount: Number(want),
+      selectedAmount: String(want),
+      availableRaw: BigInt(customTokenResolvedOption.balance || '0'),
+      availableAmount: Number(customTokenResolvedOption.balance || 0),
       amountDisplay: formatIntegerAmount(String(want)),
       kind: KIND_ERC1155,
       confirmedAmount: true,
