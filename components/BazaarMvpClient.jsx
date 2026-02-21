@@ -3016,10 +3016,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     } catch {}
     try {
       const dec = Number(makerOverrides.signerDecimals ?? 18);
-      const is1155 = String(makerOverrides.signerKind || '') === KIND_ERC1155;
+      const signerKind = String(makerOverrides.signerKind || '');
+      const is721 = signerKind === KIND_ERC721;
+      const is1155 = signerKind === KIND_ERC1155;
       const baseAmountNum = Number(makerOverrides.signerAmount || 0);
       const withFeeNum = baseAmountNum * (1 + Number(uiProtocolFeeBps) / 10000);
-      const effectiveAmount = is1155 ? String(Math.floor(Math.max(0, withFeeNum))) : String(makerOverrides.signerAmount || '0');
+      const effectiveAmount = is721
+        ? String(makerOverrides.signerAmount || '0')
+        : (is1155 ? String(Math.floor(Math.max(0, withFeeNum))) : String(Math.max(0, withFeeNum)));
       const inRaw = effectiveAmount ? ethers.parseUnits(effectiveAmount, dec) : 0n;
       const availRaw = BigInt(makerOverrides.signerAvailableRaw || '0');
       makerSignerInsufficient = inRaw > 0n && inRaw > availRaw;
