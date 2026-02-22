@@ -1882,10 +1882,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         isSwapErc20 ? Promise.resolve(KIND_ERC20) : swap.requiredSenderKind(),
       ]);
 
-      const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
-      const senderAmount = ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
-
       const signerKindNow = String(makerOverrides.senderKind || KIND_ERC20);
+      const senderKindNow = String(makerOverrides.signerKind || routedSenderKind || requiredSenderKind || KIND_ERC20);
+      const signerAmount = (signerKindNow === KIND_ERC721)
+        ? '0'
+        : ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
+      const senderAmount = (senderKindNow === KIND_ERC721)
+        ? '0'
+        : ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
+
       const signerIsNftNow = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
       if (!signerIsNftNow && !isEthSentinelAddr(signerToken)) {
         const signerErc20 = new ethers.Contract(signerToken, ERC20_ABI, readProvider);
