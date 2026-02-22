@@ -35,6 +35,10 @@ const NFT_LABEL_ABI = [
   'function symbol() view returns (string)',
   'function name() view returns (string)',
 ];
+const ROYALTY_ABI = [
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+  'function royaltyInfo(uint256 tokenId,uint256 salePrice) view returns (address receiver,uint256 royaltyAmount)',
+];
 const NFT_APPROVAL_ABI = [
   'function setApprovalForAll(address operator,bool approved)',
 ];
@@ -1684,6 +1688,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
+      let maxRoyaltyForCall = 0n;
+      if (!isSwapErc20) {
+        try {
+          const signerKindNow = String(parsed.signerKind || KIND_ERC20);
+          const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+          if (signerIsNft) {
+            const royaltyToken = new ethers.Contract(parsed.signerToken, ROYALTY_ABI, readProvider);
+            const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
+            if (supports) {
+              const [, royaltyAmount] = await royaltyToken.royaltyInfo(BigInt(parsed.signerId || 0), BigInt(parsed.senderAmount || 0)).catch(() => [ethers.ZeroAddress, 0n]);
+              maxRoyaltyForCall = BigInt(royaltyAmount || 0n);
+            }
+          }
+        } catch {
+          maxRoyaltyForCall = 0n;
+        }
+      }
       const swapErc20Args = [
         address,
         BigInt(parsed.nonce),
@@ -1701,7 +1722,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         if (isSwapErc20) {
           await swap.swap.staticCall(...swapErc20Args, { from: address });
         } else {
-          await swap.swap.staticCall(address, 0, orderForCall, { from: address });
+          await swap.swap.staticCall(address, maxRoyaltyForCall, orderForCall, { from: address });
         }
       } catch (e) {
         const msg = errText(e);
@@ -1734,7 +1755,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
       const swapData = isSwapErc20
         ? SWAP_ERC20_IFACE.encodeFunctionData('swap', swapErc20Args)
-        : SWAP_IFACE.encodeFunctionData('swap', [address, 0, orderForCall]);
+        : SWAP_IFACE.encodeFunctionData('swap', [address, maxRoyaltyForCall, orderForCall]);
       const txHash = await sendTransactionAsync({
         account: address,
         chainId: 8453,
