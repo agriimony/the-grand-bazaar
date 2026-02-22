@@ -1523,7 +1523,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         if (String(signerNftSymbol || '').trim()) finalSignerSymbol = String(signerNftSymbol).trim();
         if (String(senderNftSymbol || '').trim()) finalSenderSymbol = String(senderNftSymbol).trim();
 
-        if (!signerImgUrl) {
+        const shouldSkipUriBackfill = Boolean(initialCastHash);
+        if (!signerImgUrl && !shouldSkipUriBackfill) {
           const signerNftMeta = (signerKindNow === KIND_ERC721)
             ? await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
             : (signerKindNow === KIND_ERC1155)
@@ -1532,7 +1533,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           if (signerNftMeta?.imgUrl) signerImgUrl = signerNftMeta.imgUrl;
         }
 
-        if (!senderImgUrl) {
+        if (!senderImgUrl && !shouldSkipUriBackfill) {
           const senderNftMeta = (senderKindNow === KIND_ERC721)
             ? await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
             : (senderKindNow === KIND_ERC1155)
