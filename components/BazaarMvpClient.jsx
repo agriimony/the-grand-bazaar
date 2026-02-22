@@ -3254,7 +3254,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     };
     setMakerOverrides(nextOverrides);
 
-    if (makerMode && panel === 'sender') {
+    if (makerMode) {
       const token = nextOverrides.senderToken;
       const amount = nextOverrides.senderAmount;
       const dec = Number(nextOverrides.senderDecimals ?? 18);
@@ -3270,20 +3270,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           setMakerStep('sign');
         } else if (address) {
           try {
+            const offeredKind = String(nextOverrides.senderKind || KIND_ERC20);
+            const offeredIsNft = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-            const c = new ethers.Contract(token, ERC20_ABI, rp);
-            const baseNeed = ethers.parseUnits(String(amount), dec);
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
             const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp, token);
-            const isSwapErc20 = IS_SWAP_ERC20(swapContract);
-            let need = baseNeed;
-            if (isSwapErc20) {
-              const swapRead = new ethers.Contract(swapContract, SWAP_ERC20_ABI, rp);
-              const feeBps = BigInt((await swapRead.protocolFee()).toString());
-              need = baseNeed + ((baseNeed * feeBps) / 10000n);
+
+            if (offeredIsNft) {
+              const nft = new ethers.Contract(token, NFT_ABI, rp);
+              const approved = await nft.isApprovedForAll(address, swapContract);
+              setMakerStep(approved ? 'sign' : 'approve');
+            } else {
+              const c = new ethers.Contract(token, ERC20_ABI, rp);
+              const baseNeed = ethers.parseUnits(String(amount), dec);
+              const isSwapErc20 = IS_SWAP_ERC20(swapContract);
+              let need = baseNeed;
+              if (isSwapErc20) {
+                const swapRead = new ethers.Contract(swapContract, SWAP_ERC20_ABI, rp);
+                const feeBps = BigInt((await swapRead.protocolFee()).toString());
+                need = baseNeed + ((baseNeed * feeBps) / 10000n);
+              }
+              const allowance = await c.allowance(address, swapContract);
+              setMakerStep(allowance >= need ? 'sign' : 'approve');
             }
-            const allowance = await c.allowance(address, swapContract);
-            setMakerStep(allowance >= need ? 'sign' : 'approve');
           } catch {
             setMakerStep('approve');
           }
