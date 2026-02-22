@@ -11,7 +11,7 @@ Scope: Private counterparty permutations first.
 | # | Make Kind | Take Kind | Status | Notes |
 |---|---|---|---|---|
 | 1 | ERC20 | ERC20 | ✅ | Private flow validated on routed SwapERC20 (`0x95D598...`). New round confirmed both legs operational after protocol-specific signer/taker path fixes. Fill tx: 0x77bc36a80caeae69ea3009e2c8c7cb298c94e59fd1c396574992ebe7b6400c4b from offer cast 0x702a03ddffee9b9ccec8fc564cefad9a9168b252 with success reply cast 0xdddae6703829c70cd1cf75c8ef741f3d709eed96. Key fixes validated: maker sign ABI/domain split, taker simulation ABI routing, signer-side fee accounting, approve amount/checker includes signer fee, and pre-sign preview fee placement (footer/amount/value) on correct side. |
-| 2 | ERC20 | ERC721 | ⬜ | |
+| 2 | ERC20 | ERC721 | ✅ | Private flow validated. Offer cast: 0x58b9d72678bfe2daaf3b5222bd931b6524966cb0. Fill tx: 0x761ada9557818fe5255c33ef1bdad6af00d20753fccce884c7aa85230e1d1d3b. Success reply cast: 0x976b2074cb77d5d43565d7362a3ca212fed72f14. |
 | 3 | ERC20 | ERC1155 | ✅ | Private flow validated. Offer cast: 0x906953a6b7897b45316fa6c46fbdaf46c8debb71. Fill tx: 0x2285af4997b71c10da45d1a7d92db04f1384bbcc59188a245da622920fa04ded. Success reply cast: 0xc4cc8a08da1f235280676d0c7d703678b61363e4. Reverse maker order posted before fill cycle: step1 0xe709aad907d03e1f4f680dfdb5e2403e71d7c47e, step2 0xbf4c79f3343b26f8c75f82167df34ff6347d3b32. |
 | 4 | ERC721 | ERC20 | ⬜ | |
 | 5 | ERC721 | ERC721 | ⬜ | |
