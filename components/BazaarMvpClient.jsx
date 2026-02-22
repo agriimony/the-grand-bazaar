@@ -519,9 +519,14 @@ function ethIconUrl() {
   return '/eth-icon.png';
 }
 
-function catalogIconArt(token) {
+function catalogTokenMeta(token) {
   const t = tokenKey(token || '');
   const found = TOKEN_CATALOG.find((x) => tokenKey(x?.token || '') === t);
+  return found || null;
+}
+
+function catalogIconArt(token) {
+  const found = catalogTokenMeta(token);
   return found?.iconArt || '';
 }
 
@@ -1192,14 +1197,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       try {
         const signerKindNow = String(parsed.signerKind || KIND_ERC20);
         if (signerKindNow === KIND_ERC20) {
+          const local = catalogTokenMeta(parsed.signerToken);
           signerImgUrl = tokenIconUrl(8453, parsed.signerToken) || null;
-          const ec = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
-          const [sym, dec] = await Promise.all([
-            ec.symbol().catch(() => ''),
-            ec.decimals().catch(() => null),
-          ]);
-          if (String(sym || '').trim()) finalSignerSymbol = String(sym).trim();
-          if (dec != null && Number.isFinite(Number(dec))) finalSignerDecimals = Number(dec);
+          if (String(local?.symbol || '').trim()) finalSignerSymbol = String(local.symbol).trim();
+          if (local?.decimals != null && Number.isFinite(Number(local.decimals))) finalSignerDecimals = Number(local.decimals);
+          if (!String(local?.symbol || '').trim() || !(local?.decimals != null && Number.isFinite(Number(local.decimals)))) {
+            const ec = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+            const [sym, dec] = await Promise.all([
+              ec.symbol().catch(() => ''),
+              ec.decimals().catch(() => null),
+            ]);
+            if (String(sym || '').trim()) finalSignerSymbol = String(sym).trim();
+            if (dec != null && Number.isFinite(Number(dec))) finalSignerDecimals = Number(dec);
+          }
         } else if (signerKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'));
           if (meta?.symbol) finalSignerSymbol = meta.symbol;
@@ -1217,14 +1227,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       try {
         const senderKindNow = String(parsed.senderKind || KIND_ERC20);
         if (senderKindNow === KIND_ERC20) {
+          const local = catalogTokenMeta(parsed.senderToken);
           senderImgUrl = tokenIconUrl(8453, parsed.senderToken) || null;
-          const ec = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
-          const [sym, dec] = await Promise.all([
-            ec.symbol().catch(() => ''),
-            ec.decimals().catch(() => null),
-          ]);
-          if (String(sym || '').trim()) finalSenderSymbol = String(sym).trim();
-          if (dec != null && Number.isFinite(Number(dec))) finalSenderDecimals = Number(dec);
+          if (String(local?.symbol || '').trim()) finalSenderSymbol = String(local.symbol).trim();
+          if (local?.decimals != null && Number.isFinite(Number(local.decimals))) finalSenderDecimals = Number(local.decimals);
+          if (!String(local?.symbol || '').trim() || !(local?.decimals != null && Number.isFinite(Number(local.decimals)))) {
+            const ec = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+            const [sym, dec] = await Promise.all([
+              ec.symbol().catch(() => ''),
+              ec.decimals().catch(() => null),
+            ]);
+            if (String(sym || '').trim()) finalSenderSymbol = String(sym).trim();
+            if (dec != null && Number.isFinite(Number(dec))) finalSenderDecimals = Number(dec);
+          }
         } else if (senderKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'));
           if (meta?.symbol) finalSenderSymbol = meta.symbol;
