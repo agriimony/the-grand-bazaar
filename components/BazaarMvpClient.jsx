@@ -1884,9 +1884,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const signerKindNow = String(makerOverrides.senderKind || KIND_ERC20);
       const senderKindNow = String(makerOverrides.signerKind || routedSenderKind || requiredSenderKind || KIND_ERC20);
-      const signerAmount = (signerKindNow === KIND_ERC721)
-        ? '0'
-        : ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
+      const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
       const senderAmount = (senderKindNow === KIND_ERC721)
         ? '0'
         : ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
