@@ -1884,6 +1884,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
       const senderAmount = ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
+
+      const signerKindNow = String(makerOverrides.senderKind || KIND_ERC20);
+      const signerIsNftNow = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+      if (!signerIsNftNow && !isEthSentinelAddr(signerToken)) {
+        const signerErc20 = new ethers.Contract(signerToken, ERC20_ABI, readProvider);
+        const protocolFeeBps = BigInt(protocolFee.toString());
+        const signerAmountBn = BigInt(signerAmount);
+        const requiredApprove = isSwapErc20
+          ? (signerAmountBn + ((signerAmountBn * protocolFeeBps) / 10000n))
+          : signerAmountBn;
+        const signerAllowance = await signerErc20.allowance(address, swapContract);
+        if (BigInt(signerAllowance.toString()) < requiredApprove) {
+          setMakerStep('approve');
+          setStatus('approve token first');
+          return;
+        }
+      }
+
       const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
       const expiry = Math.floor(Date.now() / 1000) + Number(makerExpirySec || 24 * 3600);
 
