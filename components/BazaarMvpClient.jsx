@@ -1287,8 +1287,30 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         }
       } catch {}
 
-      const makerBalanceOk = signerRead.balance >= makerRequired;
-      const makerApprovalOk = signerRead.allowance >= makerRequired;
+      const signerKindForChecks = String(parsed.signerKind || KIND_ERC20);
+      let makerBalanceOk = signerRead.balance >= makerRequired;
+      let makerApprovalOk = signerRead.allowance >= makerRequired;
+
+      if (signerKindForChecks === KIND_ERC721) {
+        try {
+          const c721 = new ethers.Contract(parsed.signerToken, ERC721_ABI, readProvider);
+          const owner = await c721.ownerOf(parsed.signerId || 0);
+          makerBalanceOk = normalizeAddr(owner) === normalizeAddr(parsed.signerWallet);
+        } catch {
+          makerBalanceOk = false;
+        }
+        makerApprovalOk = true;
+      } else if (signerKindForChecks === KIND_ERC1155) {
+        try {
+          const c1155 = new ethers.Contract(parsed.signerToken, ERC1155_ABI, readProvider);
+          const bal = await c1155.balanceOf(parsed.signerWallet, parsed.signerId || 0);
+          makerBalanceOk = BigInt(bal || 0n) >= BigInt(parsed.signerAmount || 0n);
+        } catch {
+          makerBalanceOk = false;
+        }
+        makerApprovalOk = true;
+      }
+
       const makerAccepted = makerBalanceOk && makerApprovalOk;
 
       const takerBalance = senderRead.balance;
