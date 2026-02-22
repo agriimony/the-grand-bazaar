@@ -1915,11 +1915,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerTokenId = Number(makerOverrides.senderTokenId || 0);
       const senderTokenId = Number(makerOverrides.signerTokenId || 0);
 
-      // Legacy ERC721 signer-leg experimental encoding:
-      // encode tokenId in `amount`, keep `id=0`.
-      const signerIdForOrder = signerKind === KIND_ERC721 ? 0 : signerTokenId;
-      const signerAmountForOrder = signerKind === KIND_ERC721 ? String(signerTokenId) : signerAmount;
-
       const typedOrder = {
         nonce,
         expiry,
@@ -1928,8 +1923,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           wallet: address,
           token: signerToken,
           kind: signerKind,
-          id: signerIdForOrder,
-          amount: signerAmountForOrder,
+          id: signerTokenId,
+          amount: signerAmount,
         },
         sender: {
           wallet: selectedCounterpartyWallet,
@@ -2032,9 +2027,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         expiry: String(expiry),
         signerWallet: address,
         signerToken,
-        signerAmount: signerAmountForOrder,
+        signerAmount,
         signerKind,
-        signerId: String(signerIdForOrder),
+        signerId: String(signerTokenId),
         protocolFee: String(protocolFee),
         senderWallet: selectedCounterpartyWallet,
         senderToken,
