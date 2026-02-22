@@ -1643,7 +1643,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const logs = window.__GBZ_META_DEBUG__.slice(-20);
           window.__GBZ_META_DEBUG__ = [];
           for (const l of logs) {
-            dbg(`nft-meta ${l.scope || 'step'} ${l.token ? `${String(l.token).slice(0, 8)}..` : ''}${l.tokenId != null ? `#${l.tokenId}` : ''} ${l.ms != null ? `${l.ms}ms` : ''} ${l.error ? `err=${l.error}` : ''}`.trim());
+            const parts = [
+              'nft-meta',
+              String(l.scope || 'step'),
+              l.token ? `${String(l.token).slice(0, 8)}..` : '',
+              l.tokenId != null ? `#${l.tokenId}` : '',
+              l.ms != null ? `${l.ms}ms` : '',
+              l.error ? `err=${l.error}` : '',
+            ].filter(Boolean);
+            dbg(parts.join(' '));
           }
         }
       } catch {}
