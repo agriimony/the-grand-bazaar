@@ -773,6 +773,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerCastText, setMakerCastText] = useState('');
   const [makerOfferCastHash, setMakerOfferCastHash] = useState('');
   const [makerEmbedPosted, setMakerEmbedPosted] = useState(false);
+  const [makerRoyaltyText, setMakerRoyaltyText] = useState('');
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -826,6 +827,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setMakerCastText('');
     setMakerOfferCastHash('');
     setMakerEmbedPosted(false);
+    setMakerRoyaltyText('');
   }, [
     makerMode,
     makerOverrides.senderToken,
@@ -1517,6 +1519,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         takerApprovalOk,
         totalRequired,
         feeAmount,
+        royaltyAmount,
         protocolFeeBps: protocolFee,
         checkErrors,
         signerAmount: BigInt(parsed.signerAmount),
@@ -3352,6 +3355,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       );
       if (!hasBothSidesSelected) {
         setMakerStep('approve');
+        setMakerRoyaltyText('');
       }
 
       let insufficient = false;
@@ -3380,6 +3384,33 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
             const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp, token);
+
+            try {
+              const signerIsNft = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
+              if (signerIsNft) {
+                const royaltyToken = new ethers.Contract(token, ROYALTY_ABI, rp);
+                const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
+                if (supports) {
+                  const senderDecimals = Number(nextOverrides.signerDecimals ?? 18);
+                  const senderAmountRaw = ethers.parseUnits(String(nextOverrides.signerAmount || 0), senderDecimals);
+                  const signerId = BigInt(nextOverrides.senderTokenId || 0);
+                  const [, royaltyAmount] = await royaltyToken.royaltyInfo(signerId, senderAmountRaw).catch(() => [ethers.ZeroAddress, 0n]);
+                  const ra = BigInt(royaltyAmount || 0n);
+                  if (ra > 0n) {
+                    const sym = nextOverrides.signerSymbol || 'token';
+                    setMakerRoyaltyText(`incl. royalty ${formatTokenAmount(ethers.formatUnits(ra, senderDecimals))} ${sym}`);
+                  } else {
+                    setMakerRoyaltyText('');
+                  }
+                } else {
+                  setMakerRoyaltyText('');
+                }
+              } else {
+                setMakerRoyaltyText('');
+              }
+            } catch {
+              setMakerRoyaltyText('');
+            }
 
             if (offeredKind === KIND_ERC721) {
               const nft = new ethers.Contract(token, ERC721_ABI, rp);
@@ -3823,6 +3854,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? IS_SWAP_ERC20(parsed.swapContract)
     : makerFeeOnSignerSidePreview;
   const feeLabel = (bps) => `incl. ${(Number(bps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
+  const royaltyLabel = (amountRaw, decimals, symbol) => {
+    try {
+      const raw = BigInt(amountRaw || 0n);
+      if (raw <= 0n) return '';
+      const dec = Number.isFinite(Number(decimals)) ? Number(decimals) : 6;
+      const human = formatTokenAmount(ethers.formatUnits(raw, dec));
+      return `incl. royalty ${human} ${symbol || ''}`.trim();
+    } catch {
+      return '';
+    }
+  };
+  const senderRoyaltyText = (!makerMode && !feeOnSignerSide)
+    ? royaltyLabel(checks?.royaltyAmount, checks?.senderDecimals, checks?.senderSymbol)
+    : '';
+  const senderRoyaltyTextMaker = makerMode ? makerRoyaltyText : '';
   const topFeeText = makerMode
     ? (makerHasBothTokensSelected && feeOnSignerSide ? feeLabel(uiProtocolFeeBps) : '')
     : (flipForSigner
@@ -3902,6 +3948,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           ? feeLabel(protocolFeeBpsFallback)
           : '')
         : ''));
+  const topFeeTextFinal = [topFeeText, (makerMode ? '' : (!flipForSigner ? senderRoyaltyText : ''))].filter(Boolean).join(' • ');
+  const bottomFeeTextFinal = [bottomFeeText, (makerMode ? senderRoyaltyTextMaker : (flipForSigner ? senderRoyaltyText : ''))].filter(Boolean).join(' • ');
   const bottomFooter = makerMode
     ? (hasSpecificMakerCounterparty ? `${fitOfferName(counterpartyName)} has not yet accepted` : 'Nobody has accepted yet')
     : checks
@@ -3955,7 +4003,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={topDanger}
             insufficientBalance={topInsufficient}
             valueText={topValueText}
-            feeText={topFeeText}
+            feeText={topFeeTextFinal}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
             wrapHint={!flipForSigner && showWrapHint}
             wrapAmount={!flipForSigner && showWrapHint ? formatTokenAmount(ethers.formatUnits(wrapAmountNeeded, 18)) : ''}
@@ -4048,7 +4096,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             danger={bottomDanger}
             insufficientBalance={bottomInsufficient}
             valueText={bottomValueText}
-            feeText={bottomFeeText}
+            feeText={bottomFeeTextFinal}
             feeTone={checks?.protocolFeeMismatch ? 'bad' : 'ok'}
             footer={bottomFooter}
             footerTone={bottomFooterTone}
