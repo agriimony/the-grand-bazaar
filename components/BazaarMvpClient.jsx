@@ -899,6 +899,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerOfferCastHash, setMakerOfferCastHash] = useState('');
   const [makerEmbedPosted, setMakerEmbedPosted] = useState(false);
   const [makerRoyaltyText, setMakerRoyaltyText] = useState('');
+  const [makerRoyaltyAmountRaw, setMakerRoyaltyAmountRaw] = useState('0');
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -953,6 +954,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setMakerOfferCastHash('');
     setMakerEmbedPosted(false);
     setMakerRoyaltyText('');
+    setMakerRoyaltyAmountRaw('0');
   }, [
     makerMode,
     makerOverrides.senderToken,
@@ -3618,17 +3620,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   if (ra > 0n) {
                     const sym = nextOverrides.signerSymbol || 'token';
                     setMakerRoyaltyText(`incl. royalty ${formatTokenAmount(ethers.formatUnits(ra, senderDecimals))} ${sym}`);
+                    setMakerRoyaltyAmountRaw(String(ra));
                   } else {
                     setMakerRoyaltyText('');
+                    setMakerRoyaltyAmountRaw('0');
                   }
                 } else {
                   setMakerRoyaltyText('');
+                  setMakerRoyaltyAmountRaw('0');
                 }
               } else {
                 setMakerRoyaltyText('');
+                setMakerRoyaltyAmountRaw('0');
               }
             } catch {
               setMakerRoyaltyText('');
+              setMakerRoyaltyAmountRaw('0');
             }
 
             if (offeredKind === KIND_ERC721) {
@@ -3967,8 +3974,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
           counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
         } else {
-          const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
-          counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+          try {
+            const dec = Number(makerOverrides.signerDecimals ?? 18);
+            const baseRaw = ethers.parseUnits(String(n), dec);
+            const feeRaw = (baseRaw * BigInt(uiProtocolFeeBps || 0)) / 10000n;
+            const royaltyRaw = BigInt(makerRoyaltyAmountRaw || '0');
+            const totalRaw = baseRaw + feeRaw + royaltyRaw;
+            counterpartyAmountDisplayFinal = formatTokenAmount(ethers.formatUnits(totalRaw, dec));
+          } catch {
+            const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+            counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+          }
         }
       }
     }
