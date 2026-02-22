@@ -3208,10 +3208,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const topDanger = makerMode ? makerSenderInsufficient : Boolean(checks && (flipForSigner ? !checks.makerBalanceOk : !checks.takerBalanceOk));
   const topInsufficient = topDanger;
   const topValueText = flipForSigner ? counterpartyValueTextFinal : yourValueTextFinal;
-  const feeOnSignerSide = Boolean(parsed && IS_SWAP_ERC20(parsed.swapContract));
+  const makerHasBothTokensSelected = Boolean(
+    makerMode
+    && !parsed
+    && makerOverrides.senderToken
+    && makerOverrides.signerToken
+  );
+  const makerFeeOnSignerSidePreview = Boolean(
+    makerHasBothTokensSelected
+    && String(makerOverrides.senderKind || '') === KIND_ERC20
+    && String(makerOverrides.signerKind || '') === KIND_ERC20
+  );
+  const feeOnSignerSide = parsed
+    ? IS_SWAP_ERC20(parsed.swapContract)
+    : makerFeeOnSignerSidePreview;
   const feeLabel = (bps) => `incl. ${(Number(bps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
   const topFeeText = makerMode
-    ? ''
+    ? (makerHasBothTokensSelected && feeOnSignerSide ? feeLabel(uiProtocolFeeBps) : '')
     : (flipForSigner
       ? (feeOnSignerSide
         ? (checks?.protocolFeeMismatch
@@ -3269,7 +3282,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const bottomInsufficient = bottomDanger;
   const bottomValueText = flipForSigner ? yourValueTextFinal : counterpartyValueTextFinal;
   const bottomFeeText = makerMode
-    ? feeLabel(uiProtocolFeeBps)
+    ? (makerHasBothTokensSelected && !feeOnSignerSide ? feeLabel(uiProtocolFeeBps) : '')
     : (flipForSigner
       ? (feeOnSignerSide
         ? ''
