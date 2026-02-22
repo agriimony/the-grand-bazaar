@@ -1069,6 +1069,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         if (!r.ok || !d?.compressedOrder) return;
         const fromCast = decodeCompressedOrder(d.compressedOrder);
         const embedUrls = Array.isArray(d?.embedUrls) ? d.embedUrls.map((u) => toAbsoluteHttpUrl(u)).filter(Boolean) : [];
+        dbg(`cast embed urls source=${d?.sourceCastHash || initialCastHash || 'unknown'} count=${embedUrls.length} urls=${JSON.stringify(embedUrls)}`);
         const signerIsNft = String(fromCast?.signerKind || '') === KIND_ERC721 || String(fromCast?.signerKind || '') === KIND_ERC1155;
         const senderIsNft = String(fromCast?.senderKind || '') === KIND_ERC721 || String(fromCast?.senderKind || '') === KIND_ERC1155;
 
@@ -1094,6 +1095,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           if (!senderImgUrl && senderIsNft) senderImgUrl = embedUrls[0] || null;
         }
 
+        dbg(`cast embed fallback resolved signer=${signerImgUrl || 'none'} sender=${senderImgUrl || 'none'} signerKind=${String(fromCast?.signerKind || '')} senderKind=${String(fromCast?.senderKind || '')}`);
         if (mounted) setCastNftFallback({ signerImgUrl, senderImgUrl });
       } catch {
         // no-op
