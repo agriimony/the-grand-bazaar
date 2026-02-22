@@ -2154,6 +2154,43 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
   }
 
+  async function onParsedSignerApprove() {
+    if (!parsed || !checks) {
+      setStatus('order/checks not ready');
+      return;
+    }
+    if (!address || !sendTransactionAsync || !publicClient) {
+      setStatus('wallet connector not ready');
+      return;
+    }
+    try {
+      const signerKindNow = String(parsed.signerKind || KIND_ERC20);
+      const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+      const isSwapErc20 = IS_SWAP_ERC20(parsed.swapContract);
+      const signerAmount = BigInt(parsed.signerAmount || 0n);
+      const feeBps = BigInt(checks?.protocolFeeBps || parsed?.protocolFee || 0);
+      const approveAmount = (!signerIsNft && isSwapErc20)
+        ? (signerAmount + ((signerAmount * feeBps) / 10000n))
+        : signerAmount;
+      const approveData = signerIsNft
+        ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [parsed.swapContract, true])
+        : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, approveAmount]);
+      setStatus(`approving ${checks?.signerSymbol || 'token'}`);
+      const txHash = await sendTransactionAsync({
+        account: address,
+        chainId: 8453,
+        to: parsed.signerToken,
+        data: approveData,
+        value: 0n,
+      });
+      await waitForTxConfirmation({ publicClient, txHash });
+      setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
+      await runChecks();
+    } catch (e) {
+      setStatus(`approve error: ${errText(e)}`);
+    }
+  }
+
   async function onParsedSignerPublishOrder() {
     if (!parsed) {
       setStatus('order not loaded');
@@ -3624,6 +3661,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const flipForSigner = !makerMode && checks?.connectedRole === 'signer';
   const showSignerOwnerActions = Boolean(parsed) && !makerMode && checks?.connectedRole === 'signer';
+  const signerNeedsApproval = showSignerOwnerActions && checks?.makerApprovalOk === false;
+  const signerInsufficientBalance = showSignerOwnerActions && checks?.makerBalanceOk === false;
   const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
   const isPublicMakerOffer = makerMode && !parsed && !hasSpecificMakerCounterparty;
   const topTitle = isNeitherParty
@@ -3832,7 +3871,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               )
             ) : showSignerOwnerActions ? (
               <div className="rs-btn-stack">
-                <button className="rs-btn rs-btn-positive" onClick={onParsedSignerPublishOrder}>Publish order</button>
+                {signerInsufficientBalance ? (
+                  <button className="rs-btn" disabled>Insufficient balance</button>
+                ) : signerNeedsApproval ? (
+                  <button className="rs-btn rs-btn-positive" onClick={onParsedSignerApprove}>Approve</button>
+                ) : (
+                  <button className="rs-btn rs-btn-positive" onClick={onParsedSignerPublishOrder}>Publish order</button>
+                )}
                 <button className="rs-btn decline" onClick={onParsedSignerCancelOrder}>Cancel</button>
               </div>
             ) : (
