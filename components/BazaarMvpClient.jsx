@@ -4037,7 +4037,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
 function shouldShowTokenId(kind, tokenId) {
   const k = String(kind || '');
-  if (k !== KIND_ERC721 && k !== KIND_ERC1155) return false;
+  if (k !== KIND_ERC1155) return false;
   return tokenId !== undefined && tokenId !== null && String(tokenId) !== '';
 }
 
