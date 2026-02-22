@@ -2879,9 +2879,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           try {
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
             const c = new ethers.Contract(token, ERC20_ABI, rp);
-            const need = ethers.parseUnits(String(amount), dec);
+            const baseNeed = ethers.parseUnits(String(amount), dec);
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
             const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp, token);
+            const isSwapErc20 = IS_SWAP_ERC20(swapContract);
+            let need = baseNeed;
+            if (isSwapErc20) {
+              const swapRead = new ethers.Contract(swapContract, SWAP_ERC20_ABI, rp);
+              const feeBps = BigInt((await swapRead.protocolFee()).toString());
+              need = baseNeed + ((baseNeed * feeBps) / 10000n);
+            }
             const allowance = await c.allowance(address, swapContract);
             setMakerStep(allowance >= need ? 'sign' : 'approve');
           } catch {
