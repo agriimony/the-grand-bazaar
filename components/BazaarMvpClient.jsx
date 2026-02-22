@@ -3258,6 +3258,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const token = nextOverrides.senderToken;
       const amount = nextOverrides.senderAmount;
       const dec = Number(nextOverrides.senderDecimals ?? 18);
+
+      const hasBothSidesSelected = Boolean(
+        nextOverrides.senderToken
+        && nextOverrides.senderAmount
+        && nextOverrides.signerToken
+        && nextOverrides.signerAmount
+      );
+      if (!hasBothSidesSelected) {
+        setMakerStep('approve');
+      }
+
       let insufficient = false;
       try {
         const inRaw = amount ? ethers.parseUnits(String(amount), dec) : 0n;
@@ -3265,7 +3276,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         insufficient = inRaw > 0n && inRaw > availRaw;
       } catch {}
 
-      if (!insufficient && token && amount) {
+      if (hasBothSidesSelected && !insufficient && token && amount) {
         if (isEthSentinelAddr(token)) {
           setMakerStep('sign');
         } else if (address) {
