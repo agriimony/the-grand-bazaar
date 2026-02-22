@@ -61,18 +61,24 @@ export async function POST(req) {
       return Response.json({ ok: false, error: 'missing required params' }, { status: 400 });
     }
 
+    const startedAt = Date.now();
+    const t = (label) => Date.now() - startedAt;
+
     let lastErr = null;
     for (const rpc of BASE_RPCS) {
       try {
+        const rpcStartedAt = Date.now();
         const provider = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
         const isSwapErc20 = norm(swapContract) === norm(SWAP_ERC20);
         const swap = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, provider);
 
+        const tReadStart = Date.now();
         const [protocolFeeOnchain, nonceUsed, requiredSenderKind] = await Promise.all([
           swap.protocolFee(),
           swap.nonceUsed(norm(order.signer.wallet), BigInt(order.nonce)).catch(() => false),
           isSwapErc20 ? Promise.resolve(KIND_ERC20) : swap.requiredSenderKind(),
         ]);
+        const tReadDone = Date.now();
 
         const onchainOrder = {
           nonce: BigInt(order.nonce),
@@ -98,6 +104,7 @@ export async function POST(req) {
           s: order.s,
         };
 
+        const tCheckStart = Date.now();
         const rawErrors = isSwapErc20
           ? await swap.check(
             senderWallet,
@@ -113,6 +120,7 @@ export async function POST(req) {
             order.s
           ).catch(() => [])
           : await swap.check(senderWallet, onchainOrder).catch(() => []);
+        const tCheckDone = Date.now();
 
         const checkErrors = Array.isArray(rawErrors)
           ? rawErrors.map(toUtf8OrHex).filter(Boolean)
@@ -127,6 +135,7 @@ export async function POST(req) {
         let senderApprovalFallbackOk = false;
         let checkErrorsFiltered = [...checkErrors];
 
+        const tFallbackStart = Date.now();
         if (signerIsNft && checkErrorsFiltered.includes('SignerAllowanceLow')) {
           try {
             if (signerKindNow === KIND_ERC721) {
@@ -162,6 +171,7 @@ export async function POST(req) {
             senderApprovalFallbackOk = false;
           }
         }
+        const tFallbackDone = Date.now();
 
         console.log('[order-check][result]', {
           rpc,
@@ -173,6 +183,13 @@ export async function POST(req) {
           checkErrorsFiltered,
           signerApprovalFallbackOk,
           senderApprovalFallbackOk,
+          timingMs: {
+            rpcTotal: Date.now() - rpcStartedAt,
+            readCore: tReadDone - tReadStart,
+            checkCall: tCheckDone - tCheckStart,
+            nftFallback: tFallbackDone - tFallbackStart,
+            totalSinceRequest: t('result'),
+          },
         });
 
         return Response.json({
