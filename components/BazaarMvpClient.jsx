@@ -1303,43 +1303,52 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('checking wallet');
 
-      const pairRead = await readPairBatch({
-        signerToken: parsed.signerToken,
-        signerOwner: parsed.signerWallet,
-        senderToken: parsed.senderToken,
-        senderOwner: effectiveSenderOwner,
-        spender: parsed.swapContract,
-      });
-      let signerRead = pairRead.signer;
-      let senderRead = pairRead.sender;
+      const signerKindQuick = String(parsed.signerKind || KIND_ERC20);
+      const senderKindQuick = String(parsed.senderKind || requiredSenderKind || KIND_ERC20);
+      const skipPairRead = signerKindQuick !== KIND_ERC20 && senderKindQuick !== KIND_ERC20;
 
-      // Safety fallback: if batch read is stale/failed, re-read ERC20 legs directly.
-      try {
-        if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
-          const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
-          const [bal, alw] = await Promise.all([
-            c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
-            c.allowance(parsed.signerWallet, parsed.swapContract).catch(() => signerRead.allowance),
-          ]);
-          signerRead = {
-            ...signerRead,
-            balance: BigInt(bal || signerRead.balance || 0n),
-            allowance: BigInt(alw || signerRead.allowance || 0n),
-          };
-        }
-        if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
-          const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
-          const [bal, alw] = await Promise.all([
-            c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
-            c.allowance(effectiveSenderOwner, parsed.swapContract).catch(() => senderRead.allowance),
-          ]);
-          senderRead = {
-            ...senderRead,
-            balance: BigInt(bal || senderRead.balance || 0n),
-            allowance: BigInt(alw || senderRead.allowance || 0n),
-          };
-        }
-      } catch {}
+      let signerRead = { balance: 0n, allowance: 0n, symbol: signerSymbol, decimals: signerDecimals };
+      let senderRead = { balance: 0n, allowance: 0n, symbol: senderSymbol, decimals: senderDecimals };
+
+      if (!skipPairRead) {
+        const pairRead = await readPairBatch({
+          signerToken: parsed.signerToken,
+          signerOwner: parsed.signerWallet,
+          senderToken: parsed.senderToken,
+          senderOwner: effectiveSenderOwner,
+          spender: parsed.swapContract,
+        });
+        signerRead = pairRead.signer;
+        senderRead = pairRead.sender;
+
+        // Safety fallback: if batch read is stale/failed, re-read ERC20 legs directly.
+        try {
+          if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
+            const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+            const [bal, alw] = await Promise.all([
+              c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
+              c.allowance(parsed.signerWallet, parsed.swapContract).catch(() => signerRead.allowance),
+            ]);
+            signerRead = {
+              ...signerRead,
+              balance: BigInt(bal || signerRead.balance || 0n),
+              allowance: BigInt(alw || signerRead.allowance || 0n),
+            };
+          }
+          if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
+            const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+            const [bal, alw] = await Promise.all([
+              c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
+              c.allowance(effectiveSenderOwner, parsed.swapContract).catch(() => senderRead.allowance),
+            ]);
+            senderRead = {
+              ...senderRead,
+              balance: BigInt(bal || senderRead.balance || 0n),
+              allowance: BigInt(alw || senderRead.allowance || 0n),
+            };
+          }
+        } catch {}
+      }
 
       let finalSignerSymbol = signerRead.symbol || signerSymbol;
       let finalSignerDecimals = signerRead.decimals ?? signerDecimals;
@@ -1416,27 +1425,37 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let makerApprovalOk = signerRead.allowance >= makerRequired;
 
       if (signerKindForChecks === KIND_ERC721) {
-        try {
-          const c721 = new ethers.Contract(parsed.signerToken, ERC721_ABI, readProvider);
-          const [owner, approvedTo] = await Promise.all([
-            c721.ownerOf(parsed.signerId || 0),
-            c721.getApproved(parsed.signerId || 0).catch(() => ethers.ZeroAddress),
-          ]);
-          makerBalanceOk = normalizeAddr(owner) === normalizeAddr(parsed.signerWallet);
-          makerApprovalOk = normalizeAddr(approvedTo) === normalizeAddr(parsed.swapContract);
-        } catch {
-          makerBalanceOk = false;
-          makerApprovalOk = false;
+        if (skipPairRead) {
+          makerBalanceOk = !checkErrors.includes('SignerBalanceLow');
+          makerApprovalOk = !checkErrors.includes('SignerAllowanceLow');
+        } else {
+          try {
+            const c721 = new ethers.Contract(parsed.signerToken, ERC721_ABI, readProvider);
+            const [owner, approvedTo] = await Promise.all([
+              c721.ownerOf(parsed.signerId || 0),
+              c721.getApproved(parsed.signerId || 0).catch(() => ethers.ZeroAddress),
+            ]);
+            makerBalanceOk = normalizeAddr(owner) === normalizeAddr(parsed.signerWallet);
+            makerApprovalOk = normalizeAddr(approvedTo) === normalizeAddr(parsed.swapContract);
+          } catch {
+            makerBalanceOk = false;
+            makerApprovalOk = false;
+          }
         }
       } else if (signerKindForChecks === KIND_ERC1155) {
-        try {
-          const c1155 = new ethers.Contract(parsed.signerToken, ERC1155_ABI, readProvider);
-          const bal = await c1155.balanceOf(parsed.signerWallet, parsed.signerId || 0);
-          makerBalanceOk = BigInt(bal || 0n) >= BigInt(parsed.signerAmount || 0n);
-        } catch {
-          makerBalanceOk = false;
+        if (skipPairRead) {
+          makerBalanceOk = !checkErrors.includes('SignerBalanceLow');
+          makerApprovalOk = !checkErrors.includes('SignerAllowanceLow');
+        } else {
+          try {
+            const c1155 = new ethers.Contract(parsed.signerToken, ERC1155_ABI, readProvider);
+            const bal = await c1155.balanceOf(parsed.signerWallet, parsed.signerId || 0);
+            makerBalanceOk = BigInt(bal || 0n) >= BigInt(parsed.signerAmount || 0n);
+          } catch {
+            makerBalanceOk = false;
+          }
+          makerApprovalOk = true;
         }
-        makerApprovalOk = true;
       }
 
       const makerAccepted = makerBalanceOk && makerApprovalOk;
