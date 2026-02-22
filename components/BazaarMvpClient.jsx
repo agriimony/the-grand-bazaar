@@ -3021,7 +3021,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const pendingAmountNum = Number(pendingAmount || 0);
   const pendingIsErc1155 = String(pendingToken?.kind || '') === KIND_ERC1155;
-  const pendingFeeApplies = makerMode && tokenModalPanel === 'signer';
+  const makerHasBothTokensSelectedForModal = Boolean(
+    makerMode
+    && !parsed
+    && makerOverrides.senderToken
+    && makerOverrides.signerToken
+  );
+  const makerFeeOnSignerSideForModal = Boolean(
+    makerHasBothTokensSelectedForModal
+    && String(makerOverrides.senderKind || '') === KIND_ERC20
+    && String(makerOverrides.signerKind || '') === KIND_ERC20
+  );
+  const pendingFeeApplies = makerMode
+    && makerHasBothTokensSelectedForModal
+    && ((makerFeeOnSignerSideForModal && tokenModalPanel === 'sender')
+      || (!makerFeeOnSignerSideForModal && tokenModalPanel === 'signer'));
   const pendingFeeAdjustedNum = pendingFeeApplies
     ? (pendingAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
     : pendingAmountNum;
@@ -3078,7 +3092,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && pendingEffectiveNum > (pendingAvailableNum + 1e-12);
   const customAmountNum = Number(customTokenAmountInput || 0);
   const customBalanceNum = Number(customTokenResolvedOption?.balance || 0);
-  const customFeeApplies = makerMode && tokenModalPanel === 'signer';
+  const customFeeApplies = makerMode
+    && makerHasBothTokensSelectedForModal
+    && ((makerFeeOnSignerSideForModal && tokenModalPanel === 'sender')
+      || (!makerFeeOnSignerSideForModal && tokenModalPanel === 'signer'));
   const customFeeAdjustedNum = customFeeApplies
     ? (customAmountNum * (1 + Number(uiProtocolFeeBps) / 10000))
     : customAmountNum;
