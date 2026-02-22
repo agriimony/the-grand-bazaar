@@ -1146,7 +1146,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const meta = await readErc1155Meta(parsed.signerToken, String(parsed.signerId || '0'));
           if (meta?.symbol) finalSignerSymbol = meta.symbol;
           if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
-          if (!finalSignerSymbol || finalSignerSymbol === '??') finalSignerSymbol = 'ERC1155';
+          if (!finalSignerSymbol || finalSignerSymbol === '??') finalSignerSymbol = 'NFT';
+        }
+        if ((signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155) && (!finalSignerSymbol || finalSignerSymbol === '??')) {
+          finalSignerSymbol = 'NFT';
         }
       } catch {}
       try {
@@ -1159,7 +1162,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const meta = await readErc1155Meta(parsed.senderToken, String(parsed.senderId || '0'));
           if (meta?.symbol) finalSenderSymbol = meta.symbol;
           if (meta?.imgUrl) senderImgUrl = meta.imgUrl;
-          if (!finalSenderSymbol || finalSenderSymbol === '??') finalSenderSymbol = 'ERC1155';
+          if (!finalSenderSymbol || finalSenderSymbol === '??') finalSenderSymbol = 'NFT';
+        }
+        if ((senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155) && (!finalSenderSymbol || finalSenderSymbol === '??')) {
+          finalSenderSymbol = 'NFT';
         }
       } catch {}
 
