@@ -45,10 +45,17 @@ export async function GET(req) {
       return Response.json({ ok: false, error: 'Malformed cast format. Expected GBZ1:<compressedOrder>' }, { status: 422 });
     }
 
+    const embedUrls = Array.isArray(data?.cast?.embeds)
+      ? data.cast.embeds
+          .map((e) => String(e?.url || e?.cast?.url || '').trim())
+          .filter(Boolean)
+      : [];
+
     return Response.json({
       ok: true,
       castHash,
       compressedOrder,
+      embedUrls,
       authorFid: data?.cast?.author?.fid || null,
     });
   } catch {
