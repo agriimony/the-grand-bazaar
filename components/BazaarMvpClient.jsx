@@ -732,7 +732,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (!makerMode || orderData) return;
       try {
         const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
-        const swap = new ethers.Contract(BASE_SWAP_CONTRACT, SWAP_ABI, rp);
+        const swap = new ethers.Contract(BASE_SWAP_CONTRACT_ERC20_ERC20, SWAP_ABI, rp);
         const fee = Number((await swap.protocolFee()).toString());
         if (!cancelled && Number.isFinite(fee) && fee > 0) {
           setMakerProtocolFeeBps(fee);
