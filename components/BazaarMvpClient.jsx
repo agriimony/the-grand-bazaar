@@ -819,6 +819,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         setOrderData(decoded);
         setChecks(null);
         setStatus('order loaded from cast');
+        try {
+          dbg(`parsed order: ${JSON.stringify({
+            chainId: decoded?.chainId,
+            swapContract: decoded?.swapContract,
+            signerWallet: decoded?.signerWallet,
+            signerToken: decoded?.signerToken,
+            signerKind: decoded?.signerKind,
+            signerId: decoded?.signerId,
+            signerAmount: decoded?.signerAmount,
+            senderWallet: decoded?.senderWallet,
+            senderToken: decoded?.senderToken,
+            senderKind: decoded?.senderKind,
+            senderId: decoded?.senderId,
+            senderAmount: decoded?.senderAmount,
+            protocolFee: decoded?.protocolFee,
+            nonce: decoded?.nonce,
+            expiry: decoded?.expiry,
+          })}`);
+        } catch {
+          dbg('parsed order: <failed to serialize>');
+        }
         dbg('cast order decoded and set');
       } catch (e) {
         setStatus('order not found');
