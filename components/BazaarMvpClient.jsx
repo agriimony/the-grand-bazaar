@@ -1261,13 +1261,46 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const approveSymbol = latestChecks.senderSymbol || 'token';
           setStatus(`approving ${approveSymbol}`);
           const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
-          const txHash = await sendTransactionAsync({
-            account: address,
-            chainId: 8453,
-            to: parsed.senderToken,
-            data: approveData,
-            value: 0n,
-          });
+          let txHash;
+          try {
+            txHash = await sendTransactionAsync({
+              account: address,
+              chainId: 8453,
+              to: parsed.senderToken,
+              data: approveData,
+              value: 0n,
+            });
+          } catch (e1) {
+            const msg = errText(e1);
+            if (!/getChainId is not a function/i.test(msg)) throw e1;
+
+            let eip1193 = walletProvider;
+            if (!eip1193?.request) {
+              try {
+                const mod = await import('@farcaster/miniapp-sdk');
+                const sdk = mod?.sdk || mod?.default || mod;
+                const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
+                if (getter) eip1193 = await getter();
+              } catch {
+                // no-op
+              }
+            }
+            if (!eip1193?.request && typeof window !== 'undefined' && window.ethereum?.request) {
+              eip1193 = window.ethereum;
+            }
+            if (!eip1193?.request) throw e1;
+
+            const hash = await eip1193.request({
+              method: 'eth_sendTransaction',
+              params: [{
+                from: address,
+                to: parsed.senderToken,
+                data: approveData,
+                value: '0x0',
+              }],
+            });
+            txHash = String(hash || '');
+          }
 
           setStatus(`approving ${approveSymbol}: confirming`);
           await waitForTxConfirmation({ publicClient, txHash });
