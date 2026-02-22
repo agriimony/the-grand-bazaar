@@ -38,7 +38,8 @@ export async function GET(req) {
     }
 
     const data = await r.json();
-    const text = data?.cast?.text || '';
+    let sourceCast = data?.cast || null;
+    const text = sourceCast?.text || '';
     let compressedOrder = extractCompressedOrder(text);
     let sourceCastHash = castHash;
 
@@ -60,7 +61,10 @@ export async function GET(req) {
         if (pr.ok) {
           const pd = await pr.json();
           compressedOrder = extractCompressedOrder(pd?.cast?.text || '');
-          if (compressedOrder) sourceCastHash = parentHash;
+          if (compressedOrder) {
+            sourceCastHash = parentHash;
+            sourceCast = pd?.cast || sourceCast;
+          }
         }
       }
     }
@@ -69,8 +73,8 @@ export async function GET(req) {
       return Response.json({ ok: false, error: 'Malformed cast format. Expected GBZ1:<compressedOrder>' }, { status: 422 });
     }
 
-    const embedUrls = Array.isArray(data?.cast?.embeds)
-      ? data.cast.embeds
+    const embedUrls = Array.isArray(sourceCast?.embeds)
+      ? sourceCast.embeds
           .map((e) => String(e?.url || e?.cast?.url || '').trim())
           .filter(Boolean)
       : [];
