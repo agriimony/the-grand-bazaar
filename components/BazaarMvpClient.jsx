@@ -1285,8 +1285,36 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         senderOwner: effectiveSenderOwner,
         spender: parsed.swapContract,
       });
-      const signerRead = pairRead.signer;
-      const senderRead = pairRead.sender;
+      let signerRead = pairRead.signer;
+      let senderRead = pairRead.sender;
+
+      // Safety fallback: if batch read is stale/failed, re-read ERC20 legs directly.
+      try {
+        if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
+          const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+          const [bal, alw] = await Promise.all([
+            c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
+            c.allowance(parsed.signerWallet, parsed.swapContract).catch(() => signerRead.allowance),
+          ]);
+          signerRead = {
+            ...signerRead,
+            balance: BigInt(bal || signerRead.balance || 0n),
+            allowance: BigInt(alw || signerRead.allowance || 0n),
+          };
+        }
+        if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
+          const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+          const [bal, alw] = await Promise.all([
+            c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
+            c.allowance(effectiveSenderOwner, parsed.swapContract).catch(() => senderRead.allowance),
+          ]);
+          senderRead = {
+            ...senderRead,
+            balance: BigInt(bal || senderRead.balance || 0n),
+            allowance: BigInt(alw || senderRead.allowance || 0n),
+          };
+        }
+      } catch {}
 
       let finalSignerSymbol = signerRead.symbol || signerSymbol;
       let finalSignerDecimals = signerRead.decimals ?? signerDecimals;
