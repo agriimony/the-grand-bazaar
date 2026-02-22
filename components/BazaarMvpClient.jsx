@@ -3130,20 +3130,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       : counterpartyAmountDisplay);
 
   if (makerMode && makerHasBothTokensSelectedPreview) {
-    if (makerFeeOnSignerSidePreviewCalc && makerOverrides.signerAmount && !signerIsErc721Selected) {
-      const n = Number(makerOverrides.signerAmount);
-      if (Number.isFinite(n) && n >= 0) {
-        if (signerIsErc1155Selected) {
-          const base = BigInt(Math.max(0, Math.floor(n)));
-          const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
-          counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
-        } else {
-          const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
-          counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
-        }
-      }
-    }
-    if (!makerFeeOnSignerSidePreviewCalc && makerOverrides.senderAmount && !senderIsErc721Selected) {
+    if (makerFeeOnSignerSidePreviewCalc && makerOverrides.senderAmount && !senderIsErc721Selected) {
       const n = Number(makerOverrides.senderAmount);
       if (Number.isFinite(n) && n >= 0) {
         if (senderIsErc1155Selected) {
@@ -3153,6 +3140,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         } else {
           const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
           yourAmountDisplayFinal = formatTokenAmount(String(withFee));
+        }
+      }
+    }
+    if (!makerFeeOnSignerSidePreviewCalc && makerOverrides.signerAmount && !signerIsErc721Selected) {
+      const n = Number(makerOverrides.signerAmount);
+      if (Number.isFinite(n) && n >= 0) {
+        if (signerIsErc1155Selected) {
+          const base = BigInt(Math.max(0, Math.floor(n)));
+          const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
+          counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
+        } else {
+          const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+          counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
         }
       }
     }
