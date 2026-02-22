@@ -1253,6 +1253,27 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const takerEthBalance = ownerMatches && senderIsWeth ? await readProvider.getBalance(address) : 0n;
       const canWrapFromEth = wrapAmountNeeded > 0n && takerEthBalance >= wrapAmountNeeded;
 
+      try {
+        dbg(`render meta: ${JSON.stringify({
+          signer: {
+            token: parsed.signerToken,
+            kind: parsed.signerKind,
+            id: parsed.signerId,
+            symbol: finalSignerSymbol,
+            imgUrl: signerImgUrl || null,
+          },
+          sender: {
+            token: parsed.senderToken,
+            kind: parsed.senderKind,
+            id: parsed.senderId,
+            symbol: finalSenderSymbol,
+            imgUrl: senderImgUrl || null,
+          },
+        })}`);
+      } catch {
+        dbg('render meta: <failed to serialize>');
+      }
+
       const baseChecks = {
         requiredSenderKind,
         nonceUsed: false,
