@@ -1437,16 +1437,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
     const senderTokenForOrder = makerOverrides.signerToken || parsed?.signerToken;
     const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, readProvider, token);
+    const isSwapErc20 = IS_SWAP_ERC20(swapContract);
 
     try {
       const rawAmount = ethers.parseUnits(String(amount), decimals);
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
       const offeredKind = String(makerOverrides.senderKind || KIND_ERC20);
       const isNftOffer = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
+      const swapRead = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
+      const protocolFeeBps = BigInt((await swapRead.protocolFee()).toString());
+      const approveAmount = (!isNftOffer && isSwapErc20)
+        ? (rawAmount + ((rawAmount * protocolFeeBps) / 10000n))
+        : rawAmount;
       setStatus(`approving ${sym}`);
       const approveData = isNftOffer
         ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [swapContract, true])
-        : ERC20_IFACE.encodeFunctionData('approve', [swapContract, rawAmount]);
+        : ERC20_IFACE.encodeFunctionData('approve', [swapContract, approveAmount]);
 
       let txHash;
       try {
