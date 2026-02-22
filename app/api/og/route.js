@@ -69,10 +69,30 @@ async function readOnchainMeta(addr = '') {
   }
 }
 
-async function guessMeta(addr = '') {
+async function guessMeta(addr = '', kind = KIND_ERC20) {
   const k = String(addr || '').toLowerCase();
   const m = TOKEN_META[k];
   if (m) return m;
+
+  const kk = String(kind || '').toLowerCase();
+  if (kk === KIND_ERC721 || kk === KIND_ERC1155) {
+    const to = String(addr || '').trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(to)) return { symbol: 'NFT', decimals: 0 };
+    try {
+      const rpc = 'https://mainnet.base.org';
+      const symbolData = await fetch(rpc, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'eth_call', params: [{ to, data: ERC20_IFACE.encodeFunctionData('symbol', []) }, 'latest'] }),
+        cache: 'no-store',
+      }).then((r) => r.json());
+      const symbol = symbolData?.result ? String(ERC20_IFACE.decodeFunctionResult('symbol', symbolData.result)?.[0] || '') : '';
+      return { symbol: symbol || 'NFT', decimals: 0 };
+    } catch {
+      return { symbol: 'NFT', decimals: 0 };
+    }
+  }
+
   const onchain = await readOnchainMeta(addr);
   if (onchain) return onchain;
   return { symbol: shortAddr(addr), decimals: 18 };
@@ -100,7 +120,7 @@ function formatAmountByKind(kind, raw, decimals, tokenId) {
   return formatAmount(raw, decimals);
 }
 
-function sideText({ amount, symbol, x, label }) {
+function sideText({ amount, symbol, x }) {
   return (
     <div
       style={{
@@ -114,7 +134,6 @@ function sideText({ amount, symbol, x, label }) {
         gap: 10,
       }}
     >
-      <div style={{ color: '#fff', fontSize: 30, fontWeight: 800, textShadow: '2px 2px 0 #000, 0 0 10px rgba(0,0,0,0.9)' }}>{label}</div>
       <div style={{ color: '#fff', fontSize: 76, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{amount}</div>
       <div style={{ color: '#fff', fontSize: 62, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{symbol}</div>
     </div>
@@ -139,8 +158,8 @@ export async function GET(req) {
       if (orderRes.ok && orderData?.ok && orderData?.compressedOrder) {
         const parsed = decodeCompressedOrder(orderData.compressedOrder);
         const [signerMeta, senderMeta] = await Promise.all([
-          guessMeta(parsed.signerToken),
-          guessMeta(parsed.senderToken),
+          guessMeta(parsed.signerToken, parsed.signerKind),
+          guessMeta(parsed.senderToken, parsed.senderKind),
         ]);
         signerAmount = clampText(formatAmountByKind(parsed.signerKind, parsed.signerAmount, signerMeta.decimals, parsed.signerId), 14);
         senderAmount = clampText(formatAmountByKind(parsed.senderKind, parsed.senderAmount, senderMeta.decimals, parsed.senderId), 14);
@@ -179,8 +198,8 @@ export async function GET(req) {
           }}
         />
 
-        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 80, label: 'I receive' })}
-        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 760, label: 'You receive' })}
+        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 80 })}
+        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 760 })}
       </div>
     ),
     {
