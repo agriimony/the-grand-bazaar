@@ -2215,10 +2215,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const parentHash = String(initialCastHash || '').trim();
       const parent = parentHash ? { type: 'cast', hash: parentHash } : undefined;
       const step1Embeds = castNftImageEmbeds({
-        senderKind: makerOverrides.senderKind,
-        senderImgUrl: makerOverrides.senderImgUrl,
-        signerKind: makerOverrides.signerKind,
-        signerImgUrl: makerOverrides.signerImgUrl,
+        // makerOverrides.sender* maps to order signer leg; makerOverrides.signer* maps to order sender leg.
+        senderKind: makerOverrides.signerKind,
+        senderImgUrl: makerOverrides.signerImgUrl,
+        signerKind: makerOverrides.senderKind,
+        signerImgUrl: makerOverrides.senderImgUrl,
       });
       let offerCastHash = '';
 
