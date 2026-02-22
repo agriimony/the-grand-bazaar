@@ -3405,10 +3405,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'wrapping'
     : /approving/i.test(status)
     ? status
+    : /signing maker order/i.test(status)
+    ? 'signing...'
     : /simulating swap|sending swap tx|swapping/i.test(status)
     ? 'swapping'
     : '';
-  const showLoadingBar = Boolean(loadingStage) && (!checks || /wrapping|approving|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /wrapping|approving|signing maker order|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
+  const isMakerSigning = /signing maker order/i.test(status || '');
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
@@ -3897,7 +3900,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       {makerOfferCastHash ? 'Embed Link' : 'Publish Offer'}
                     </button>
                   ) : makerStep === 'sign' ? (
-                    <button className="rs-btn rs-btn-positive" onClick={onMakerSign}>Sign</button>
+                    <button className="rs-btn rs-btn-positive" onClick={onMakerSign} disabled={isMakerSigning}>
+                      {isMakerSigning ? 'Signing...' : 'Sign'}
+                    </button>
                   ) : (
                     <button
                       className={`rs-btn ${makerSenderInsufficient ? '' : 'rs-btn-positive'}`}
