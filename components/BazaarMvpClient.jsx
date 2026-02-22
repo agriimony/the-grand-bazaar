@@ -846,7 +846,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerOfferCastHash, setMakerOfferCastHash] = useState('');
   const [makerEmbedPosted, setMakerEmbedPosted] = useState(false);
   const [makerRoyaltyText, setMakerRoyaltyText] = useState('');
-  const [quoteRefreshTick, setQuoteRefreshTick] = useState(0);
 
   const dbg = (msg) => {
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
@@ -909,39 +908,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     makerExpirySec,
   ]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function refreshUsdQuotesInBackground() {
-      if (!parsed || !checks) return;
-      try {
-        const signerKindNow = String(parsed.signerKind || KIND_ERC20);
-        const senderKindNow = String(parsed.senderKind || checks.requiredSenderKind || KIND_ERC20);
-        const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
-        const senderIsNft = senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155;
-        if (signerIsNft && senderIsNft) return;
 
-        const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-        const signerDecimals = Number(checks.signerDecimals ?? guessDecimals(parsed.signerToken));
-        const senderDecimals = Number(checks.senderDecimals ?? guessDecimals(parsed.senderToken));
-        const next = {};
-
-        if (!signerIsNft) {
-          next.signerUsdValue = await quoteUsdValue(rp, parsed.signerToken, toBigIntSafe(checks.signerAmount ?? parsed.signerAmount ?? 0), signerDecimals);
-        }
-        if (!senderIsNft) {
-          next.senderUsdValue = await quoteUsdValue(rp, parsed.senderToken, toBigIntSafe(checks.totalRequired ?? 0), senderDecimals);
-        }
-
-        if (!cancelled && Object.keys(next).length) {
-          setChecks((prev) => (prev ? { ...prev, ...next } : prev));
-        }
-      } catch {
-        // non-blocking cosmetic path
-      }
-    }
-    refreshUsdQuotesInBackground();
-    return () => { cancelled = true; };
-  }, [quoteRefreshTick, parsed?.nonce]);
 
   useEffect(() => {
     if (initialCompressed || initialCastHash) return;
@@ -1716,7 +1683,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setChecks(baseChecks);
       setStatus('checks complete');
       markTiming('checks complete');
-      setQuoteRefreshTick((x) => x + 1);
       return baseChecks;
     } catch (e) {
       setStatus(`check error: ${e.message}`);
