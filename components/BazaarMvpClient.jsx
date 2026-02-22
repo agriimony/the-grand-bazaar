@@ -3922,8 +3922,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
-  const senderTokenImgRaw = makerOverrides.senderImgUrl || checks?.senderImgUrl || castNftFallback.senderImgUrl || null;
-  const signerTokenImgRaw = makerOverrides.signerImgUrl || checks?.signerImgUrl || castNftFallback.signerImgUrl || null;
+  const senderIsNftFinal = parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155;
+  const signerIsNftFinal = parsedSignerKind === KIND_ERC721 || parsedSignerKind === KIND_ERC1155;
+  const senderTokenImgRaw = makerOverrides.senderImgUrl || (senderIsNftFinal ? (castNftFallback.senderImgUrl || checks?.senderImgUrl) : (checks?.senderImgUrl || castNftFallback.senderImgUrl)) || null;
+  const signerTokenImgRaw = makerOverrides.signerImgUrl || (signerIsNftFinal ? (castNftFallback.signerImgUrl || checks?.signerImgUrl) : (checks?.signerImgUrl || castNftFallback.signerImgUrl)) || null;
   const senderTokenImgFinal = ((parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155) && !senderTokenImgRaw)
     ? '/icon.svg'
     : senderTokenImgRaw;
