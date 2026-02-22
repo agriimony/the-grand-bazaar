@@ -15,6 +15,9 @@ const SWAP_ERC20_ABI = [
 ];
 const SWAP_ERC20 = '0x95D598D839dE1B030848664960F0A20b848193F4';
 const KIND_ERC20 = '0x36372b07';
+const KIND_ERC721 = '0x80ac58cd';
+const KIND_ERC1155 = '0xd9b67a26';
+const NFT_ABI = ['function isApprovedForAll(address owner,address operator) view returns (bool)'];
 
 const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 
@@ -115,6 +118,23 @@ export async function POST(req) {
           : [];
         const rawErrorsHex = Array.isArray(rawErrors) ? rawErrors.map((v) => String(v || '')) : [];
 
+        const signerKindNow = String(onchainOrder?.signer?.kind || '').toLowerCase();
+        const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+        let signerApprovalFallbackOk = false;
+        let checkErrorsFiltered = checkErrors;
+
+        if (signerIsNft && checkErrors.includes('SignerAllowanceLow')) {
+          try {
+            const signerNft = new ethers.Contract(onchainOrder.signer.token, NFT_ABI, provider);
+            signerApprovalFallbackOk = Boolean(await signerNft.isApprovedForAll(onchainOrder.signer.wallet, swapContract));
+            if (signerApprovalFallbackOk) {
+              checkErrorsFiltered = checkErrors.filter((e) => e !== 'SignerAllowanceLow');
+            }
+          } catch {
+            signerApprovalFallbackOk = false;
+          }
+        }
+
         console.log('[order-check][result]', {
           rpc,
           requiredSenderKind,
@@ -122,6 +142,8 @@ export async function POST(req) {
           nonceUsed: Boolean(nonceUsed),
           rawErrorsHex,
           checkErrors,
+          checkErrorsFiltered,
+          signerApprovalFallbackOk,
         });
 
         return Response.json({
@@ -130,7 +152,9 @@ export async function POST(req) {
           requiredSenderKind,
           protocolFeeOnchain: protocolFeeOnchain.toString(),
           nonceUsed: Boolean(nonceUsed),
-          checkErrors,
+          checkErrors: checkErrorsFiltered,
+          checkErrorsRaw: checkErrors,
+          signerApprovalFallbackOk,
           debug: {
             rawErrorsHex,
             senderWallet,
