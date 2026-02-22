@@ -1782,7 +1782,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
       const offeredKindRaw = String(makerOverrides.senderKind || KIND_ERC20);
       const hasSenderTokenId = Boolean(makerOverrides.senderTokenId && String(makerOverrides.senderTokenId) !== '0');
-      const offeredKind = (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) ? KIND_ERC721 : offeredKindRaw;
+      let offeredKind = offeredKindRaw;
+      if (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) {
+        const detectedKind = await detectKindFromToken(token, readProvider);
+        if (detectedKind === KIND_ERC721 || detectedKind === KIND_ERC1155) {
+          offeredKind = detectedKind;
+        }
+      }
       const isErc721Offer = offeredKind === KIND_ERC721;
       const isErc1155Offer = offeredKind === KIND_ERC1155;
       const isNftOffer = isErc721Offer || isErc1155Offer;
@@ -3325,7 +3331,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             setStatus('checking allowance...');
             const offeredKindRaw = String(nextOverrides.senderKind || KIND_ERC20);
             const hasSenderTokenId = Boolean(nextOverrides.senderTokenId && String(nextOverrides.senderTokenId) !== '0');
-            const offeredKind = (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) ? KIND_ERC721 : offeredKindRaw;
+            let offeredKind = offeredKindRaw;
+            if (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) {
+              const detectedKind = await detectKindFromToken(token, rp);
+              if (detectedKind === KIND_ERC721 || detectedKind === KIND_ERC1155) {
+                offeredKind = detectedKind;
+              }
+            }
             const offeredIsNft = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
