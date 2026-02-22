@@ -254,6 +254,23 @@ export async function GET(req) {
           fetchNftImage(signerToken, signerKind, signerId),
           fetchNftImage(senderToken, senderKind, senderId),
         ]);
+
+        const embedUrls = Array.isArray(orderData?.embedUrls)
+          ? orderData.embedUrls.map((u) => String(u || '').trim()).filter((u) => /^https?:\/\//i.test(u))
+          : [];
+        const signerIsNft = signerKind === KIND_ERC721 || signerKind === KIND_ERC1155;
+        const senderIsNft = senderKind === KIND_ERC721 || senderKind === KIND_ERC1155;
+
+        // Cast embed fallback mapping for deeplinked OG:
+        // - both NFT legs: embed[0]=signer, embed[1]=sender
+        // - single NFT leg: embed[0] for that leg
+        if (!signerImage && !senderImage && signerIsNft && senderIsNft) {
+          signerImage = embedUrls[0] || '';
+          senderImage = embedUrls[1] || '';
+        } else {
+          if (!signerImage && signerIsNft) signerImage = embedUrls[0] || '';
+          if (!senderImage && senderIsNft) senderImage = embedUrls[0] || '';
+        }
       }
     } catch {
       // keep fallback values
