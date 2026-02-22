@@ -39,7 +39,31 @@ export async function GET(req) {
 
     const data = await r.json();
     const text = data?.cast?.text || '';
-    const compressedOrder = extractCompressedOrder(text);
+    let compressedOrder = extractCompressedOrder(text);
+    let sourceCastHash = castHash;
+
+    // Fallback for step-2 deeplink/reply casts: try parent cast for GBZ1 payload.
+    if (!compressedOrder) {
+      const parentHash = String(
+        data?.cast?.parent_hash
+        || data?.cast?.parentHash
+        || data?.cast?.parent?.hash
+        || ''
+      ).trim();
+
+      if (parentHash) {
+        const parentUrl = `https://api.neynar.com/v2/farcaster/cast?identifier=${encodeURIComponent(parentHash)}&type=hash`;
+        const pr = await fetch(parentUrl, {
+          headers: { api_key: apiKey, accept: 'application/json' },
+          cache: 'no-store',
+        });
+        if (pr.ok) {
+          const pd = await pr.json();
+          compressedOrder = extractCompressedOrder(pd?.cast?.text || '');
+          if (compressedOrder) sourceCastHash = parentHash;
+        }
+      }
+    }
 
     if (!compressedOrder) {
       return Response.json({ ok: false, error: 'Malformed cast format. Expected GBZ1:<compressedOrder>' }, { status: 422 });
@@ -54,6 +78,7 @@ export async function GET(req) {
     return Response.json({
       ok: true,
       castHash,
+      sourceCastHash,
       compressedOrder,
       embedUrls,
       authorFid: data?.cast?.author?.fid || null,
