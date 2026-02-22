@@ -17,6 +17,10 @@ const TOKEN_META = {
   '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': { symbol: 'cbBTC', decimals: 8 },
 };
 
+const KIND_ERC20 = '0x36372b07';
+const KIND_ERC721 = '0x80ac58cd';
+const KIND_ERC1155 = '0xd9b67a26';
+
 const ERC20_IFACE = new ethers.Interface([
   'function symbol() view returns (string)',
   'function decimals() view returns (uint8)',
@@ -89,7 +93,14 @@ function formatAmount(raw, decimals) {
   }
 }
 
-function sideText({ amount, symbol, x }) {
+function formatAmountByKind(kind, raw, decimals, tokenId) {
+  const k = String(kind || '').toLowerCase();
+  if (k === KIND_ERC721) return `#${String(tokenId ?? 0)}`;
+  if (k === KIND_ERC1155) return clampText(String(raw || '0'), 14);
+  return formatAmount(raw, decimals);
+}
+
+function sideText({ amount, symbol, x, label }) {
   return (
     <div
       style={{
@@ -103,6 +114,7 @@ function sideText({ amount, symbol, x }) {
         gap: 10,
       }}
     >
+      <div style={{ color: '#fff', fontSize: 30, fontWeight: 800, textShadow: '2px 2px 0 #000, 0 0 10px rgba(0,0,0,0.9)' }}>{label}</div>
       <div style={{ color: '#fff', fontSize: 76, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{amount}</div>
       <div style={{ color: '#fff', fontSize: 62, fontWeight: 900, textShadow: '3px 3px 0 #000, 0 0 14px rgba(0,0,0,0.9)' }}>{symbol}</div>
     </div>
@@ -130,10 +142,10 @@ export async function GET(req) {
           guessMeta(parsed.signerToken),
           guessMeta(parsed.senderToken),
         ]);
-        signerAmount = clampText(formatAmount(parsed.signerAmount, signerMeta.decimals), 14);
-        senderAmount = clampText(formatAmount(parsed.senderAmount, senderMeta.decimals), 14);
-        signerSymbol = clampText(signerMeta.symbol, 10);
-        senderSymbol = clampText(senderMeta.symbol, 10);
+        signerAmount = clampText(formatAmountByKind(parsed.signerKind, parsed.signerAmount, signerMeta.decimals, parsed.signerId), 14);
+        senderAmount = clampText(formatAmountByKind(parsed.senderKind, parsed.senderAmount, senderMeta.decimals, parsed.senderId), 14);
+        signerSymbol = clampText((String(parsed.signerKind || '').toLowerCase() === KIND_ERC721 || String(parsed.signerKind || '').toLowerCase() === KIND_ERC1155) ? (signerMeta.symbol || 'NFT') : signerMeta.symbol, 10);
+        senderSymbol = clampText((String(parsed.senderKind || '').toLowerCase() === KIND_ERC721 || String(parsed.senderKind || '').toLowerCase() === KIND_ERC1155) ? (senderMeta.symbol || 'NFT') : senderMeta.symbol, 10);
       }
     } catch {
       // keep fallback values
@@ -167,8 +179,8 @@ export async function GET(req) {
           }}
         />
 
-        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 80 })}
-        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 760 })}
+        {sideText({ amount: senderAmount, symbol: senderSymbol, x: 80, label: 'I receive' })}
+        {sideText({ amount: signerAmount, symbol: signerSymbol, x: 760, label: 'You receive' })}
       </div>
     ),
     {
