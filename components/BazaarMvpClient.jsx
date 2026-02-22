@@ -23,6 +23,7 @@ const ERC721_ABI = [
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
 ];
 const ERC1155_ABI = [
+  'function symbol() view returns (string)',
   'function uri(uint256 id) view returns (string)',
   'function balanceOf(address account,uint256 id) view returns (uint256)',
   'function exists(uint256 id) view returns (bool)',
@@ -397,6 +398,16 @@ async function readNftImageFromTokenUri(tokenUri = '') {
       // try next gateway
     }
   }
+
+  try {
+    const r = await fetch(`/api/nft-meta?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
+    const d = await r.json();
+    const img = ipfsToHttp(d?.image || '');
+    if (r.ok && d?.ok && img) return img;
+  } catch {
+    // ignore proxy fallback failure
+  }
+
   return '';
 }
 
