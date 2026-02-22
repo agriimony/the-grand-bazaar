@@ -1129,10 +1129,39 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerRead = pairRead.signer;
       const senderRead = pairRead.sender;
 
-      const finalSignerSymbol = signerRead.symbol || signerSymbol;
+      let finalSignerSymbol = signerRead.symbol || signerSymbol;
       const finalSignerDecimals = signerRead.decimals ?? signerDecimals;
-      const finalSenderSymbol = senderRead.symbol || senderSymbol;
+      let finalSenderSymbol = senderRead.symbol || senderSymbol;
       const finalSenderDecimals = senderRead.decimals ?? senderDecimals;
+
+      let signerImgUrl = null;
+      let senderImgUrl = null;
+      try {
+        const signerKindNow = String(parsed.signerKind || KIND_ERC20);
+        if (signerKindNow === KIND_ERC721) {
+          const meta = await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'));
+          if (meta?.symbol) finalSignerSymbol = meta.symbol;
+          if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
+        } else if (signerKindNow === KIND_ERC1155) {
+          const meta = await readErc1155Meta(parsed.signerToken, String(parsed.signerId || '0'));
+          if (meta?.symbol) finalSignerSymbol = meta.symbol;
+          if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
+          if (!finalSignerSymbol || finalSignerSymbol === '??') finalSignerSymbol = 'ERC1155';
+        }
+      } catch {}
+      try {
+        const senderKindNow = String(parsed.senderKind || KIND_ERC20);
+        if (senderKindNow === KIND_ERC721) {
+          const meta = await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'));
+          if (meta?.symbol) finalSenderSymbol = meta.symbol;
+          if (meta?.imgUrl) senderImgUrl = meta.imgUrl;
+        } else if (senderKindNow === KIND_ERC1155) {
+          const meta = await readErc1155Meta(parsed.senderToken, String(parsed.senderId || '0'));
+          if (meta?.symbol) finalSenderSymbol = meta.symbol;
+          if (meta?.imgUrl) senderImgUrl = meta.imgUrl;
+          if (!finalSenderSymbol || finalSenderSymbol === '??') finalSenderSymbol = 'ERC1155';
+        }
+      } catch {}
 
       const makerBalanceOk = signerRead.balance >= makerRequired;
       const makerApprovalOk = signerRead.allowance >= makerRequired;
@@ -1177,6 +1206,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         canWrapFromEth,
         signerSymbol: finalSignerSymbol,
         senderSymbol: finalSenderSymbol,
+        signerImgUrl,
+        senderImgUrl,
         signerDecimals: finalSignerDecimals,
         senderDecimals: finalSenderDecimals,
         makerAccepted,
@@ -3209,8 +3240,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
-  const senderTokenImgFinal = makerOverrides.senderImgUrl || null;
-  const signerTokenImgFinal = makerOverrides.signerImgUrl || null;
+  const senderTokenImgFinal = makerOverrides.senderImgUrl || checks?.senderImgUrl || null;
+  const signerTokenImgFinal = makerOverrides.signerImgUrl || checks?.signerImgUrl || null;
   const senderKindFinal = makerOverrides.senderKind || parsed?.senderKind || KIND_ERC20;
   const signerKindFinal = makerOverrides.signerKind || parsed?.signerKind || KIND_ERC20;
   const senderTokenIdFinal = String(makerOverrides.senderTokenId || parsed?.senderId || '0');
