@@ -18,6 +18,8 @@ const ERC721_ABI = [
   'function symbol() view returns (string)',
   'function balanceOf(address owner) view returns (uint256)',
   'function ownerOf(uint256 tokenId) view returns (address)',
+  'function getApproved(uint256 tokenId) view returns (address)',
+  'function approve(address to,uint256 tokenId)',
   'function tokenURI(uint256 tokenId) view returns (string)',
   'function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
@@ -1393,12 +1395,16 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       if (signerKindForChecks === KIND_ERC721) {
         try {
           const c721 = new ethers.Contract(parsed.signerToken, ERC721_ABI, readProvider);
-          const owner = await c721.ownerOf(parsed.signerId || 0);
+          const [owner, approvedTo] = await Promise.all([
+            c721.ownerOf(parsed.signerId || 0),
+            c721.getApproved(parsed.signerId || 0).catch(() => ethers.ZeroAddress),
+          ]);
           makerBalanceOk = normalizeAddr(owner) === normalizeAddr(parsed.signerWallet);
+          makerApprovalOk = normalizeAddr(approvedTo) === normalizeAddr(parsed.swapContract);
         } catch {
           makerBalanceOk = false;
+          makerApprovalOk = false;
         }
-        makerApprovalOk = true;
       } else if (signerKindForChecks === KIND_ERC1155) {
         try {
           const c1155 = new ethers.Contract(parsed.signerToken, ERC1155_ABI, readProvider);
@@ -1614,8 +1620,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const approveSymbol = latestChecks.senderSymbol || 'token';
           setStatus(`approving ${approveSymbol}`);
           const senderKindNow = String(parsed.senderKind || latestChecks.requiredSenderKind || KIND_ERC20);
-          const isNftSender = senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155;
-          const approveData = isNftSender
+          const isErc721Sender = senderKindNow === KIND_ERC721;
+          const isErc1155Sender = senderKindNow === KIND_ERC1155;
+          const approveData = isErc721Sender
+            ? new ethers.Interface(ERC721_ABI).encodeFunctionData('approve', [parsed.swapContract, BigInt(parsed.senderId || 0)])
+            : isErc1155Sender
             ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [parsed.swapContract, true])
             : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
           let txHash;
@@ -1768,14 +1777,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const rawAmount = ethers.parseUnits(String(amount), decimals);
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
       const offeredKind = String(makerOverrides.senderKind || KIND_ERC20);
-      const isNftOffer = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
+      const isErc721Offer = offeredKind === KIND_ERC721;
+      const isErc1155Offer = offeredKind === KIND_ERC1155;
+      const isNftOffer = isErc721Offer || isErc1155Offer;
       const swapRead = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
       const protocolFeeBps = BigInt((await swapRead.protocolFee()).toString());
       const approveAmount = (!isNftOffer && isSwapErc20)
         ? (rawAmount + ((rawAmount * protocolFeeBps) / 10000n))
         : rawAmount;
       setStatus(`approving ${sym}`);
-      const approveData = isNftOffer
+      const approveData = isErc721Offer
+        ? new ethers.Interface(ERC721_ABI).encodeFunctionData('approve', [swapContract, BigInt(makerOverrides.senderTokenId || 0)])
+        : isErc1155Offer
         ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [swapContract, true])
         : ERC20_IFACE.encodeFunctionData('approve', [swapContract, approveAmount]);
 
@@ -2188,14 +2201,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     try {
       const signerKindNow = String(parsed.signerKind || KIND_ERC20);
-      const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+      const signerIsErc721 = signerKindNow === KIND_ERC721;
+      const signerIsErc1155 = signerKindNow === KIND_ERC1155;
+      const signerIsNft = signerIsErc721 || signerIsErc1155;
       const isSwapErc20 = IS_SWAP_ERC20(parsed.swapContract);
       const signerAmount = BigInt(parsed.signerAmount || 0n);
       const feeBps = BigInt(checks?.protocolFeeBps || parsed?.protocolFee || 0);
       const approveAmount = (!signerIsNft && isSwapErc20)
         ? (signerAmount + ((signerAmount * feeBps) / 10000n))
         : signerAmount;
-      const approveData = signerIsNft
+      const approveData = signerIsErc721
+        ? new ethers.Interface(ERC721_ABI).encodeFunctionData('approve', [parsed.swapContract, BigInt(parsed.signerId || 0)])
+        : signerIsErc1155
         ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [parsed.swapContract, true])
         : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, approveAmount]);
       setStatus(`approving ${checks?.signerSymbol || 'token'}`);
@@ -3298,7 +3315,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
             const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp, token);
 
-            if (offeredIsNft) {
+            if (offeredKind === KIND_ERC721) {
+              const nft = new ethers.Contract(token, ERC721_ABI, rp);
+              const approvedTo = await nft.getApproved(BigInt(nextOverrides.senderTokenId || 0));
+              setMakerStep(normalizeAddr(approvedTo) === normalizeAddr(swapContract) ? 'sign' : 'approve');
+            } else if (offeredKind === KIND_ERC1155) {
               const nft = new ethers.Contract(token, NFT_ABI, rp);
               const approved = await nft.isApprovedForAll(address, swapContract);
               setMakerStep(approved ? 'sign' : 'approve');

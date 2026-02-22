@@ -18,6 +18,7 @@ const KIND_ERC20 = '0x36372b07';
 const KIND_ERC721 = '0x80ac58cd';
 const KIND_ERC1155 = '0xd9b67a26';
 const NFT_ABI = ['function isApprovedForAll(address owner,address operator) view returns (bool)'];
+const ERC721_APPROVAL_ABI = ['function getApproved(uint256 tokenId) view returns (address)'];
 
 const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 
@@ -125,8 +126,14 @@ export async function POST(req) {
 
         if (signerIsNft && checkErrors.includes('SignerAllowanceLow')) {
           try {
-            const signerNft = new ethers.Contract(onchainOrder.signer.token, NFT_ABI, provider);
-            signerApprovalFallbackOk = Boolean(await signerNft.isApprovedForAll(onchainOrder.signer.wallet, swapContract));
+            if (signerKindNow === KIND_ERC721) {
+              const c721 = new ethers.Contract(onchainOrder.signer.token, ERC721_APPROVAL_ABI, provider);
+              const approvedTo = norm(await c721.getApproved(onchainOrder.signer.id));
+              signerApprovalFallbackOk = approvedTo === norm(swapContract);
+            } else {
+              const signerNft = new ethers.Contract(onchainOrder.signer.token, NFT_ABI, provider);
+              signerApprovalFallbackOk = Boolean(await signerNft.isApprovedForAll(onchainOrder.signer.wallet, swapContract));
+            }
             if (signerApprovalFallbackOk) {
               checkErrorsFiltered = checkErrors.filter((e) => e !== 'SignerAllowanceLow');
             }
