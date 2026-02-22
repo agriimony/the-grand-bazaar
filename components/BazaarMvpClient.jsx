@@ -1622,6 +1622,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           const senderKindNow = String(parsed.senderKind || latestChecks.requiredSenderKind || KIND_ERC20);
           const isErc721Sender = senderKindNow === KIND_ERC721;
           const isErc1155Sender = senderKindNow === KIND_ERC1155;
+          if (isErc721Sender && !parsed.senderId) {
+            setStatus('missing ERC721 token id');
+            return;
+          }
           const approveData = isErc721Sender
             ? new ethers.Interface(ERC721_ABI).encodeFunctionData('approve', [parsed.swapContract, BigInt(parsed.senderId || 0)])
             : isErc1155Sender
@@ -1780,6 +1784,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const isErc721Offer = offeredKind === KIND_ERC721;
       const isErc1155Offer = offeredKind === KIND_ERC1155;
       const isNftOffer = isErc721Offer || isErc1155Offer;
+      if (isErc721Offer && !makerOverrides.senderTokenId) {
+        setStatus('select ERC721 token id first');
+        return;
+      }
       const swapRead = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
       const protocolFeeBps = BigInt((await swapRead.protocolFee()).toString());
       const approveAmount = (!isNftOffer && isSwapErc20)
@@ -2210,6 +2218,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const approveAmount = (!signerIsNft && isSwapErc20)
         ? (signerAmount + ((signerAmount * feeBps) / 10000n))
         : signerAmount;
+      if (signerIsErc721 && !parsed.signerId) {
+        setStatus('missing ERC721 token id');
+        return;
+      }
       const approveData = signerIsErc721
         ? new ethers.Interface(ERC721_ABI).encodeFunctionData('approve', [parsed.swapContract, BigInt(parsed.signerId || 0)])
         : signerIsErc1155
