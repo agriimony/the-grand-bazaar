@@ -373,6 +373,32 @@ function pushMetaDebugLog(entry = {}) {
   } catch {}
 }
 
+const NFT_META_RPC_TIMEOUT_MS = 3000;
+const NFT_URI_FETCH_TIMEOUT_MS = 2000;
+const NFT_URI_MAX_GATEWAY_ATTEMPTS = 2;
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 2000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function withTimeout(promise, timeoutMs = 3000) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function ipfsGatewayCandidates(u = '') {
   const s = String(u || '').trim();
   if (!s) return [];
@@ -402,10 +428,11 @@ async function readNftImageFromTokenUri(tokenUri = '') {
   }
 
   const candidates = uri.startsWith('ipfs://') ? ipfsGatewayCandidates(uri) : [ipfsToHttp(uri)];
-  for (const u of candidates) {
+  const limitedCandidates = candidates.slice(0, NFT_URI_MAX_GATEWAY_ATTEMPTS);
+  for (const u of limitedCandidates) {
     const callStartedAt = Date.now();
     try {
-      const r = await fetch(u, { cache: 'no-store' });
+      const r = await fetchWithTimeout(u, { cache: 'no-store' }, NFT_URI_FETCH_TIMEOUT_MS);
       if (!r.ok) {
         pushMetaDebugLog({ scope: "uri-fetch", url: u, ok: false, status: r.status, ms: Date.now() - callStartedAt });
         continue;
@@ -425,7 +452,7 @@ async function readNftImageFromTokenUri(tokenUri = '') {
 
   const proxyStartedAt = Date.now();
   try {
-    const r = await fetch(`/api/nft-meta?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`/api/nft-meta?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' }, NFT_URI_FETCH_TIMEOUT_MS);
     const d = await r.json();
     const img = ipfsToHttp(d?.image || '');
     pushMetaDebugLog({ scope: "proxy-fetch", ok: r.ok, hasImage: Boolean(img), ms: Date.now() - proxyStartedAt });
@@ -449,8 +476,8 @@ async function readErc721Meta(tokenAddr, tokenId) {
     const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
     const rpcStartedAt = Date.now();
     const [symbol, tokenUri] = await Promise.all([
-      c.symbol().catch(() => ''),
-      c.tokenURI(tokenId).catch(() => ''),
+      withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
+      withTimeout(c.tokenURI(tokenId).catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
     ]);
     pushMetaDebugLog({ scope: "erc721-rpc", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
     const imgUrl = await readNftImageFromTokenUri(tokenUri);
@@ -469,8 +496,8 @@ async function readErc1155Meta(tokenAddr, tokenId) {
     const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
     const rpcStartedAt = Date.now();
     const [symbol, uri] = await Promise.all([
-      c.symbol().catch(() => ''),
-      c.uri(tokenId).catch(() => ''),
+      withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
+      withTimeout(c.uri(tokenId).catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
     ]);
     const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
     const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
