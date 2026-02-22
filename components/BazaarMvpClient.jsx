@@ -1183,9 +1183,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderRead = pairRead.sender;
 
       let finalSignerSymbol = signerRead.symbol || signerSymbol;
-      const finalSignerDecimals = signerRead.decimals ?? signerDecimals;
+      let finalSignerDecimals = signerRead.decimals ?? signerDecimals;
       let finalSenderSymbol = senderRead.symbol || senderSymbol;
-      const finalSenderDecimals = senderRead.decimals ?? senderDecimals;
+      let finalSenderDecimals = senderRead.decimals ?? senderDecimals;
 
       let signerImgUrl = null;
       let senderImgUrl = null;
@@ -1193,11 +1193,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const signerKindNow = String(parsed.signerKind || KIND_ERC20);
         if (signerKindNow === KIND_ERC20) {
           signerImgUrl = tokenIconUrl(8453, parsed.signerToken) || null;
-          if (!finalSignerSymbol || finalSignerSymbol === '???') {
-            const ec = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
-            const sym = await ec.symbol().catch(() => '');
-            if (String(sym || '').trim()) finalSignerSymbol = String(sym).trim();
-          }
+          const ec = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+          const [sym, dec] = await Promise.all([
+            ec.symbol().catch(() => ''),
+            ec.decimals().catch(() => null),
+          ]);
+          if (String(sym || '').trim()) finalSignerSymbol = String(sym).trim();
+          if (dec != null && Number.isFinite(Number(dec))) finalSignerDecimals = Number(dec);
         } else if (signerKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'));
           if (meta?.symbol) finalSignerSymbol = meta.symbol;
@@ -1216,11 +1218,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const senderKindNow = String(parsed.senderKind || KIND_ERC20);
         if (senderKindNow === KIND_ERC20) {
           senderImgUrl = tokenIconUrl(8453, parsed.senderToken) || null;
-          if (!finalSenderSymbol || finalSenderSymbol === '???') {
-            const ec = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
-            const sym = await ec.symbol().catch(() => '');
-            if (String(sym || '').trim()) finalSenderSymbol = String(sym).trim();
-          }
+          const ec = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+          const [sym, dec] = await Promise.all([
+            ec.symbol().catch(() => ''),
+            ec.decimals().catch(() => null),
+          ]);
+          if (String(sym || '').trim()) finalSenderSymbol = String(sym).trim();
+          if (dec != null && Number.isFinite(Number(dec))) finalSenderDecimals = Number(dec);
         } else if (senderKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'));
           if (meta?.symbol) finalSenderSymbol = meta.symbol;
