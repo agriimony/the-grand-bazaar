@@ -365,6 +365,14 @@ function ipfsToHttp(u = '') {
   return s;
 }
 
+function pushMetaDebugLog(entry = {}) {
+  try {
+    if (typeof window === 'undefined') return;
+    const prev = Array.isArray(window.__GBZ_META_DEBUG__) ? window.__GBZ_META_DEBUG__ : [];
+    window.__GBZ_META_DEBUG__ = [...prev.slice(-80), { t: Date.now(), ...entry }];
+  } catch {}
+}
+
 function ipfsGatewayCandidates(u = '') {
   const s = String(u || '').trim();
   if (!s) return [];
@@ -399,18 +407,18 @@ async function readNftImageFromTokenUri(tokenUri = '') {
     try {
       const r = await fetch(u, { cache: 'no-store' });
       if (!r.ok) {
-        console.debug('[nft-meta][uri-fetch]', { url: u, ok: false, status: r.status, ms: Date.now() - callStartedAt });
+        pushMetaDebugLog({ scope: "uri-fetch", url: u, ok: false, status: r.status, ms: Date.now() - callStartedAt });
         continue;
       }
       const j = await r.json();
       const img = ipfsToHttp(j?.image || j?.image_url || '');
-      console.debug('[nft-meta][uri-fetch]', { url: u, ok: true, hasImage: Boolean(img), ms: Date.now() - callStartedAt });
+      pushMetaDebugLog({ scope: "uri-fetch", url: u, ok: true, hasImage: Boolean(img), ms: Date.now() - callStartedAt });
       if (img) {
-        console.debug('[nft-meta][uri-total]', { source: 'gateway', ms: Date.now() - metaStartedAt });
+        pushMetaDebugLog({ scope: "uri-total", source: "gateway", ms: Date.now() - metaStartedAt });
         return img;
       }
     } catch (e) {
-      console.debug('[nft-meta][uri-fetch]', { url: u, ok: false, error: String(e?.message || 'fetch failed'), ms: Date.now() - callStartedAt });
+      pushMetaDebugLog({ scope: "uri-fetch", url: u, ok: false, error: String(e?.message || "fetch failed"), ms: Date.now() - callStartedAt });
       // try next gateway
     }
   }
@@ -420,17 +428,17 @@ async function readNftImageFromTokenUri(tokenUri = '') {
     const r = await fetch(`/api/nft-meta?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
     const d = await r.json();
     const img = ipfsToHttp(d?.image || '');
-    console.debug('[nft-meta][proxy-fetch]', { ok: r.ok, hasImage: Boolean(img), ms: Date.now() - proxyStartedAt });
+    pushMetaDebugLog({ scope: "proxy-fetch", ok: r.ok, hasImage: Boolean(img), ms: Date.now() - proxyStartedAt });
     if (r.ok && d?.ok && img) {
-      console.debug('[nft-meta][uri-total]', { source: 'proxy', ms: Date.now() - metaStartedAt });
+      pushMetaDebugLog({ scope: "uri-total", source: "proxy", ms: Date.now() - metaStartedAt });
       return img;
     }
   } catch (e) {
-    console.debug('[nft-meta][proxy-fetch]', { ok: false, error: String(e?.message || 'proxy failed'), ms: Date.now() - proxyStartedAt });
+    pushMetaDebugLog({ scope: "proxy-fetch", ok: false, error: String(e?.message || "proxy failed"), ms: Date.now() - proxyStartedAt });
     // ignore proxy fallback failure
   }
 
-  console.debug('[nft-meta][uri-total]', { source: 'none', ms: Date.now() - metaStartedAt });
+  pushMetaDebugLog({ scope: "uri-total", source: "none", ms: Date.now() - metaStartedAt });
   return '';
 }
 
@@ -444,12 +452,12 @@ async function readErc721Meta(tokenAddr, tokenId) {
       c.symbol().catch(() => ''),
       c.tokenURI(tokenId).catch(() => ''),
     ]);
-    console.debug('[nft-meta][erc721-rpc]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
+    pushMetaDebugLog({ scope: "erc721-rpc", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
     const imgUrl = await readNftImageFromTokenUri(tokenUri);
     console.debug('[nft-meta][erc721-total]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, hasImage: Boolean(imgUrl), hasSymbol: Boolean(String(symbol || '').trim()) });
     return { symbol: String(symbol || '').trim() || 'NFT', imgUrl: imgUrl || null };
   } catch (e) {
-    console.debug('[nft-meta][erc721-total]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || 'erc721 meta failed') });
+    pushMetaDebugLog({ scope: "erc721-total", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || "erc721 meta failed") });
     return { symbol: 'NFT', imgUrl: null };
   }
 }
@@ -466,12 +474,12 @@ async function readErc1155Meta(tokenAddr, tokenId) {
     ]);
     const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
     const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
-    console.debug('[nft-meta][erc1155-rpc]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
+    pushMetaDebugLog({ scope: "erc1155-rpc", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
     const imgUrl = await readNftImageFromTokenUri(tokenUri);
     console.debug('[nft-meta][erc1155-total]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, hasImage: Boolean(imgUrl), hasSymbol: Boolean(String(symbol || '').trim()) });
     return { symbol: String(symbol || '').trim() || 'NFT', imgUrl: imgUrl || null };
   } catch (e) {
-    console.debug('[nft-meta][erc1155-total]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || 'erc1155 meta failed') });
+    pushMetaDebugLog({ scope: "erc1155-total", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || "erc1155 meta failed") });
     return { symbol: 'NFT', imgUrl: null };
   }
 }
@@ -1550,6 +1558,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg('render meta: <failed to serialize>');
       }
 
+      try {
+        if (typeof window !== 'undefined' && Array.isArray(window.__GBZ_META_DEBUG__) && window.__GBZ_META_DEBUG__.length) {
+          const logs = window.__GBZ_META_DEBUG__.slice(-20);
+          window.__GBZ_META_DEBUG__ = [];
+          for (const l of logs) {
+            dbg(`nft-meta ${l.scope || 'step'} ${l.token ? `${String(l.token).slice(0, 8)}..` : ''}${l.tokenId != null ? `#${l.tokenId}` : ''} ${l.ms != null ? `${l.ms}ms` : ''} ${l.error ? `err=${l.error}` : ''}`.trim());
+          }
+        }
+      } catch {}
       markTiming('metadata resolve complete');
       const signerDecimalsOut = (String(parsed.signerKind || KIND_ERC20) === KIND_ERC721 || String(parsed.signerKind || KIND_ERC20) === KIND_ERC1155)
         ? null
