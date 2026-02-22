@@ -1241,7 +1241,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const feeAmount = isSwapErc20Order
         ? (signerAmount * protocolFee) / 10000n
         : (senderAmount * protocolFee) / 10000n;
-      const totalRequired = isSwapErc20Order ? senderAmount : (senderAmount + feeAmount);
+      let royaltyAmount = 0n;
+      if (!isSwapErc20Order) {
+        try {
+          const signerKindNow = String(parsed.signerKind || KIND_ERC20);
+          const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+          if (signerIsNft) {
+            const royaltyToken = new ethers.Contract(parsed.signerToken, ROYALTY_ABI, readProvider);
+            const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
+            if (supports) {
+              const [, rAmt] = await royaltyToken.royaltyInfo(BigInt(parsed.signerId || 0), senderAmount).catch(() => [ethers.ZeroAddress, 0n]);
+              royaltyAmount = BigInt(rAmt || 0n);
+            }
+          }
+        } catch {
+          royaltyAmount = 0n;
+        }
+      }
+      const totalRequired = isSwapErc20Order ? senderAmount : (senderAmount + feeAmount + royaltyAmount);
       const makerRequired = isSwapErc20Order ? (signerAmount + feeAmount) : signerAmount;
 
       const signerSymbol = guessSymbol(parsed.signerToken);
