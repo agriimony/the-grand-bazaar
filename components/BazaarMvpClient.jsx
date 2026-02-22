@@ -316,7 +316,7 @@ async function resolveSwapForSenderToken(senderToken, provider, signerToken = nu
   if (kind === KIND_ERC1155) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC1155 };
   if (signerToken) {
     const signerKind = await detectTokenKind(signerToken, provider);
-    if (signerKind === KIND_ERC20) return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT_ERC20_ERC20 };
+    if (signerKind === KIND_ERC20) return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
   }
   return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
 }
