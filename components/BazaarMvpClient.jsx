@@ -399,6 +399,16 @@ async function withTimeout(promise, timeoutMs = 3000) {
   }
 }
 
+function toBigIntSafe(v, fallback = 0n) {
+  try {
+    if (typeof v === 'bigint') return v;
+    if (v == null || v === '') return fallback;
+    return BigInt(v);
+  } catch {
+    return fallback;
+  }
+}
+
 function ipfsGatewayCandidates(u = '') {
   const s = String(u || '').trim();
   if (!s) return [];
@@ -916,10 +926,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const next = {};
 
         if (!signerIsNft) {
-          next.signerUsdValue = await quoteUsdValue(rp, parsed.signerToken, BigInt(checks.signerAmount || parsed.signerAmount || 0), signerDecimals);
+          next.signerUsdValue = await quoteUsdValue(rp, parsed.signerToken, toBigIntSafe(checks.signerAmount ?? parsed.signerAmount ?? 0), signerDecimals);
         }
         if (!senderIsNft) {
-          next.senderUsdValue = await quoteUsdValue(rp, parsed.senderToken, BigInt(checks.totalRequired || 0), senderDecimals);
+          next.senderUsdValue = await quoteUsdValue(rp, parsed.senderToken, toBigIntSafe(checks.totalRequired ?? 0), senderDecimals);
         }
 
         if (!cancelled && Object.keys(next).length) {
