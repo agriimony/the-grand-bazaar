@@ -549,6 +549,29 @@ function ethIconUrl() {
   return '/eth-icon.png';
 }
 
+function toAbsoluteHttpUrl(u = '') {
+  const s = String(u || '').trim();
+  if (!s) return '';
+  const normalized = ipfsToHttp(s);
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (normalized.startsWith('/')) return `https://the-grand-bazaar.vercel.app${normalized}`;
+  return '';
+}
+
+function castNftImageEmbeds({ senderKind, senderImgUrl, signerKind, signerImgUrl }) {
+  const out = [];
+  const push = (kind, url) => {
+    const isNft = String(kind || '') === KIND_ERC721 || String(kind || '') === KIND_ERC1155;
+    if (!isNft) return;
+    const abs = toAbsoluteHttpUrl(url);
+    if (!abs || out.includes(abs)) return;
+    out.push(abs);
+  };
+  push(senderKind, senderImgUrl);
+  push(signerKind, signerImgUrl);
+  return out.slice(0, 2);
+}
+
 function catalogTokenMeta(token) {
   const t = tokenKey(token || '');
   const found = TOKEN_CATALOG.find((x) => tokenKey(x?.token || '') === t);
@@ -2018,11 +2041,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       // Step 1: publish offer text as a cast
       const parentHash = String(initialCastHash || '').trim();
       const parent = parentHash ? { type: 'cast', hash: parentHash } : undefined;
+      const step1Embeds = castNftImageEmbeds({
+        senderKind: makerOverrides.senderKind,
+        senderImgUrl: makerOverrides.senderImgUrl,
+        signerKind: makerOverrides.signerKind,
+        signerImgUrl: makerOverrides.signerImgUrl,
+      });
       let offerCastHash = '';
 
       try {
         const first = await compose({
           text: step1Text,
+          ...(step1Embeds.length ? { embeds: step1Embeds } : {}),
           ...(parent ? { parent } : {}),
         });
         offerCastHash = String(first?.cast?.hash || '').trim();
@@ -2087,8 +2117,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let offerCastHash = '';
       const parentHash = String(initialCastHash || '').trim();
       const parent = parentHash ? { type: 'cast', hash: parentHash } : undefined;
+      const step1Embeds = castNftImageEmbeds({
+        senderKind: parsed.senderKind,
+        senderImgUrl: checks?.senderImgUrl || null,
+        signerKind: parsed.signerKind,
+        signerImgUrl: checks?.signerImgUrl || null,
+      });
       try {
-        const first = await compose({ text: castText, ...(parent ? { parent } : {}) });
+        const first = await compose({ text: castText, ...(step1Embeds.length ? { embeds: step1Embeds } : {}), ...(parent ? { parent } : {}) });
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch {
         const first = await compose(castText);
