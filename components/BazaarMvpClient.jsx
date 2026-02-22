@@ -358,8 +358,21 @@ function ipfsToHttp(u = '') {
   return s;
 }
 
+function ipfsGatewayCandidates(u = '') {
+  const s = String(u || '').trim();
+  if (!s) return [];
+  if (!s.startsWith('ipfs://')) return [s];
+  const cidPath = s.replace('ipfs://', '').replace(/^ipfs\//, '');
+  return [
+    `https://ipfs.io/ipfs/${cidPath}`,
+    `https://gateway.pinata.cloud/ipfs/${cidPath}`,
+    `https://nftstorage.link/ipfs/${cidPath}`,
+    `https://cloudflare-ipfs.com/ipfs/${cidPath}`,
+  ];
+}
+
 async function readNftImageFromTokenUri(tokenUri = '') {
-  const uri = ipfsToHttp(tokenUri);
+  const uri = String(tokenUri || '').trim();
   if (!uri) return '';
   if (uri.startsWith('data:application/json')) {
     try {
@@ -371,14 +384,20 @@ async function readNftImageFromTokenUri(tokenUri = '') {
       return '';
     }
   }
-  try {
-    const r = await fetch(uri, { cache: 'no-store' });
-    if (!r.ok) return '';
-    const j = await r.json();
-    return ipfsToHttp(j?.image || j?.image_url || '');
-  } catch {
-    return '';
+
+  const candidates = uri.startsWith('ipfs://') ? ipfsGatewayCandidates(uri) : [ipfsToHttp(uri)];
+  for (const u of candidates) {
+    try {
+      const r = await fetch(u, { cache: 'no-store' });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const img = ipfsToHttp(j?.image || j?.image_url || '');
+      if (img) return img;
+    } catch {
+      // try next gateway
+    }
   }
+  return '';
 }
 
 async function readErc721Meta(tokenAddr, tokenId) {
@@ -1197,6 +1216,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       try {
         const signerKindNow = String(parsed.signerKind || KIND_ERC20);
         if (signerKindNow === KIND_ERC20) {
+          dbg(`meta signer kind=erc20 token=${parsed.signerToken}`);
           const local = catalogTokenMeta(parsed.signerToken);
           signerImgUrl = tokenIconUrl(8453, parsed.signerToken) || null;
           if (String(local?.symbol || '').trim()) finalSignerSymbol = String(local.symbol).trim();
@@ -1216,6 +1236,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
         } else if (signerKindNow === KIND_ERC1155) {
           const meta = await readErc1155Meta(parsed.signerToken, String(parsed.signerId || '0'));
+          dbg(`meta signer erc1155 token=${parsed.signerToken} id=${String(parsed.signerId || '0')} symbol=${meta?.symbol || ''} img=${meta?.imgUrl || ''}`);
           if (meta?.symbol) finalSignerSymbol = meta.symbol;
           if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
           if (!finalSignerSymbol || finalSignerSymbol === '??') finalSignerSymbol = 'NFT';
