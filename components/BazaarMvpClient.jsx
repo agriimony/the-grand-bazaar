@@ -1613,7 +1613,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         try {
           const approveSymbol = latestChecks.senderSymbol || 'token';
           setStatus(`approving ${approveSymbol}`);
-          const approveData = ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
+          const senderKindNow = String(parsed.senderKind || latestChecks.requiredSenderKind || KIND_ERC20);
+          const isNftSender = senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155;
+          const approveData = isNftSender
+            ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [parsed.swapContract, true])
+            : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
           let txHash;
           try {
             txHash = await sendTransactionAsync({
