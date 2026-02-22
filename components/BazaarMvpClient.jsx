@@ -1336,7 +1336,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg(`gas estimated=${estimatedGas.toString()} gasLimit=${gasLimit.toString()}`);
       } catch (e) {
         const msg = errText(e);
-        if (/missing revert data|over rate limit/i.test(msg)) {
+        if (/missing revert data|over rate limit|gas estimate too high/i.test(msg)) {
           dbg(`estimateGas soft-fail: ${msg}`);
           gasLimit = 650000n;
         } else {
