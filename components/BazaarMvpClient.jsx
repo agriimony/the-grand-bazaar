@@ -1070,9 +1070,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       const protocolFee = onchainProtocolFee;
+      const isSwapErc20Order = IS_SWAP_ERC20(parsed.swapContract);
       const senderAmount = BigInt(parsed.senderAmount);
-      const feeAmount = (senderAmount * protocolFee) / 10000n;
-      const totalRequired = senderAmount + feeAmount;
+      const signerAmount = BigInt(parsed.signerAmount);
+      const feeAmount = isSwapErc20Order
+        ? (signerAmount * protocolFee) / 10000n
+        : (senderAmount * protocolFee) / 10000n;
+      const totalRequired = isSwapErc20Order ? senderAmount : (senderAmount + feeAmount);
+      const makerRequired = isSwapErc20Order ? (signerAmount + feeAmount) : signerAmount;
 
       const signerSymbol = guessSymbol(parsed.signerToken);
       const signerDecimals = guessDecimals(parsed.signerToken);
@@ -1080,7 +1085,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const senderDecimals = guessDecimals(parsed.senderToken);
 
       const [signerUsdValue, senderUsdValue] = await Promise.all([
-        quoteUsdValue(readProvider, parsed.signerToken, BigInt(parsed.signerAmount), signerDecimals),
+        quoteUsdValue(readProvider, parsed.signerToken, makerRequired, signerDecimals),
         quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals),
       ]);
 
@@ -1129,8 +1134,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const finalSenderSymbol = senderRead.symbol || senderSymbol;
       const finalSenderDecimals = senderRead.decimals ?? senderDecimals;
 
-      const makerBalanceOk = signerRead.balance >= BigInt(parsed.signerAmount);
-      const makerApprovalOk = signerRead.allowance >= BigInt(parsed.signerAmount);
+      const makerBalanceOk = signerRead.balance >= makerRequired;
+      const makerApprovalOk = signerRead.allowance >= makerRequired;
       const makerAccepted = makerBalanceOk && makerApprovalOk;
 
       const takerBalance = senderRead.balance;
@@ -2896,8 +2901,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const senderAmount = BigInt(parsed.senderAmount);
     const signerAmount = BigInt(parsed.signerAmount);
     const protocolFeeBps = BigInt(parsed.protocolFee || 30);
-    const feeAmount = (senderAmount * protocolFeeBps) / 10000n;
-    const totalRequired = senderAmount + feeAmount;
+    const isSwapErc20Order = IS_SWAP_ERC20(parsed.swapContract);
+    const feeAmount = isSwapErc20Order
+      ? (signerAmount * protocolFeeBps) / 10000n
+      : (senderAmount * protocolFeeBps) / 10000n;
+    const totalRequired = isSwapErc20Order ? senderAmount : (senderAmount + feeAmount);
 
     setChecks({
       requiredSenderKind: '0x36372b07',
@@ -2977,8 +2985,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const signerDecimalsFallback = parsed ? guessDecimals(parsed.signerToken) : 18;
   const protocolFeeBpsFallback = parsed ? BigInt(parsed.protocolFee || 0) : BigInt(makerProtocolFeeBps || 50);
   const senderAmountFallback = parsed ? BigInt(parsed.senderAmount) : 0n;
-  const feeFallback = (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
-  const senderTotalFallback = senderAmountFallback + feeFallback;
+  const signerAmountFallback = parsed ? BigInt(parsed.signerAmount) : 0n;
+  const isSwapErc20Fallback = Boolean(parsed && IS_SWAP_ERC20(parsed.swapContract));
+  const feeFallback = isSwapErc20Fallback
+    ? (signerAmountFallback * protocolFeeBpsFallback) / 10000n
+    : (senderAmountFallback * protocolFeeBpsFallback) / 10000n;
+  const senderTotalFallback = isSwapErc20Fallback ? senderAmountFallback : (senderAmountFallback + feeFallback);
 
   const hasCheckAmounts = Boolean(
     checks
