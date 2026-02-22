@@ -1168,9 +1168,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
     if (lastSwapTxHash) return checks;
 
+    const checksStartedAt = Date.now();
+    const markTiming = (label) => dbg(`check timing ${label}: +${Date.now() - checksStartedAt}ms`);
+
     try {
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
+      markTiming('start');
 
       const configuredSenderOwner = parsed.senderWallet || ethers.ZeroAddress;
       const connectedNormPre = normalizeAddr(address);
@@ -1201,7 +1205,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           },
         }),
       });
+      markTiming('order-check fetch done');
       const checkData = await checkReq.json();
+      markTiming('order-check json parsed');
       if (!checkReq.ok || !checkData?.ok) throw new Error(checkData?.error || 'order check failed');
 
       const requiredSenderKind = checkData.requiredSenderKind;
@@ -1349,6 +1355,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
         } catch {}
       }
+      markTiming(skipPairRead ? 'pair reads skipped (nft-nft route)' : 'pair reads complete');
 
       let finalSignerSymbol = signerRead.symbol || signerSymbol;
       let finalSignerDecimals = signerRead.decimals ?? signerDecimals;
@@ -1508,6 +1515,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg('render meta: <failed to serialize>');
       }
 
+      markTiming('metadata resolve complete');
       const signerDecimalsOut = (String(parsed.signerKind || KIND_ERC20) === KIND_ERC721 || String(parsed.signerKind || KIND_ERC20) === KIND_ERC1155)
         ? null
         : finalSignerDecimals;
@@ -1564,8 +1572,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       } catch {
         dbg('display amounts: <failed to serialize>');
       }
+      markTiming('checks object assembled');
       setChecks(baseChecks);
       setStatus('checks complete');
+      markTiming('checks complete');
       return baseChecks;
     } catch (e) {
       setStatus(`check error: ${e.message}`);
