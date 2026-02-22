@@ -381,6 +381,38 @@ async function readNftImageFromTokenUri(tokenUri = '') {
   }
 }
 
+async function readErc721Meta(tokenAddr, tokenId) {
+  try {
+    const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
+    const [symbol, tokenUri] = await Promise.all([
+      c.symbol().catch(() => ''),
+      c.tokenURI(tokenId).catch(() => ''),
+    ]);
+    const imgUrl = await readNftImageFromTokenUri(tokenUri);
+    return { symbol: String(symbol || '').trim() || 'NFT', imgUrl: imgUrl || null };
+  } catch {
+    return { symbol: 'NFT', imgUrl: null };
+  }
+}
+
+async function readErc1155Meta(tokenAddr, tokenId) {
+  try {
+    const rp = new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
+    const [symbol, uri] = await Promise.all([
+      c.symbol().catch(() => ''),
+      c.uri(tokenId).catch(() => ''),
+    ]);
+    const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
+    const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
+    const imgUrl = await readNftImageFromTokenUri(tokenUri);
+    return { symbol: String(symbol || '').trim() || 'NFT', imgUrl: imgUrl || null };
+  } catch {
+    return { symbol: 'NFT', imgUrl: null };
+  }
+}
+
 async function hasValidErc1155Metadata(tokenUri = '', tokenId = '') {
   const normalized = String(tokenId || '').toLowerCase();
   const paddedHex = normalized ? BigInt(normalized).toString(16).padStart(64, '0') : '';
