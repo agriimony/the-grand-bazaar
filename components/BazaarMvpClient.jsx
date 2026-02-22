@@ -1085,9 +1085,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           senderImgUrl = (await readErc1155Meta(fromCast.senderToken, String(fromCast.senderId || '0')))?.imgUrl || null;
         }
         // Fallback to cast embed URLs when metadata image is unavailable.
-        if (!signerImgUrl && !senderImgUrl && signerIsNft && senderIsNft) {
-          signerImgUrl = embedUrls[0] || null;
-          senderImgUrl = embedUrls[1] || null;
+        // both NFT legs: embed[0]=signer, embed[1]=sender
+        if (signerIsNft && senderIsNft) {
+          if (!signerImgUrl) signerImgUrl = embedUrls[0] || null;
+          if (!senderImgUrl) senderImgUrl = embedUrls[1] || null;
         } else {
           if (!signerImgUrl && signerIsNft) signerImgUrl = embedUrls[0] || null;
           if (!senderImgUrl && senderIsNft) senderImgUrl = embedUrls[0] || null;

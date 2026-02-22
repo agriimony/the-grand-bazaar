@@ -264,9 +264,9 @@ export async function GET(req) {
         // Cast embed fallback mapping for deeplinked OG:
         // - both NFT legs: embed[0]=signer, embed[1]=sender
         // - single NFT leg: embed[0] for that leg
-        if (!signerImage && !senderImage && signerIsNft && senderIsNft) {
-          signerImage = embedUrls[0] || '';
-          senderImage = embedUrls[1] || '';
+        if (signerIsNft && senderIsNft) {
+          if (!signerImage) signerImage = embedUrls[0] || '';
+          if (!senderImage) senderImage = embedUrls[1] || '';
         } else {
           if (!signerImage && signerIsNft) signerImage = embedUrls[0] || '';
           if (!senderImage && senderIsNft) senderImage = embedUrls[0] || '';
