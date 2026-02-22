@@ -3792,24 +3792,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                       <div className="rs-token-grid">
                         {modalDisplayOptions.slice(0, 23).map((t, idx) => (
                           <button key={`${tokenModalView}-${t.token}-${t.tokenId || 'na'}-${idx}`} className="rs-token-cell" onClick={() => onTokenSelect(t)}>
-                            <div className="rs-token-wrap rs-token-cell-wrap">
-                              <div className="rs-amount-overlay rs-token-cell-amount">{renderAmountColored(t.amountDisplay)}</div>
-                              <img
-                                src={t.imgUrl || tokenIconUrl(8453, t.token)}
-                                alt={t.symbol}
-                                className="rs-token-cell-icon"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                  const fb = e.currentTarget.nextElementSibling;
-                                  if (fb) fb.style.display = 'flex';
-                                }}
-                              />
-                              <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback" style={{ display: 'none' }}>{tokenInitials(t.symbol)}</div>
-                              {String(t?.kind || '') === KIND_ERC1155 && t?.tokenId ? (
-                                <div className="rs-tokenid-overlay rs-token-cell-tokenid">{formatTokenIdLabel(String(t.tokenId))}</div>
-                              ) : null}
-                              <div className="rs-symbol-overlay rs-token-cell-symbol">{t.symbol}</div>
-                            </div>
+                            <TokenTile
+                              amountNode={renderAmountColored(t.amountDisplay)}
+                              amountClassName="rs-token-cell-amount"
+                              symbol={t.symbol || 'NFT'}
+                              symbolClassName="rs-token-cell-symbol"
+                              imgUrl={t.imgUrl}
+                              tokenAddress={t.token}
+                              tokenKind={t.kind}
+                              tokenId={t.tokenId}
+                              tokenIdClassName="rs-token-cell-tokenid"
+                              wrapClassName="rs-token-cell-wrap"
+                              iconClassName="rs-token-cell-icon"
+                              fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                            />
                           </button>
                         ))}
                         <button className="rs-token-cell rs-token-cell-plus" onClick={customTokenNftContract ? onAddCustomTokenId : onAddCustomToken}>+</button>
@@ -3843,22 +3839,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div className="rs-modal-subtitle">Select Token ID</div>
                 {customTokenPreview ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
-                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{formatTokenIdLabel(String(customTokenPreview.tokenId || ''))}</div>
-                      {customTokenError ? <div className="rs-insufficient-mark">❗</div> : null}
-                      <img
-                        src={customTokenPreview.imgUrl || tokenIconUrl(8453, customTokenPreview.token || '')}
-                        alt={customTokenPreview.symbol || 'NFT'}
-                        className="rs-token-art rs-selected-token-icon"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          const fb = e.currentTarget.nextElementSibling;
-                          if (fb) fb.style.display = 'flex';
-                        }}
-                      />
-                      <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenPreview.symbol || 'NFT')}</div>
-                      <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenPreview.symbol || 'NFT'}</div>
-                    </div>
+                    <TokenTile
+                      amountNode={formatTokenIdLabel(String(customTokenPreview.tokenId || ''))}
+                      amountClassName="rs-selected-token-amount"
+                      symbol={customTokenPreview.symbol || 'NFT'}
+                      symbolClassName="rs-selected-token-symbol"
+                      imgUrl={customTokenPreview.imgUrl}
+                      tokenAddress={customTokenPreview.token}
+                      tokenKind={customTokenPreview.kind}
+                      tokenId={customTokenPreview.tokenId}
+                      tokenIdClassName="rs-selected-token-tokenid"
+                      wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
+                      iconClassName="rs-token-art rs-selected-token-icon"
+                      fallbackClassName="rs-selected-token-icon rs-token-fallback"
+                      insufficient={Boolean(customTokenError)}
+                      disableLink
+                    />
                     {customTokenPreview?.ownerWallet ? (
                       <div className="rs-token-balance-note">Owner: {customTokenPreview.ownerDisplay || short(customTokenPreview.ownerWallet)}</div>
                     ) : null}
@@ -3891,25 +3887,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <div className="rs-modal-subtitle">Enter Amount</div>
                 {customTokenResolvedOption ? (
                   <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
-                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(customAmountDisplay)}</div>
-                      {String(customTokenResolvedOption?.kind || '') === KIND_ERC1155 && customTokenResolvedOption?.tokenId ? (
-                        <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(customTokenResolvedOption.tokenId))}</div>
-                      ) : null}
-                      {custom1155Insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
-                      <img
-                        src={customTokenResolvedOption.imgUrl || tokenIconUrl(8453, customTokenResolvedOption.token || '')}
-                        alt={customTokenResolvedOption.symbol || 'NFT'}
-                        className="rs-token-art rs-selected-token-icon"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          const fb = e.currentTarget.nextElementSibling;
-                          if (fb) fb.style.display = 'flex';
-                        }}
-                      />
-                      <div className="rs-selected-token-icon rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(customTokenResolvedOption.symbol || 'NFT')}</div>
-                      <div className="rs-symbol-overlay rs-selected-token-symbol">{customTokenResolvedOption.symbol || 'NFT'}</div>
-                    </div>
+                    <TokenTile
+                      amountNode={renderAmountColored(customAmountDisplay)}
+                      amountClassName="rs-selected-token-amount"
+                      symbol={customTokenResolvedOption.symbol || 'NFT'}
+                      symbolClassName="rs-selected-token-symbol"
+                      imgUrl={customTokenResolvedOption.imgUrl}
+                      tokenAddress={customTokenResolvedOption.token}
+                      tokenKind={customTokenResolvedOption.kind}
+                      tokenId={customTokenResolvedOption.tokenId}
+                      tokenIdClassName="rs-selected-token-tokenid"
+                      wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
+                      iconClassName="rs-token-art rs-selected-token-icon"
+                      fallbackClassName="rs-selected-token-icon rs-token-fallback"
+                      insufficient={custom1155Insufficient}
+                      disableLink
+                    />
                   </div>
                 ) : null}
                 {customFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
@@ -3934,28 +3927,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 <button className="rs-modal-back" onClick={() => setTokenModalStep('grid')}>← Back</button>
                 <div className="rs-token-center">
                   <div className="rs-modal-wrap-row">
-                    <div className="rs-token-wrap rs-token-cell-wrap rs-token-center-wrap">
-                      <div className="rs-amount-overlay rs-selected-token-amount">{renderAmountColored(pendingAmountDisplay)}</div>
-                      {pendingIsErc1155 && pendingToken?.tokenId ? (
-                        <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(pendingToken.tokenId))}</div>
-                      ) : null}
-                      {pendingInsufficient ? <div className="rs-insufficient-mark">❗</div> : null}
-                      <img
-                        key={`selected-${pendingToken?.imgUrl || pendingToken?.token || 'none'}`}
-                        src={pendingToken?.imgUrl || tokenIconUrl(8453, pendingToken?.token || '') || ethIconUrl()}
-                        alt={pendingToken?.symbol || 'TOKEN'}
-                        className="rs-token-art rs-selected-token-icon"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          const fb = e.currentTarget.nextElementSibling;
-                          if (fb) fb.style.display = 'flex';
-                        }}
-                      />
-                      <div className="rs-token-art rs-token-fallback rs-selected-token-icon" style={{ display: 'none' }}>
-                        {tokenInitials(pendingToken?.symbol || '??')}
-                      </div>
-                      <div className="rs-symbol-overlay rs-selected-token-symbol">{pendingToken?.symbol || 'TOKEN'}</div>
-                    </div>
+                    <TokenTile
+                      amountNode={renderAmountColored(pendingAmountDisplay)}
+                      amountClassName="rs-selected-token-amount"
+                      symbol={pendingToken?.symbol || 'NFT'}
+                      symbolClassName="rs-selected-token-symbol"
+                      imgUrl={pendingToken?.imgUrl || ethIconUrl()}
+                      tokenAddress={pendingToken?.token}
+                      tokenKind={pendingToken?.kind}
+                      tokenId={pendingToken?.tokenId}
+                      tokenIdClassName="rs-selected-token-tokenid"
+                      wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
+                      iconClassName="rs-token-art rs-selected-token-icon"
+                      fallbackClassName="rs-token-art rs-token-fallback rs-selected-token-icon"
+                      insufficient={pendingInsufficient}
+                      disableLink
+                    />
 
                     {pendingIsEth ? (
                       <>
@@ -4048,6 +4035,66 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   );
 }
 
+function shouldShowTokenId(kind, tokenId) {
+  const k = String(kind || '');
+  if (k !== KIND_ERC721 && k !== KIND_ERC1155) return false;
+  return tokenId !== undefined && tokenId !== null && String(tokenId) !== '';
+}
+
+function TokenTile({
+  amountNode,
+  amountClassName,
+  symbol,
+  symbolClassName,
+  imgUrl,
+  tokenAddress,
+  tokenKind,
+  tokenId,
+  tokenIdClassName,
+  chainId = 8453,
+  wrapClassName = '',
+  iconClassName = 'rs-token-art',
+  fallbackClassName = 'rs-token-art rs-token-fallback',
+  insufficient = false,
+  linkHref,
+  disableLink = false,
+}) {
+  const resolvedImg = imgUrl || tokenIconUrl(chainId, tokenAddress || '') || '';
+  const showId = shouldShowTokenId(tokenKind, tokenId);
+  return (
+    <div className={`rs-token-wrap ${wrapClassName}`.trim()}>
+      {amountNode != null ? <div className={`rs-amount-overlay ${amountClassName || ''}`.trim()}>{amountNode}</div> : null}
+      {showId ? <div className={`rs-tokenid-overlay ${tokenIdClassName || ''}`.trim()}>{formatTokenIdLabel(String(tokenId))}</div> : null}
+      <div className={`rs-symbol-overlay ${symbolClassName || ''}`.trim()}>{symbol || 'NFT'}</div>
+      {insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
+      <a
+        href={!disableLink && linkHref ? linkHref : undefined}
+        target={!disableLink && linkHref ? '_blank' : undefined}
+        rel={!disableLink && linkHref ? 'noreferrer' : undefined}
+        className="rs-token-link"
+        onClick={disableLink ? (e) => e.preventDefault() : undefined}
+      >
+        {resolvedImg ? (
+          <>
+            <img
+              key={`tile-${resolvedImg || 'none'}-${symbol || ''}`}
+              src={resolvedImg}
+              alt={symbol || 'NFT'}
+              className={iconClassName}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fb = e.currentTarget.nextElementSibling;
+                if (fb) fb.style.display = 'flex';
+              }}
+            />
+            <div className={fallbackClassName} style={{ display: 'none' }}>{tokenInitials(symbol || 'NFT')}</div>
+          </>
+        ) : <div className={fallbackClassName}>{tokenInitials(symbol || 'NFT')}</div>}
+      </a>
+    </div>
+  );
+}
+
 function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleClear, amount, symbol, footer, footerTone = 'ok', feeText, feeTone = 'ok', tokenAddress, tokenImage, tokenKind, tokenId, chainId, danger, editable = false, onEdit, insufficientBalance = false, wrapHint = false, wrapAmount = '', onWrap, wrapBusy = false, valueText = 'Value: Not found' }) {
   const icon = tokenImage || tokenIconUrl(chainId, tokenAddress || '');
   const ethIcon = ethIconUrl();
@@ -4105,44 +4152,22 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleCle
           ) : valueText}
         </p>
         <div className="rs-asset-stage">
-          <div className={`rs-token-wrap ${editable ? 'rs-token-editable' : ''}`}>
-            <div className="rs-amount-overlay">
-              {amountMatch ? (
-                <><span className={suffixClass(amountMatch[2])}>{amountMatch[1]}</span><span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></>
-              ) : (
-                <>{amount}</>
-              )}
-            </div>
-            {String(tokenKind || '') === KIND_ERC1155 && String(tokenId || '0') !== '0' ? (
-              <div className="rs-tokenid-overlay rs-selected-token-tokenid">{formatTokenIdLabel(String(tokenId))}</div>
-            ) : null}
-            <div className="rs-symbol-overlay">{symbol || '???'}</div>
-            {insufficientBalance ? <div className="rs-insufficient-mark">❗</div> : null}
-            <a
-              href={!editable && tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
-              target={!editable ? "_blank" : undefined}
-              rel={!editable ? "noreferrer" : undefined}
-              className="rs-token-link"
-              onClick={editable ? (e) => e.preventDefault() : undefined}
-            >
-              {icon ? (
-                <>
-                  <img
-                    key={`panel-${icon || 'none'}-${symbol || ''}`}
-                    src={icon}
-                    alt={symbol}
-                    className="rs-token-art"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      const fb = e.currentTarget.nextElementSibling;
-                      if (fb) fb.style.display = 'flex';
-                    }}
-                  />
-                  <div className="rs-token-art rs-token-fallback" style={{ display: 'none' }}>{tokenInitials(symbol || '??')}</div>
-                </>
-              ) : <div className="rs-token-art rs-token-fallback">{tokenInitials(symbol || '??')}</div>}
-            </a>
-          </div>
+          <TokenTile
+            amountNode={amountMatch ? <><span className={suffixClass(amountMatch[2])}>{amountMatch[1]}</span><span className={`amt-sfx ${suffixClass(amountMatch[2])}`}>{amountMatch[2]}</span></> : <>{amount}</>}
+            symbol={symbol || 'NFT'}
+            imgUrl={icon}
+            tokenAddress={tokenAddress}
+            tokenKind={tokenKind}
+            tokenId={tokenId}
+            tokenIdClassName="rs-selected-token-tokenid"
+            chainId={chainId}
+            wrapClassName={editable ? 'rs-token-editable' : ''}
+            iconClassName="rs-token-art"
+            fallbackClassName="rs-token-art rs-token-fallback"
+            insufficient={insufficientBalance}
+            linkHref={tokenAddress ? `https://basescan.org/token/${tokenAddress}` : undefined}
+            disableLink={editable}
+          />
 
           {wrapHint ? (
             <button type="button" className="rs-wrap-arrow" onClick={onWrap} disabled={wrapBusy}>⬅️</button>
