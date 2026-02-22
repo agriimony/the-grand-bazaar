@@ -3208,17 +3208,29 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const topDanger = makerMode ? makerSenderInsufficient : Boolean(checks && (flipForSigner ? !checks.makerBalanceOk : !checks.takerBalanceOk));
   const topInsufficient = topDanger;
   const topValueText = flipForSigner ? counterpartyValueTextFinal : yourValueTextFinal;
+  const feeOnSignerSide = Boolean(parsed && IS_SWAP_ERC20(parsed.swapContract));
+  const feeLabel = (bps) => `incl. ${(Number(bps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
   const topFeeText = makerMode
     ? ''
     : (flipForSigner
-      ? ''
-      : (checks?.protocolFeeMismatch
-        ? 'Incorrect protocol fees'
-        : checks?.protocolFeeBps != null
-        ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-        : parsed
-        ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-        : ''));
+      ? (feeOnSignerSide
+        ? (checks?.protocolFeeMismatch
+          ? 'Incorrect protocol fees'
+          : checks?.protocolFeeBps != null
+          ? feeLabel(checks.protocolFeeBps)
+          : parsed
+          ? feeLabel(protocolFeeBpsFallback)
+          : '')
+        : '')
+      : (feeOnSignerSide
+        ? ''
+        : (checks?.protocolFeeMismatch
+          ? 'Incorrect protocol fees'
+          : checks?.protocolFeeBps != null
+          ? feeLabel(checks.protocolFeeBps)
+          : parsed
+          ? feeLabel(protocolFeeBpsFallback)
+          : '')));
   const topFooter = makerMode
     ? (makerStep === 'cast' ? 'You have accepted' : 'You have not yet accepted')
     : checks
@@ -3257,16 +3269,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const bottomInsufficient = bottomDanger;
   const bottomValueText = flipForSigner ? yourValueTextFinal : counterpartyValueTextFinal;
   const bottomFeeText = makerMode
-    ? `incl. ${(Number(uiProtocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
+    ? feeLabel(uiProtocolFeeBps)
     : (flipForSigner
-      ? (checks?.protocolFeeMismatch
-        ? 'Incorrect protocol fees'
-        : checks?.protocolFeeBps != null
-        ? `incl. ${(Number(checks.protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-        : parsed
-        ? `incl. ${(Number(protocolFeeBpsFallback) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`
-        : '')
-      : '');
+      ? (feeOnSignerSide
+        ? ''
+        : (checks?.protocolFeeMismatch
+          ? 'Incorrect protocol fees'
+          : checks?.protocolFeeBps != null
+          ? feeLabel(checks.protocolFeeBps)
+          : parsed
+          ? feeLabel(protocolFeeBpsFallback)
+          : ''))
+      : (feeOnSignerSide
+        ? (checks?.protocolFeeMismatch
+          ? 'Incorrect protocol fees'
+          : checks?.protocolFeeBps != null
+          ? feeLabel(checks.protocolFeeBps)
+          : parsed
+          ? feeLabel(protocolFeeBpsFallback)
+          : '')
+        : ''));
   const bottomFooter = makerMode
     ? (hasSpecificMakerCounterparty ? `${fitOfferName(counterpartyName)} has not yet accepted` : 'Nobody has accepted yet')
     : checks
