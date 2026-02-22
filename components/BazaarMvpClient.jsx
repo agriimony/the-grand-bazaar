@@ -3204,6 +3204,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     setTokenAmountError('');
+    // Close immediately for snappier UX; continue price/allowance work in background.
+    setTokenModalOpen(false);
+    setPendingToken(null);
+    setPendingAmount('');
+
     let selectedUsd = null;
     const amountNum = Number(pendingAmount || 0);
 
@@ -3286,6 +3291,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           setMakerStep('sign');
         } else if (address) {
           try {
+            setStatus('checking allowance...');
             const offeredKind = String(nextOverrides.senderKind || KIND_ERC20);
             const offeredIsNft = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
@@ -3311,6 +3317,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             }
           } catch {
             setMakerStep('approve');
+          } finally {
+            if (makerMode) setStatus('maker flow');
           }
         } else {
           setMakerStep('approve');
@@ -3320,9 +3328,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
     }
 
-    setTokenModalOpen(false);
-    setPendingToken(null);
-    setPendingAmount('');
   }
 
   function applyDemoValues() {
@@ -3401,6 +3406,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'checking order'
     : /connecting wallet/i.test(status)
     ? 'connecting wallet'
+    : /checking allowance/i.test(status)
+    ? 'checking allowance...'
     : /checking wallet|checks not ready/i.test(status)
     ? 'checking wallet'
     : /wrapping/i.test(status)
@@ -3412,7 +3419,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : /simulating swap|sending swap tx|swapping/i.test(status)
     ? 'swapping'
     : '';
-  const showLoadingBar = Boolean(loadingStage) && (!checks || /wrapping|approving|signing maker order|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
+  const showLoadingBar = Boolean(loadingStage) && (!checks || /wrapping|approving|checking allowance|signing maker order|simulating swap|sending swap tx|swapping|checking order|checking wallet|connecting wallet|loading order/i.test(status));
   const isMakerSigning = /signing maker order/i.test(status || '');
 
   const senderDecimalsFallback = parsed ? guessDecimals(parsed.senderToken) : 18;
