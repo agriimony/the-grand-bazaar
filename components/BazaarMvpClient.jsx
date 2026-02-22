@@ -1292,6 +1292,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg('render meta: <failed to serialize>');
       }
 
+      const signerDecimalsOut = (String(parsed.signerKind || KIND_ERC20) === KIND_ERC721 || String(parsed.signerKind || KIND_ERC20) === KIND_ERC1155)
+        ? null
+        : finalSignerDecimals;
+      const senderDecimalsOut = (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC721 || String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC1155)
+        ? null
+        : finalSenderDecimals;
+
       const baseChecks = {
         requiredSenderKind,
         nonceUsed: false,
@@ -1306,8 +1313,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         senderSymbol: finalSenderSymbol,
         signerImgUrl,
         senderImgUrl,
-        signerDecimals: finalSignerDecimals,
-        senderDecimals: finalSenderDecimals,
+        signerDecimals: signerDecimalsOut,
+        senderDecimals: senderDecimalsOut,
         makerAccepted,
         makerBalanceOk,
         makerApprovalOk,
@@ -1329,8 +1336,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           parsedSignerKind: parsed.signerKind,
           senderAmountRaw: String(parsed.senderAmount),
           signerAmountRaw: String(parsed.signerAmount),
-          senderDecimals: finalSenderDecimals,
-          signerDecimals: finalSignerDecimals,
+          senderDecimals: senderDecimalsOut,
+          signerDecimals: signerDecimalsOut,
           totalRequired: String(totalRequired),
           feeAmount: String(feeAmount),
           feeOnSignerSide: isSwapErc20Order,
