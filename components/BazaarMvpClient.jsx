@@ -1191,7 +1191,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let senderImgUrl = null;
       try {
         const signerKindNow = String(parsed.signerKind || KIND_ERC20);
-        if (signerKindNow === KIND_ERC721) {
+        if (signerKindNow === KIND_ERC20) {
+          signerImgUrl = tokenIconUrl(8453, parsed.signerToken) || null;
+          if (!finalSignerSymbol || finalSignerSymbol === '???') {
+            const ec = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+            const sym = await ec.symbol().catch(() => '');
+            if (String(sym || '').trim()) finalSignerSymbol = String(sym).trim();
+          }
+        } else if (signerKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'));
           if (meta?.symbol) finalSignerSymbol = meta.symbol;
           if (meta?.imgUrl) signerImgUrl = meta.imgUrl;
@@ -1207,7 +1214,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       } catch {}
       try {
         const senderKindNow = String(parsed.senderKind || KIND_ERC20);
-        if (senderKindNow === KIND_ERC721) {
+        if (senderKindNow === KIND_ERC20) {
+          senderImgUrl = tokenIconUrl(8453, parsed.senderToken) || null;
+          if (!finalSenderSymbol || finalSenderSymbol === '???') {
+            const ec = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+            const sym = await ec.symbol().catch(() => '');
+            if (String(sym || '').trim()) finalSenderSymbol = String(sym).trim();
+          }
+        } else if (senderKindNow === KIND_ERC721) {
           const meta = await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'));
           if (meta?.symbol) finalSenderSymbol = meta.symbol;
           if (meta?.imgUrl) senderImgUrl = meta.imgUrl;
