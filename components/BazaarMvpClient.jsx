@@ -666,6 +666,29 @@ function toAbsoluteHttpUrl(u = '') {
   return '';
 }
 
+function humanOfferLine({ signerKind, senderKind, signerAmountHuman, senderAmountHuman, signerSymbol, senderSymbol, signerId, senderId }) {
+  const sKind = String(signerKind || KIND_ERC20);
+  const rKind = String(senderKind || KIND_ERC20);
+  const sSym = String(signerSymbol || 'TOKEN');
+  const rSym = String(senderSymbol || 'TOKEN');
+  const sId = formatTokenIdLabel(String(signerId || '0'));
+  const rId = formatTokenIdLabel(String(senderId || '0'));
+
+  const signerText = (sKind === KIND_ERC721)
+    ? `${sSym} ${sId}`
+    : (sKind === KIND_ERC1155)
+    ? `${formatIntegerAmount(String(signerAmountHuman || '0'))}x ${sSym} ${sId}`
+    : `${formatTokenAmount(String(signerAmountHuman || '0'))} ${sSym}`;
+
+  const senderText = (rKind === KIND_ERC721)
+    ? `${rSym} ${rId}`
+    : (rKind === KIND_ERC1155)
+    ? `${formatIntegerAmount(String(senderAmountHuman || '0'))}x ${rSym} ${rId}`
+    : `${formatTokenAmount(String(senderAmountHuman || '0'))} ${rSym}`;
+
+  return `I offer ${signerText} for ${senderText}`;
+}
+
 function castNftImageEmbeds({ senderKind, senderImgUrl, signerKind, signerImgUrl }) {
   const out = [];
   const push = (kind, url) => {
@@ -2294,9 +2317,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
       const isPrivateOrder = String(selectedCounterpartyWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
       const mentionPrefix = isPrivateOrder && counterpartyHandle ? `${counterpartyHandle} ` : '';
+      const summaryLine = humanOfferLine({
+        signerKind,
+        senderKind,
+        signerAmountHuman,
+        senderAmountHuman,
+        signerSymbol: makerOverrides.senderSymbol || guessSymbol(signerToken),
+        senderSymbol: makerOverrides.signerSymbol || guessSymbol(senderToken),
+        signerId: signerTokenId,
+        senderId: senderTokenId,
+      });
       const lines = [
-        `${mentionPrefix}WTS: ${formatTokenAmount(signerAmountHuman)} ${makerOverrides.senderSymbol || guessSymbol(signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${makerOverrides.signerSymbol || guessSymbol(senderToken)}`,
-        `Offer expires in ${offerExpiryInLabel(makerExpirySec)}`,
+        `${mentionPrefix}${summaryLine}`,
+        `${isPrivateOrder ? 'Private offer' : 'Open offer'} • expires in ${offerExpiryInLabel(makerExpirySec)}`,
         `GBZ1:${compressed}`,
       ];
       const castText = lines.join('\n');
@@ -2488,8 +2521,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const orderPayload = (compressed || '').trim() || encodeCompressedOrder(parsed);
       const remaining = Math.max(0, Number(parsed.expiry || 0) - Math.floor(Date.now() / 1000));
       const castText = [
-        `WTS: ${formatTokenAmount(signerAmountHuman)} ${guessSymbol(parsed.signerToken)} for ${formatTokenAmount(senderAmountHuman)} ${guessSymbol(parsed.senderToken)}`,
-        `Offer expires in ${offerExpiryInLabel(remaining)}`,
+        humanOfferLine({
+          signerKind: parsed.signerKind,
+          senderKind: parsed.senderKind,
+          signerAmountHuman,
+          senderAmountHuman,
+          signerSymbol: checks?.signerSymbol || guessSymbol(parsed.signerToken),
+          senderSymbol: checks?.senderSymbol || guessSymbol(parsed.senderToken),
+          signerId: parsed.signerId,
+          senderId: parsed.senderId,
+        }),
+        `${String(parsed?.senderWallet || '').toLowerCase() === ethers.ZeroAddress.toLowerCase() ? 'Open offer' : 'Private offer'} • expires in ${offerExpiryInLabel(remaining)}`,
         `GBZ1:${orderPayload}`,
       ].join('\n');
 
