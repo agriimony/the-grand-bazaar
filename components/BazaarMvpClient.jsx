@@ -567,8 +567,9 @@ function castNftImageEmbeds({ senderKind, senderImgUrl, signerKind, signerImgUrl
     if (!abs || out.includes(abs)) return;
     out.push(abs);
   };
-  push(senderKind, senderImgUrl);
+  // Embed order: signer first, then sender.
   push(signerKind, signerImgUrl);
+  push(senderKind, senderImgUrl);
   return out.slice(0, 2);
 }
 
@@ -721,6 +722,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [swapThanksBusy, setSwapThanksBusy] = useState(false);
   const [debugLog, setDebugLog] = useState([]);
   const [checks, setChecks] = useState(null);
+  const [castNftFallback, setCastNftFallback] = useState({ signerImgUrl: null, senderImgUrl: null });
   const [counterpartyName, setCounterpartyName] = useState('Counterparty');
   const [counterpartyHandle, setCounterpartyHandle] = useState('');
   const [counterpartyProfileUrl, setCounterpartyProfileUrl] = useState('');
@@ -971,6 +973,39 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       protocolFeeBI: BigInt(orderData.protocolFee),
     };
   }, [orderData]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadNftFallbackFromCast() {
+      if (!initialCastHash || !parsed) {
+        if (mounted) setCastNftFallback({ signerImgUrl: null, senderImgUrl: null });
+        return;
+      }
+      try {
+        const r = await fetch(`/api/order-from-cast?castHash=${encodeURIComponent(initialCastHash)}`, { cache: 'no-store' });
+        const d = await r.json();
+        if (!r.ok || !d?.compressedOrder) return;
+        const fromCast = decodeCompressedOrder(d.compressedOrder);
+        let signerImgUrl = null;
+        let senderImgUrl = null;
+        if (String(fromCast?.signerKind || '') === KIND_ERC721) {
+          signerImgUrl = (await readErc721Meta(fromCast.signerToken, String(fromCast.signerId || '0')))?.imgUrl || null;
+        } else if (String(fromCast?.signerKind || '') === KIND_ERC1155) {
+          signerImgUrl = (await readErc1155Meta(fromCast.signerToken, String(fromCast.signerId || '0')))?.imgUrl || null;
+        }
+        if (String(fromCast?.senderKind || '') === KIND_ERC721) {
+          senderImgUrl = (await readErc721Meta(fromCast.senderToken, String(fromCast.senderId || '0')))?.imgUrl || null;
+        } else if (String(fromCast?.senderKind || '') === KIND_ERC1155) {
+          senderImgUrl = (await readErc1155Meta(fromCast.senderToken, String(fromCast.senderId || '0')))?.imgUrl || null;
+        }
+        if (mounted) setCastNftFallback({ signerImgUrl, senderImgUrl });
+      } catch {
+        // no-op
+      }
+    }
+    loadNftFallbackFromCast();
+    return () => { mounted = false; };
+  }, [initialCastHash, parsed?.signerToken, parsed?.signerKind, parsed?.signerId, parsed?.senderToken, parsed?.senderKind, parsed?.senderId]);
 
   useEffect(() => {
     let mounted = true;
@@ -3469,10 +3504,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
-  const senderTokenImgRaw = makerOverrides.senderImgUrl || checks?.senderImgUrl || null;
-  const signerTokenImgRaw = makerOverrides.signerImgUrl || checks?.signerImgUrl || null;
-  const senderTokenImgFinal = ((parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155) && !senderTokenImgRaw) ? '/icon.svg' : senderTokenImgRaw;
-  const signerTokenImgFinal = ((parsedSignerKind === KIND_ERC721 || parsedSignerKind === KIND_ERC1155) && !signerTokenImgRaw) ? '/icon.svg' : signerTokenImgRaw;
+  const senderTokenImgRaw = makerOverrides.senderImgUrl || checks?.senderImgUrl || castNftFallback.senderImgUrl || null;
+  const signerTokenImgRaw = makerOverrides.signerImgUrl || checks?.signerImgUrl || castNftFallback.signerImgUrl || null;
+  const senderTokenImgFinal = ((parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155) && !senderTokenImgRaw)
+    ? (initialCastHash ? `/api/og?castHash=${encodeURIComponent(initialCastHash)}` : '/icon.svg')
+    : senderTokenImgRaw;
+  const signerTokenImgFinal = ((parsedSignerKind === KIND_ERC721 || parsedSignerKind === KIND_ERC1155) && !signerTokenImgRaw)
+    ? (initialCastHash ? `/api/og?castHash=${encodeURIComponent(initialCastHash)}` : '/icon.svg')
+    : signerTokenImgRaw;
   const senderKindFinal = makerOverrides.senderKind || parsed?.senderKind || KIND_ERC20;
   const signerKindFinal = makerOverrides.signerKind || parsed?.signerKind || KIND_ERC20;
   const senderTokenIdFinal = String(makerOverrides.senderTokenId || parsed?.senderId || '0');
