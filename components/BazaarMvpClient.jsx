@@ -480,23 +480,31 @@ async function readNftImageFromTokenUri(tokenUri = '') {
 }
 
 async function readErc721Symbol(tokenAddr, rpOverride = null) {
+  const startedAt = Date.now();
   try {
     const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
     const symbol = await withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => '');
-    return String(symbol || '').trim() || 'NFT';
-  } catch {
+    const out = String(symbol || '').trim() || 'NFT';
+    pushMetaDebugLog({ scope: 'erc721-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, symbol: out });
+    return out;
+  } catch (e) {
+    pushMetaDebugLog({ scope: 'erc721-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, error: e?.message || 'symbol read failed' });
     return 'NFT';
   }
 }
 
 async function readErc1155Symbol(tokenAddr, rpOverride = null) {
+  const startedAt = Date.now();
   try {
     const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
     const symbol = await withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => '');
-    return String(symbol || '').trim() || 'NFT';
-  } catch {
+    const out = String(symbol || '').trim() || 'NFT';
+    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, symbol: out });
+    return out;
+  } catch (e) {
+    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, error: e?.message || 'symbol read failed' });
     return 'NFT';
   }
 }
@@ -1507,15 +1515,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
         }
 
+        const signerNeedsSymbol = !String(finalSignerSymbol || '').trim() || String(finalSignerSymbol || '').includes('?');
+        const senderNeedsSymbol = !String(finalSenderSymbol || '').trim() || String(finalSenderSymbol || '').includes('?');
         const [signerNftSymbol, senderNftSymbol] = await Promise.all([
-          (signerKindNow === KIND_ERC721 && (!finalSignerSymbol || finalSignerSymbol === '??'))
+          (signerKindNow === KIND_ERC721 && signerNeedsSymbol)
             ? readErc721Symbol(parsed.signerToken, readProvider)
-            : (signerKindNow === KIND_ERC1155 && (!finalSignerSymbol || finalSignerSymbol === '??'))
+            : (signerKindNow === KIND_ERC1155 && signerNeedsSymbol)
             ? readErc1155Symbol(parsed.signerToken, readProvider)
             : Promise.resolve(''),
-          (senderKindNow === KIND_ERC721 && (!finalSenderSymbol || finalSenderSymbol === '??'))
+          (senderKindNow === KIND_ERC721 && senderNeedsSymbol)
             ? readErc721Symbol(parsed.senderToken, readProvider)
-            : (senderKindNow === KIND_ERC1155 && (!finalSenderSymbol || finalSenderSymbol === '??'))
+            : (senderKindNow === KIND_ERC1155 && senderNeedsSymbol)
             ? readErc1155Symbol(parsed.senderToken, readProvider)
             : Promise.resolve(''),
         ]);
@@ -1542,8 +1552,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           if (senderNftMeta?.imgUrl) senderImgUrl = senderNftMeta.imgUrl;
         }
 
-        if ((signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155) && (!finalSignerSymbol || finalSignerSymbol === '??')) finalSignerSymbol = 'NFT';
-        if ((senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155) && (!finalSenderSymbol || finalSenderSymbol === '??')) finalSenderSymbol = 'NFT';
+        if ((signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155) && (!String(finalSignerSymbol || '').trim() || String(finalSignerSymbol || '').includes('?'))) finalSignerSymbol = 'NFT';
+        if ((senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155) && (!String(finalSenderSymbol || '').trim() || String(finalSenderSymbol || '').includes('?'))) finalSenderSymbol = 'NFT';
       } catch {}
 
       const signerKindForChecks = String(parsed.signerKind || KIND_ERC20);
@@ -1645,6 +1655,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               l.token ? `${String(l.token).slice(0, 8)}..` : '',
               l.tokenId != null ? `#${l.tokenId}` : '',
               l.ms != null ? `${l.ms}ms` : '',
+              l.symbol ? `sym=${l.symbol}` : '',
               l.error ? `err=${l.error}` : '',
             ].filter(Boolean);
             dbg(parts.join(' '));
