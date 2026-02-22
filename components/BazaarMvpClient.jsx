@@ -1539,10 +1539,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('signing maker order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
       const { kind: routedSenderKind, swapContract } = await resolveSwapForSenderToken(senderToken, readProvider, signerToken);
-      const swap = new ethers.Contract(swapContract, SWAP_ABI, readProvider);
+      const isSwapErc20 = IS_SWAP_ERC20(swapContract);
+      const swap = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
       const [protocolFee, requiredSenderKind] = await Promise.all([
         swap.protocolFee(),
-        swap.requiredSenderKind(),
+        isSwapErc20 ? Promise.resolve(KIND_ERC20) : swap.requiredSenderKind(),
       ]);
 
       const signerAmount = ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
@@ -1579,7 +1580,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         affiliateAmount: 0,
       };
 
-      const isSwapErc20 = IS_SWAP_ERC20(swapContract);
       const domain = {
         name: isSwapErc20 ? 'SWAP_ERC20' : 'SWAP',
         version: isSwapErc20 ? '4.3' : '4.2',
