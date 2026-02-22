@@ -3105,7 +3105,19 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const senderIsErc1155Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC1155;
   const signerIsErc1155Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC1155;
 
-  const yourAmountDisplayFinal = senderIsErc721Selected
+  const makerHasBothTokensSelectedPreview = Boolean(
+    makerMode
+    && !parsed
+    && makerOverrides.senderToken
+    && makerOverrides.signerToken
+  );
+  const makerFeeOnSignerSidePreviewCalc = Boolean(
+    makerHasBothTokensSelectedPreview
+    && String(makerOverrides.senderKind || '') === KIND_ERC20
+    && String(makerOverrides.signerKind || '') === KIND_ERC20
+  );
+
+  let yourAmountDisplayFinal = senderIsErc721Selected
     ? formatTokenIdLabel(String(makerOverrides.senderTokenId))
     : (makerOverrides.senderAmount
       ? (senderIsErc1155Selected ? formatIntegerAmount(String(Math.max(0, Math.floor(Number(makerOverrides.senderAmount) || 0)))) : formatTokenAmount(makerOverrides.senderAmount))
@@ -3116,16 +3128,32 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : (makerOverrides.signerAmount
       ? (signerIsErc1155Selected ? formatIntegerAmount(String(Math.max(0, Math.floor(Number(makerOverrides.signerAmount) || 0)))) : formatTokenAmount(makerOverrides.signerAmount))
       : counterpartyAmountDisplay);
-  if (makerMode && makerOverrides.signerAmount && !signerIsErc721Selected) {
-    const n = Number(makerOverrides.signerAmount);
-    if (Number.isFinite(n) && n >= 0) {
-      if (signerIsErc1155Selected) {
-        const base = BigInt(Math.max(0, Math.floor(n)));
-        const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
-        counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
-      } else {
-        const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
-        counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+
+  if (makerMode && makerHasBothTokensSelectedPreview) {
+    if (makerFeeOnSignerSidePreviewCalc && makerOverrides.signerAmount && !signerIsErc721Selected) {
+      const n = Number(makerOverrides.signerAmount);
+      if (Number.isFinite(n) && n >= 0) {
+        if (signerIsErc1155Selected) {
+          const base = BigInt(Math.max(0, Math.floor(n)));
+          const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
+          counterpartyAmountDisplayFinal = formatIntegerAmount(String(withFee));
+        } else {
+          const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+          counterpartyAmountDisplayFinal = formatTokenAmount(String(withFee));
+        }
+      }
+    }
+    if (!makerFeeOnSignerSidePreviewCalc && makerOverrides.senderAmount && !senderIsErc721Selected) {
+      const n = Number(makerOverrides.senderAmount);
+      if (Number.isFinite(n) && n >= 0) {
+        if (senderIsErc1155Selected) {
+          const base = BigInt(Math.max(0, Math.floor(n)));
+          const withFee = base + ((base * BigInt(uiProtocolFeeBps || 0)) / 10000n);
+          yourAmountDisplayFinal = formatIntegerAmount(String(withFee));
+        } else {
+          const withFee = n * (1 + Number(uiProtocolFeeBps) / 10000);
+          yourAmountDisplayFinal = formatTokenAmount(String(withFee));
+        }
       }
     }
   }
@@ -3208,17 +3236,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const topDanger = makerMode ? makerSenderInsufficient : Boolean(checks && (flipForSigner ? !checks.makerBalanceOk : !checks.takerBalanceOk));
   const topInsufficient = topDanger;
   const topValueText = flipForSigner ? counterpartyValueTextFinal : yourValueTextFinal;
-  const makerHasBothTokensSelected = Boolean(
-    makerMode
-    && !parsed
-    && makerOverrides.senderToken
-    && makerOverrides.signerToken
-  );
-  const makerFeeOnSignerSidePreview = Boolean(
-    makerHasBothTokensSelected
-    && String(makerOverrides.senderKind || '') === KIND_ERC20
-    && String(makerOverrides.signerKind || '') === KIND_ERC20
-  );
+  const makerHasBothTokensSelected = makerHasBothTokensSelectedPreview;
+  const makerFeeOnSignerSidePreview = makerFeeOnSignerSidePreviewCalc;
   const feeOnSignerSide = parsed
     ? IS_SWAP_ERC20(parsed.swapContract)
     : makerFeeOnSignerSidePreview;
