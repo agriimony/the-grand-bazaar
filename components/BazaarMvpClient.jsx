@@ -71,6 +71,7 @@ const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_WETH = '0x4200000000000000000000000000000000000006';
 const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const BASE_SWAP_CONTRACT = '0x8a9969ed0A9bb3cDA7521DDaA614aE86e72e0A57';
+const BASE_SWAP_CONTRACT_ERC20_ERC20 = '0x95D598D839dE1B030848664960F0A20b848193F4';
 const BASE_SWAP_CONTRACT_ERC721 = '0x2aa29F096257bc6B253bfA9F6404B20Ae0ef9C4d';
 const BASE_SWAP_CONTRACT_ERC1155 = '0xD19783B48b11AFE1544b001c6d807A513e5A95cf';
 const KIND_ERC20 = '0x36372b07';
@@ -309,10 +310,14 @@ async function readNftContractLabel(tokenAddr, provider) {
   return 'NFT';
 }
 
-async function resolveSwapForSenderToken(senderToken, provider) {
+async function resolveSwapForSenderToken(senderToken, provider, signerToken = null) {
   const kind = await detectTokenKind(senderToken, provider);
   if (kind === KIND_ERC721) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC721 };
   if (kind === KIND_ERC1155) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC1155 };
+  if (signerToken) {
+    const signerKind = await detectTokenKind(signerToken, provider);
+    if (signerKind === KIND_ERC20) return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT_ERC20_ERC20 };
+  }
   return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
 }
 
@@ -1383,7 +1388,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
     const senderTokenForOrder = makerOverrides.signerToken || parsed?.signerToken;
-    const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, readProvider);
+    const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, readProvider, token);
 
     try {
       const rawAmount = ethers.parseUnits(String(amount), decimals);
@@ -1490,7 +1495,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       setStatus('signing maker order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const { kind: routedSenderKind, swapContract } = await resolveSwapForSenderToken(senderToken, readProvider);
+      const { kind: routedSenderKind, swapContract } = await resolveSwapForSenderToken(senderToken, readProvider, signerToken);
       const swap = new ethers.Contract(swapContract, SWAP_ABI, readProvider);
       const [protocolFee, requiredSenderKind] = await Promise.all([
         swap.protocolFee(),
@@ -2810,7 +2815,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             const c = new ethers.Contract(token, ERC20_ABI, rp);
             const need = ethers.parseUnits(String(amount), dec);
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
-            const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp);
+            const { swapContract } = await resolveSwapForSenderToken(senderTokenForOrder, rp, token);
             const allowance = await c.allowance(address, swapContract);
             setMakerStep(allowance >= need ? 'sign' : 'approve');
           } catch {
