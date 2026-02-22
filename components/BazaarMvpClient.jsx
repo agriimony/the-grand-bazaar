@@ -1271,7 +1271,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
-      const swap = new ethers.Contract(parsed.swapContract, SWAP_ABI, readProvider);
+      const isSwapErc20 = IS_SWAP_ERC20(parsed.swapContract);
+      const swap = new ethers.Contract(parsed.swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
 
       if (!latestChecks.takerBalanceOk) {
         if (latestChecks.canWrapFromEth) {
@@ -1340,7 +1341,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
-      const isSwapErc20 = IS_SWAP_ERC20(parsed.swapContract);
       const swapErc20Args = [
         address,
         BigInt(parsed.nonce),
