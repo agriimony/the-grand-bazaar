@@ -1780,7 +1780,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       const rawAmount = ethers.parseUnits(String(amount), decimals);
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
-      const offeredKind = String(makerOverrides.senderKind || KIND_ERC20);
+      const offeredKindRaw = String(makerOverrides.senderKind || KIND_ERC20);
+      const hasSenderTokenId = Boolean(makerOverrides.senderTokenId && String(makerOverrides.senderTokenId) !== '0');
+      const offeredKind = (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) ? KIND_ERC721 : offeredKindRaw;
       const isErc721Offer = offeredKind === KIND_ERC721;
       const isErc1155Offer = offeredKind === KIND_ERC1155;
       const isNftOffer = isErc721Offer || isErc1155Offer;
@@ -3321,7 +3323,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         } else if (address) {
           try {
             setStatus('checking allowance...');
-            const offeredKind = String(nextOverrides.senderKind || KIND_ERC20);
+            const offeredKindRaw = String(nextOverrides.senderKind || KIND_ERC20);
+            const hasSenderTokenId = Boolean(nextOverrides.senderTokenId && String(nextOverrides.senderTokenId) !== '0');
+            const offeredKind = (offeredKindRaw === KIND_ERC20 && hasSenderTokenId) ? KIND_ERC721 : offeredKindRaw;
             const offeredIsNft = offeredKind === KIND_ERC721 || offeredKind === KIND_ERC1155;
             const rp = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
             const senderTokenForOrder = nextOverrides.signerToken || parsed?.signerToken;
