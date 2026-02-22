@@ -3113,8 +3113,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       : formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback)))
     : '-';
 
-  const senderSymbolDisplay = makerOverrides.senderSymbol || checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
-  const signerSymbolDisplay = makerOverrides.signerSymbol || checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
+  const senderSymbolRaw = makerOverrides.senderSymbol || checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
+  const signerSymbolRaw = makerOverrides.signerSymbol || checks?.signerSymbol || (parsed ? guessSymbol(parsed.signerToken) : 'TOKEN');
+  const senderSymbolDisplay = ((parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155) && (!senderSymbolRaw || senderSymbolRaw === '???')) ? 'NFT' : senderSymbolRaw;
+  const signerSymbolDisplay = ((parsedSignerKind === KIND_ERC721 || parsedSignerKind === KIND_ERC1155) && (!signerSymbolRaw || signerSymbolRaw === '???')) ? 'NFT' : signerSymbolRaw;
   const wrapAmountNeeded = typeof checks?.wrapAmountNeeded === 'bigint' ? checks.wrapAmountNeeded : 0n;
   const showWrapHint = Boolean(checks?.canWrapFromEth) && wrapAmountNeeded > 0n;
 
@@ -3278,8 +3280,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   const senderTokenAddressFinal = makerOverrides.senderToken || parsed?.senderToken;
   const signerTokenAddressFinal = makerOverrides.signerToken || parsed?.signerToken;
-  const senderTokenImgFinal = makerOverrides.senderImgUrl || checks?.senderImgUrl || null;
-  const signerTokenImgFinal = makerOverrides.signerImgUrl || checks?.signerImgUrl || null;
+  const senderTokenImgRaw = makerOverrides.senderImgUrl || checks?.senderImgUrl || null;
+  const signerTokenImgRaw = makerOverrides.signerImgUrl || checks?.signerImgUrl || null;
+  const senderTokenImgFinal = ((parsedSenderKind === KIND_ERC721 || parsedSenderKind === KIND_ERC1155) && !senderTokenImgRaw) ? '/icon.svg' : senderTokenImgRaw;
+  const signerTokenImgFinal = ((parsedSignerKind === KIND_ERC721 || parsedSignerKind === KIND_ERC1155) && !signerTokenImgRaw) ? '/icon.svg' : signerTokenImgRaw;
   const senderKindFinal = makerOverrides.senderKind || parsed?.senderKind || KIND_ERC20;
   const signerKindFinal = makerOverrides.signerKind || parsed?.signerKind || KIND_ERC20;
   const senderTokenIdFinal = String(makerOverrides.senderTokenId || parsed?.senderId || '0');
