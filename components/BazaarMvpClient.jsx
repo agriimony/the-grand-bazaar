@@ -1319,6 +1319,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         senderUsdValue,
       };
 
+      try {
+        dbg(`display amounts: ${JSON.stringify({
+          parsedSenderKind: parsed.senderKind,
+          parsedSignerKind: parsed.signerKind,
+          senderAmountRaw: String(parsed.senderAmount),
+          signerAmountRaw: String(parsed.signerAmount),
+          senderDecimals: finalSenderDecimals,
+          signerDecimals: finalSignerDecimals,
+          totalRequired: String(totalRequired),
+          feeAmount: String(feeAmount),
+          feeOnSignerSide: isSwapErc20Order,
+          senderAmountDisplay: parsedSenderKind === KIND_ERC1155 ? formatIntegerAmount(String(totalRequired)) : formatTokenAmount(ethers.formatUnits(totalRequired, finalSenderDecimals)),
+          signerAmountDisplay: parsedSignerKind === KIND_ERC1155 ? formatIntegerAmount(String(parsed.signerAmount)) : formatTokenAmount(ethers.formatUnits(parsed.signerAmount, finalSignerDecimals)),
+        })}`);
+      } catch {
+        dbg('display amounts: <failed to serialize>');
+      }
       setChecks(baseChecks);
       setStatus('checks complete');
       return baseChecks;
