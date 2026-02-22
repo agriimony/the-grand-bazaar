@@ -479,6 +479,28 @@ async function readNftImageFromTokenUri(tokenUri = '') {
   return '';
 }
 
+async function readErc721Symbol(tokenAddr, rpOverride = null) {
+  try {
+    const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC721_ABI, rp);
+    const symbol = await withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => '');
+    return String(symbol || '').trim() || 'NFT';
+  } catch {
+    return 'NFT';
+  }
+}
+
+async function readErc1155Symbol(tokenAddr, rpOverride = null) {
+  try {
+    const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
+    const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
+    const symbol = await withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => '');
+    return String(symbol || '').trim() || 'NFT';
+  } catch {
+    return 'NFT';
+  }
+}
+
 async function readErc721Meta(tokenAddr, tokenId, rpOverride = null) {
   const startedAt = Date.now();
   try {
@@ -1075,24 +1097,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
         let signerImgUrl = null;
         let senderImgUrl = null;
-        if (String(fromCast?.signerKind || '') === KIND_ERC721) {
+        // Primary source: cast embeds.
+        if (signerIsNft && senderIsNft) {
+          signerImgUrl = embedUrls[0] || null;
+          senderImgUrl = embedUrls[1] || null;
+        } else {
+          if (signerIsNft) signerImgUrl = embedUrls[0] || null;
+          if (senderIsNft) senderImgUrl = embedUrls[0] || null;
+        }
+        // Backfill from token URI only if embed side is missing.
+        if (!signerImgUrl && String(fromCast?.signerKind || '') === KIND_ERC721) {
           signerImgUrl = (await readErc721Meta(fromCast.signerToken, String(fromCast.signerId || '0')))?.imgUrl || null;
-        } else if (String(fromCast?.signerKind || '') === KIND_ERC1155) {
+        } else if (!signerImgUrl && String(fromCast?.signerKind || '') === KIND_ERC1155) {
           signerImgUrl = (await readErc1155Meta(fromCast.signerToken, String(fromCast.signerId || '0')))?.imgUrl || null;
         }
-        if (String(fromCast?.senderKind || '') === KIND_ERC721) {
+        if (!senderImgUrl && String(fromCast?.senderKind || '') === KIND_ERC721) {
           senderImgUrl = (await readErc721Meta(fromCast.senderToken, String(fromCast.senderId || '0')))?.imgUrl || null;
-        } else if (String(fromCast?.senderKind || '') === KIND_ERC1155) {
+        } else if (!senderImgUrl && String(fromCast?.senderKind || '') === KIND_ERC1155) {
           senderImgUrl = (await readErc1155Meta(fromCast.senderToken, String(fromCast.senderId || '0')))?.imgUrl || null;
-        }
-        // Fallback to cast embed URLs when metadata image is unavailable.
-        // both NFT legs: embed[0]=signer, embed[1]=sender
-        if (signerIsNft && senderIsNft) {
-          if (!signerImgUrl) signerImgUrl = embedUrls[0] || null;
-          if (!senderImgUrl) senderImgUrl = embedUrls[1] || null;
-        } else {
-          if (!signerImgUrl && signerIsNft) signerImgUrl = embedUrls[0] || null;
-          if (!senderImgUrl && senderIsNft) senderImgUrl = embedUrls[0] || null;
         }
 
         dbg(`cast embed fallback resolved signer=${signerImgUrl || 'none'} sender=${senderImgUrl || 'none'} signerKind=${String(fromCast?.signerKind || '')} senderKind=${String(fromCast?.senderKind || '')}`);
@@ -1485,23 +1507,39 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
         }
 
-        const [signerNftMeta, senderNftMeta] = await Promise.all([
-          (signerKindNow === KIND_ERC721 && (!signerImgUrl || !finalSignerSymbol || finalSignerSymbol === '??'))
-            ? readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
-            : (signerKindNow === KIND_ERC1155 && (!signerImgUrl || !finalSignerSymbol || finalSignerSymbol === '??'))
-            ? readErc1155Meta(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
-            : Promise.resolve(null),
-          (senderKindNow === KIND_ERC721 && (!senderImgUrl || !finalSenderSymbol || finalSenderSymbol === '??'))
-            ? readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
-            : (senderKindNow === KIND_ERC1155 && (!senderImgUrl || !finalSenderSymbol || finalSenderSymbol === '??'))
-            ? readErc1155Meta(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
-            : Promise.resolve(null),
+        const [signerNftSymbol, senderNftSymbol] = await Promise.all([
+          (signerKindNow === KIND_ERC721 && (!finalSignerSymbol || finalSignerSymbol === '??'))
+            ? readErc721Symbol(parsed.signerToken, readProvider)
+            : (signerKindNow === KIND_ERC1155 && (!finalSignerSymbol || finalSignerSymbol === '??'))
+            ? readErc1155Symbol(parsed.signerToken, readProvider)
+            : Promise.resolve(''),
+          (senderKindNow === KIND_ERC721 && (!finalSenderSymbol || finalSenderSymbol === '??'))
+            ? readErc721Symbol(parsed.senderToken, readProvider)
+            : (senderKindNow === KIND_ERC1155 && (!finalSenderSymbol || finalSenderSymbol === '??'))
+            ? readErc1155Symbol(parsed.senderToken, readProvider)
+            : Promise.resolve(''),
         ]);
 
-        if (signerNftMeta?.symbol) finalSignerSymbol = signerNftMeta.symbol;
-        if (signerNftMeta?.imgUrl) signerImgUrl = signerNftMeta.imgUrl;
-        if (senderNftMeta?.symbol) finalSenderSymbol = senderNftMeta.symbol;
-        if (senderNftMeta?.imgUrl) senderImgUrl = senderNftMeta.imgUrl;
+        if (String(signerNftSymbol || '').trim()) finalSignerSymbol = String(signerNftSymbol).trim();
+        if (String(senderNftSymbol || '').trim()) finalSenderSymbol = String(senderNftSymbol).trim();
+
+        if (!signerImgUrl) {
+          const signerNftMeta = (signerKindNow === KIND_ERC721)
+            ? await readErc721Meta(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
+            : (signerKindNow === KIND_ERC1155)
+            ? await readErc1155Meta(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
+            : null;
+          if (signerNftMeta?.imgUrl) signerImgUrl = signerNftMeta.imgUrl;
+        }
+
+        if (!senderImgUrl) {
+          const senderNftMeta = (senderKindNow === KIND_ERC721)
+            ? await readErc721Meta(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
+            : (senderKindNow === KIND_ERC1155)
+            ? await readErc1155Meta(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
+            : null;
+          if (senderNftMeta?.imgUrl) senderImgUrl = senderNftMeta.imgUrl;
+        }
 
         if ((signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155) && (!finalSignerSymbol || finalSignerSymbol === '??')) finalSignerSymbol = 'NFT';
         if ((senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155) && (!finalSenderSymbol || finalSenderSymbol === '??')) finalSenderSymbol = 'NFT';
