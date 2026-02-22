@@ -120,11 +120,14 @@ export async function POST(req) {
         const rawErrorsHex = Array.isArray(rawErrors) ? rawErrors.map((v) => String(v || '')) : [];
 
         const signerKindNow = String(onchainOrder?.signer?.kind || '').toLowerCase();
+        const senderKindNow = String(onchainOrder?.sender?.kind || '').toLowerCase();
         const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+        const senderIsNft = senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155;
         let signerApprovalFallbackOk = false;
-        let checkErrorsFiltered = checkErrors;
+        let senderApprovalFallbackOk = false;
+        let checkErrorsFiltered = [...checkErrors];
 
-        if (signerIsNft && checkErrors.includes('SignerAllowanceLow')) {
+        if (signerIsNft && checkErrorsFiltered.includes('SignerAllowanceLow')) {
           try {
             if (signerKindNow === KIND_ERC721) {
               const c721 = new ethers.Contract(onchainOrder.signer.token, ERC721_APPROVAL_ABI, provider);
@@ -135,10 +138,28 @@ export async function POST(req) {
               signerApprovalFallbackOk = Boolean(await signerNft.isApprovedForAll(onchainOrder.signer.wallet, swapContract));
             }
             if (signerApprovalFallbackOk) {
-              checkErrorsFiltered = checkErrors.filter((e) => e !== 'SignerAllowanceLow');
+              checkErrorsFiltered = checkErrorsFiltered.filter((e) => e !== 'SignerAllowanceLow');
             }
           } catch {
             signerApprovalFallbackOk = false;
+          }
+        }
+
+        if (senderIsNft && checkErrorsFiltered.includes('SenderAllowanceLow') && senderWallet && senderWallet !== ethers.ZeroAddress) {
+          try {
+            if (senderKindNow === KIND_ERC721) {
+              const c721 = new ethers.Contract(onchainOrder.sender.token, ERC721_APPROVAL_ABI, provider);
+              const approvedTo = norm(await c721.getApproved(onchainOrder.sender.id));
+              senderApprovalFallbackOk = approvedTo === norm(swapContract);
+            } else {
+              const senderNft = new ethers.Contract(onchainOrder.sender.token, NFT_ABI, provider);
+              senderApprovalFallbackOk = Boolean(await senderNft.isApprovedForAll(senderWallet, swapContract));
+            }
+            if (senderApprovalFallbackOk) {
+              checkErrorsFiltered = checkErrorsFiltered.filter((e) => e !== 'SenderAllowanceLow');
+            }
+          } catch {
+            senderApprovalFallbackOk = false;
           }
         }
 
@@ -151,6 +172,7 @@ export async function POST(req) {
           checkErrors,
           checkErrorsFiltered,
           signerApprovalFallbackOk,
+          senderApprovalFallbackOk,
         });
 
         return Response.json({
@@ -162,6 +184,7 @@ export async function POST(req) {
           checkErrors: checkErrorsFiltered,
           checkErrorsRaw: checkErrors,
           signerApprovalFallbackOk,
+          senderApprovalFallbackOk,
           debug: {
             rawErrorsHex,
             senderWallet,
