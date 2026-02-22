@@ -45,7 +45,14 @@ const SWAP_ABI = [
   'function cancel(uint256[] nonces) external',
   'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
 ];
+const SWAP_ERC20_ABI = [
+  'function protocolFee() view returns (uint256)',
+  'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
+  'function cancel(uint256[] nonces) external',
+  'function swap(address recipient,uint256 nonce,uint256 expiry,address signerWallet,address signerToken,uint256 signerAmount,address senderToken,uint256 senderAmount,uint8 v,bytes32 r,bytes32 s) external',
+];
 const SWAP_IFACE = new ethers.Interface(SWAP_ABI);
+const SWAP_ERC20_IFACE = new ethers.Interface(SWAP_ERC20_ABI);
 const ORDER_TYPES = {
   Order: [
     { name: 'nonce', type: 'uint256' },
@@ -64,6 +71,19 @@ const ORDER_TYPES = {
     { name: 'amount', type: 'uint256' },
   ],
 };
+const ORDER_TYPES_ERC20 = {
+  OrderERC20: [
+    { name: 'nonce', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'signerWallet', type: 'address' },
+    { name: 'signerToken', type: 'address' },
+    { name: 'signerAmount', type: 'uint256' },
+    { name: 'protocolFee', type: 'uint256' },
+    { name: 'senderWallet', type: 'address' },
+    { name: 'senderToken', type: 'address' },
+    { name: 'senderAmount', type: 'uint256' },
+  ],
+};
 
 // removed duplicate abi block
 const QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
@@ -74,6 +94,7 @@ const BASE_SWAP_CONTRACT = '0x8a9969ed0A9bb3cDA7521DDaA614aE86e72e0A57';
 const BASE_SWAP_CONTRACT_ERC20_ERC20 = '0x95D598D839dE1B030848664960F0A20b848193F4';
 const BASE_SWAP_CONTRACT_ERC721 = '0x2aa29F096257bc6B253bfA9F6404B20Ae0ef9C4d';
 const BASE_SWAP_CONTRACT_ERC1155 = '0xD19783B48b11AFE1544b001c6d807A513e5A95cf';
+const IS_SWAP_ERC20 = (addr = '') => canonAddr(addr) === canonAddr(BASE_SWAP_CONTRACT_ERC20_ERC20);
 const KIND_ERC20 = '0x36372b07';
 const KIND_ERC721 = '0x80ac58cd';
 const KIND_ERC1155 = '0xd9b67a26';
@@ -316,7 +337,7 @@ async function resolveSwapForSenderToken(senderToken, provider, signerToken = nu
   if (kind === KIND_ERC1155) return { kind, swapContract: BASE_SWAP_CONTRACT_ERC1155 };
   if (signerToken) {
     const signerKind = await detectTokenKind(signerToken, provider);
-    if (signerKind === KIND_ERC20) return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
+    if (signerKind === KIND_ERC20) return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT_ERC20_ERC20 };
   }
   return { kind: KIND_ERC20, swapContract: BASE_SWAP_CONTRACT };
 }
@@ -1319,8 +1340,26 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       setStatus('simulating swap');
       const orderForCall = buildOrderForCall(latestChecks.requiredSenderKind);
+      const isSwapErc20 = IS_SWAP_ERC20(parsed.swapContract);
+      const swapErc20Args = [
+        address,
+        BigInt(parsed.nonce),
+        BigInt(parsed.expiry),
+        parsed.signerWallet,
+        parsed.signerToken,
+        BigInt(parsed.signerAmount),
+        parsed.senderToken,
+        BigInt(parsed.senderAmount),
+        Number(parsed.v),
+        parsed.r,
+        parsed.s,
+      ];
       try {
-        await swap.swap.staticCall(address, 0, orderForCall, { from: address });
+        if (isSwapErc20) {
+          await swap.swap.staticCall(...swapErc20Args, { from: address });
+        } else {
+          await swap.swap.staticCall(address, 0, orderForCall, { from: address });
+        }
       } catch (e) {
         const msg = errText(e);
         if (/missing revert data|over rate limit|unknown custom error/i.test(msg)) {
@@ -1334,7 +1373,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('sending swap tx');
       let gasLimit;
       try {
-        const estimatedGas = await swap.swap.estimateGas(address, 0, orderForCall, { from: address });
+        const estimatedGas = isSwapErc20
+          ? await swap.swap.estimateGas(...swapErc20Args, { from: address })
+          : await swap.swap.estimateGas(address, 0, orderForCall, { from: address });
         const gasLimitCap = 900000n;
         if (estimatedGas > gasLimitCap) throw new Error(`Gas estimate too high: ${estimatedGas}`);
         gasLimit = (estimatedGas * 150n) / 100n;
@@ -1348,7 +1389,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           throw e;
         }
       }
-      const swapData = SWAP_IFACE.encodeFunctionData('swap', [address, 0, orderForCall]);
+      const swapData = isSwapErc20
+        ? SWAP_ERC20_IFACE.encodeFunctionData('swap', swapErc20Args)
+        : SWAP_IFACE.encodeFunctionData('swap', [address, 0, orderForCall]);
       const txHash = await sendTransactionAsync({
         account: address,
         chainId: 8453,
@@ -1536,11 +1579,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         affiliateAmount: 0,
       };
 
+      const isSwapErc20 = IS_SWAP_ERC20(swapContract);
       const domain = {
-        name: 'SWAP',
-        version: '4.2',
+        name: isSwapErc20 ? 'SWAP_ERC20' : 'SWAP',
+        version: isSwapErc20 ? '4.3' : '4.2',
         chainId: 8453,
         verifyingContract: swapContract,
+      };
+      const typedOrderErc20 = {
+        nonce,
+        expiry,
+        signerWallet: address,
+        signerToken,
+        signerAmount,
+        protocolFee: Number(protocolFee.toString()),
+        senderWallet: selectedCounterpartyWallet,
+        senderToken,
+        senderAmount,
       };
 
       let sig;
@@ -1549,9 +1604,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         dbg('maker sign via wagmi useSignTypedData');
         sig = await signTypedDataAsync({
           domain,
-          types: ORDER_TYPES,
-          primaryType: 'Order',
-          message: typedOrder,
+          types: isSwapErc20 ? ORDER_TYPES_ERC20 : ORDER_TYPES,
+          primaryType: isSwapErc20 ? 'OrderERC20' : 'Order',
+          message: isSwapErc20 ? typedOrderErc20 : typedOrder,
         });
         dbg('maker sign wagmi success');
       } catch (e1) {
@@ -1583,11 +1638,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               { name: 'chainId', type: 'uint256' },
               { name: 'verifyingContract', type: 'address' },
             ],
-            ...ORDER_TYPES,
+            ...(isSwapErc20 ? ORDER_TYPES_ERC20 : ORDER_TYPES),
           },
           domain,
-          primaryType: 'Order',
-          message: typedOrder,
+          primaryType: isSwapErc20 ? 'OrderERC20' : 'Order',
+          message: isSwapErc20 ? typedOrderErc20 : typedOrder,
         });
         try {
           dbg('maker sign via eth_signTypedData_v4');

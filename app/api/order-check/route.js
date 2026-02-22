@@ -8,6 +8,13 @@ const SWAP_ABI = [
   'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
   'function check(address senderWallet,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) view returns (bytes32[])',
 ];
+const SWAP_ERC20_ABI = [
+  'function protocolFee() view returns (uint256)',
+  'function nonceUsed(address signer,uint256 nonce) view returns (bool)',
+  'function check(address senderWallet,uint256 nonce,uint256 expiry,address signerWallet,address signerToken,uint256 signerAmount,address senderToken,uint256 senderAmount,uint8 v,bytes32 r,bytes32 s) view returns (bytes32[])',
+];
+const SWAP_ERC20 = '0x95D598D839dE1B030848664960F0A20b848193F4';
+const KIND_ERC20 = '0x36372b07';
 
 const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
 
@@ -54,12 +61,13 @@ export async function POST(req) {
     for (const rpc of BASE_RPCS) {
       try {
         const provider = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
-        const swap = new ethers.Contract(swapContract, SWAP_ABI, provider);
+        const isSwapErc20 = norm(swapContract) === norm(SWAP_ERC20);
+        const swap = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, provider);
 
-        const [requiredSenderKind, protocolFeeOnchain, nonceUsed] = await Promise.all([
-          swap.requiredSenderKind(),
+        const [protocolFeeOnchain, nonceUsed, requiredSenderKind] = await Promise.all([
           swap.protocolFee(),
           swap.nonceUsed(norm(order.signer.wallet), BigInt(order.nonce)).catch(() => false),
+          isSwapErc20 ? Promise.resolve(KIND_ERC20) : swap.requiredSenderKind(),
         ]);
 
         const onchainOrder = {
@@ -86,7 +94,21 @@ export async function POST(req) {
           s: order.s,
         };
 
-        const rawErrors = await swap.check(senderWallet, onchainOrder).catch(() => []);
+        const rawErrors = isSwapErc20
+          ? await swap.check(
+            senderWallet,
+            BigInt(order.nonce),
+            BigInt(order.expiry),
+            norm(order.signer.wallet),
+            norm(order.signer.token),
+            BigInt(order.signer.amount),
+            norm(order.sender.token),
+            BigInt(order.sender.amount),
+            Number(order.v || 0),
+            order.r,
+            order.s
+          ).catch(() => [])
+          : await swap.check(senderWallet, onchainOrder).catch(() => []);
 
         const checkErrors = Array.isArray(rawErrors)
           ? rawErrors.map(toUtf8OrHex).filter(Boolean)
