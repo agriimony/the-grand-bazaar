@@ -3013,16 +3013,35 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     && checks.signerDecimals != null
   );
 
+  const parsedSenderKind = String(parsed?.senderKind || KIND_ERC20);
+  const parsedSignerKind = String(parsed?.signerKind || KIND_ERC20);
+
   const yourAmountDisplay = hasCheckAmounts
-    ? formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals))
+    ? (parsedSenderKind === KIND_ERC721
+      ? formatTokenIdLabel(String(parsed?.senderId || '0'))
+      : parsedSenderKind === KIND_ERC1155
+      ? formatIntegerAmount(String(checks.totalRequired))
+      : formatTokenAmount(ethers.formatUnits(checks.totalRequired, checks.senderDecimals)))
     : parsed
-    ? formatTokenAmount(ethers.formatUnits(senderTotalFallback.toString(), senderDecimalsFallback))
+    ? (parsedSenderKind === KIND_ERC721
+      ? formatTokenIdLabel(String(parsed.senderId || '0'))
+      : parsedSenderKind === KIND_ERC1155
+      ? formatIntegerAmount(String(senderTotalFallback))
+      : formatTokenAmount(ethers.formatUnits(senderTotalFallback.toString(), senderDecimalsFallback)))
     : '-';
 
   const counterpartyAmountDisplay = hasCheckAmounts
-    ? formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals))
+    ? (parsedSignerKind === KIND_ERC721
+      ? formatTokenIdLabel(String(parsed?.signerId || '0'))
+      : parsedSignerKind === KIND_ERC1155
+      ? formatIntegerAmount(String(checks.signerAmount))
+      : formatTokenAmount(ethers.formatUnits(checks.signerAmount, checks.signerDecimals)))
     : parsed
-    ? formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback))
+    ? (parsedSignerKind === KIND_ERC721
+      ? formatTokenIdLabel(String(parsed.signerId || '0'))
+      : parsedSignerKind === KIND_ERC1155
+      ? formatIntegerAmount(String(parsed.signerAmount))
+      : formatTokenAmount(ethers.formatUnits(parsed.signerAmount, signerDecimalsFallback)))
     : '-';
 
   const senderSymbolDisplay = makerOverrides.senderSymbol || checks?.senderSymbol || (parsed ? guessSymbol(parsed.senderToken) : 'TOKEN');
