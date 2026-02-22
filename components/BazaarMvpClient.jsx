@@ -1204,7 +1204,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (lastSwapTxHash) return checks;
 
     const checksStartedAt = Date.now();
-    const markTiming = (label) => dbg(`check timing ${label}: +${Date.now() - checksStartedAt}ms`);
+    let checksLastMarkAt = checksStartedAt;
+    const markTiming = (label) => {
+      const now = Date.now();
+      const total = now - checksStartedAt;
+      const delta = now - checksLastMarkAt;
+      checksLastMarkAt = now;
+      dbg(`check timing ${label}: +${total}ms (step ${delta}ms)`);
+    };
 
     try {
       setStatus('checking order');
@@ -1347,6 +1354,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const signerKindQuick = String(parsed.signerKind || KIND_ERC20);
       const senderKindQuick = String(parsed.senderKind || requiredSenderKind || KIND_ERC20);
       const skipPairRead = signerKindQuick !== KIND_ERC20 && senderKindQuick !== KIND_ERC20;
+      dbg(`pair read decision signerKind=${signerKindQuick} senderKind=${senderKindQuick} skip=${skipPairRead}`);
 
       let signerRead = { balance: 0n, allowance: 0n, symbol: signerSymbol, decimals: signerDecimals };
       let senderRead = { balance: 0n, allowance: 0n, symbol: senderSymbol, decimals: senderDecimals };
