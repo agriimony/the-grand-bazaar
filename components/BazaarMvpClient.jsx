@@ -2332,7 +2332,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const lines = [
         `${mentionPrefix}${summaryLine}`,
         `${isPrivateOrder ? 'Private offer' : 'Open offer'} • expires in ${offerExpiryInLabel(makerExpirySec)}`,
-        `Mute: #grandbazaar-swaps`,
+        `Mute: #grandbazaar`,
         `GBZ1:${compressed}`,
       ];
       const castText = lines.join('\n');
@@ -2535,7 +2535,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           senderId: parsed.senderId,
         }),
         `${String(parsed?.senderWallet || '').toLowerCase() === ethers.ZeroAddress.toLowerCase() ? 'Open offer' : 'Private offer'} • expires in ${offerExpiryInLabel(remaining)}`,
-        `Mute: #grandbazaar-swaps`,
+        `Mute: #grandbazaar`,
         `GBZ1:${orderPayload}`,
       ].join('\n');
 
