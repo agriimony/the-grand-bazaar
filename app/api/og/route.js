@@ -255,8 +255,22 @@ export async function GET(req) {
           fetchNftImage(senderToken, senderKind, senderId),
         ]);
 
+        const sanitizeEmbedUrl = (u) => {
+          try {
+            const raw = String(u || '').trim();
+            if (!/^https?:\/\//i.test(raw)) return '';
+            const parsedUrl = new URL(raw);
+            // Remove client-side side-tag dedupe markers for OG fetch stability.
+            parsedUrl.searchParams.delete('gbz_side');
+            parsedUrl.hash = '';
+            return parsedUrl.toString();
+          } catch {
+            return '';
+          }
+        };
+
         const embedUrls = Array.isArray(orderData?.embedUrls)
-          ? orderData.embedUrls.map((u) => String(u || '').trim()).filter((u) => /^https?:\/\//i.test(u))
+          ? orderData.embedUrls.map((u) => sanitizeEmbedUrl(u)).filter(Boolean)
           : [];
         const signerIsNft = signerKind === KIND_ERC721 || signerKind === KIND_ERC1155;
         const senderIsNft = senderKind === KIND_ERC721 || senderKind === KIND_ERC1155;
