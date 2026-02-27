@@ -1,0 +1,5 @@
+{
+  "name": "the-grand-bazaar",
+  "agent_manifest": "https://the-grand-bazaar.vercel.app/api/agent-manifest",
+  "agents_txt": "https://the-grand-bazaar.vercel.app/agents.txt"
+}
