@@ -1415,8 +1415,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const signerIsNftForQuote = String(parsed.signerKind || KIND_ERC20) === KIND_ERC721 || String(parsed.signerKind || KIND_ERC20) === KIND_ERC1155;
       const senderIsNftForQuote = String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC721 || String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC1155;
-      const signerUsdValue = signerIsNftForQuote ? null : await quoteUsdValue(readProvider, parsed.signerToken, makerRequired, signerDecimals);
-      const senderUsdValue = senderIsNftForQuote ? null : await quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals);
+      let signerUsdValue = null;
+      let senderUsdValue = null;
+      if (!signerIsNftForQuote) {
+        markTiming('usd quote signer start');
+        signerUsdValue = await quoteUsdValue(readProvider, parsed.signerToken, makerRequired, signerDecimals);
+        markTiming('usd quote signer done');
+      } else {
+        markTiming('usd quote signer skipped (nft leg)');
+      }
+      if (!senderIsNftForQuote) {
+        markTiming('usd quote sender start');
+        senderUsdValue = await quoteUsdValue(readProvider, parsed.senderToken, totalRequired, senderDecimals);
+        markTiming('usd quote sender done');
+      } else {
+        markTiming('usd quote sender skipped (nft leg)');
+      }
 
       if (!address) {
         setChecks((prev) => ({
@@ -1457,6 +1471,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let senderRead = { balance: 0n, allowance: 0n, symbol: senderSymbol, decimals: senderDecimals };
 
       if (!skipPairRead) {
+        markTiming('pair read batch start');
         const pairRead = await readPairBatch({
           signerToken: parsed.signerToken,
           signerOwner: parsed.signerWallet,
@@ -1466,10 +1481,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         });
         signerRead = pairRead.signer;
         senderRead = pairRead.sender;
+        markTiming('pair read batch done');
 
         // Safety fallback: if batch read is stale/failed, re-read ERC20 legs directly.
         try {
           if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
+            markTiming('pair fallback signer erc20 start');
             const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
             const [bal, alw] = await Promise.all([
               c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
@@ -1480,8 +1497,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               balance: BigInt(bal || signerRead.balance || 0n),
               allowance: BigInt(alw || signerRead.allowance || 0n),
             };
+            markTiming('pair fallback signer erc20 done');
           }
           if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
+            markTiming('pair fallback sender erc20 start');
             const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
             const [bal, alw] = await Promise.all([
               c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
@@ -1492,8 +1511,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               balance: BigInt(bal || senderRead.balance || 0n),
               allowance: BigInt(alw || senderRead.allowance || 0n),
             };
+            markTiming('pair fallback sender erc20 done');
           }
-        } catch {}
+        } catch {
+          markTiming('pair fallback error');
+        }
       }
       markTiming(skipPairRead ? 'pair reads skipped (nft-nft route)' : 'pair reads complete');
 
