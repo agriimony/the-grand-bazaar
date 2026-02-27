@@ -907,7 +907,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerRoyaltyAmountRaw, setMakerRoyaltyAmountRaw] = useState('0');
 
   const dbg = (msg) => {
-    setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${msg}`]);
+    const text = String(msg || '');
+    const keep = text.startsWith('check timing') || text.startsWith('pair read decision');
+    if (!keep) return;
+    setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${text}`]);
   };
 
   const showTopbarClose = Boolean(initialCompressed || initialCastHash);
