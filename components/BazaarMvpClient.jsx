@@ -691,16 +691,21 @@ function humanOfferLine({ signerKind, senderKind, signerAmountHuman, senderAmoun
 
 function castNftImageEmbeds({ senderKind, senderImgUrl, signerKind, signerImgUrl }) {
   const out = [];
-  const push = (kind, url) => {
+  const push = (kind, url, sideTag) => {
     const isNft = String(kind || '') === KIND_ERC721 || String(kind || '') === KIND_ERC1155;
     if (!isNft) return;
     const abs = toAbsoluteHttpUrl(url);
     if (!abs) return;
-    out.push(abs);
+    let finalUrl = abs;
+    if (out.length > 0 && out.includes(abs)) {
+      const sep = abs.includes('?') ? '&' : '?';
+      finalUrl = `${abs}${sep}gbz_side=${encodeURIComponent(sideTag || 'side')}`;
+    }
+    out.push(finalUrl);
   };
   // Embed order: signer first, then sender.
-  push(signerKind, signerImgUrl);
-  push(senderKind, senderImgUrl);
+  push(signerKind, signerImgUrl, 'signer');
+  push(senderKind, senderImgUrl, 'sender');
   return out.slice(0, 2);
 }
 
