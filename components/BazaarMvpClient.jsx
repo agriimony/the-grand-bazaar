@@ -695,7 +695,7 @@ function castNftImageEmbeds({ senderKind, senderImgUrl, signerKind, signerImgUrl
     const isNft = String(kind || '') === KIND_ERC721 || String(kind || '') === KIND_ERC1155;
     if (!isNft) return;
     const abs = toAbsoluteHttpUrl(url);
-    if (!abs || out.includes(abs)) return;
+    if (!abs) return;
     out.push(abs);
   };
   // Embed order: signer first, then sender.
