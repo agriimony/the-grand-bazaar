@@ -1483,39 +1483,54 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         senderRead = pairRead.sender;
         markTiming('pair read batch done');
 
-        // Safety fallback: if batch read is stale/failed, re-read ERC20 legs directly.
-        try {
-          if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
-            markTiming('pair fallback signer erc20 start');
-            const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
-            const [bal, alw] = await Promise.all([
-              c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
-              c.allowance(parsed.signerWallet, parsed.swapContract).catch(() => signerRead.allowance),
-            ]);
-            signerRead = {
-              ...signerRead,
-              balance: BigInt(bal || signerRead.balance || 0n),
-              allowance: BigInt(alw || signerRead.allowance || 0n),
-            };
-            markTiming('pair fallback signer erc20 done');
+        // Fallback ERC20 balance/allowance reads are expensive.
+        // Prefer swap.check signals and only re-read directly when check errors suggest allowance/balance issues.
+        const checkErrSet = new Set((checkErrors || []).map((e) => String(e || '').trim()));
+        const needsFallbackReads = [
+          'SignerBalanceLow',
+          'SignerAllowanceLow',
+          'SenderBalanceLow',
+          'SenderAllowanceLow',
+        ].some((k) => checkErrSet.has(k));
+
+        if (needsFallbackReads) {
+          try {
+            if (String(parsed.signerKind || KIND_ERC20) === KIND_ERC20) {
+              markTiming('pair fallback signer erc20 start');
+              const c = new ethers.Contract(parsed.signerToken, ERC20_ABI, readProvider);
+              const [bal, alw] = await Promise.all([
+                c.balanceOf(parsed.signerWallet).catch(() => signerRead.balance),
+                c.allowance(parsed.signerWallet, parsed.swapContract).catch(() => signerRead.allowance),
+              ]);
+              signerRead = {
+                ...signerRead,
+                balance: BigInt(bal || signerRead.balance || 0n),
+                allowance: BigInt(alw || signerRead.allowance || 0n),
+              };
+              markTiming('pair fallback signer erc20 done');
+            }
+            if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
+              markTiming('pair fallback sender erc20 start');
+              const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
+              const [bal, alw] = await Promise.all([
+                c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
+                c.allowance(effectiveSenderOwner, parsed.swapContract).catch(() => senderRead.allowance),
+              ]);
+              senderRead = {
+                ...senderRead,
+                balance: BigInt(bal || senderRead.balance || 0n),
+                allowance: BigInt(alw || senderRead.allowance || 0n),
+              };
+              markTiming('pair fallback sender erc20 done');
+            }
+          } catch {
+            markTiming('pair fallback error');
           }
-          if (String(parsed.senderKind || requiredSenderKind || KIND_ERC20) === KIND_ERC20) {
-            markTiming('pair fallback sender erc20 start');
-            const c = new ethers.Contract(parsed.senderToken, ERC20_ABI, readProvider);
-            const [bal, alw] = await Promise.all([
-              c.balanceOf(effectiveSenderOwner).catch(() => senderRead.balance),
-              c.allowance(effectiveSenderOwner, parsed.swapContract).catch(() => senderRead.allowance),
-            ]);
-            senderRead = {
-              ...senderRead,
-              balance: BigInt(bal || senderRead.balance || 0n),
-              allowance: BigInt(alw || senderRead.allowance || 0n),
-            };
-            markTiming('pair fallback sender erc20 done');
-          }
-        } catch {
-          markTiming('pair fallback error');
+        } else {
+          markTiming('pair fallback skipped (swap.check clean)');
         }
+      } else {
+        markTiming('pair fallback skipped (pair read skipped)');
       }
       markTiming(skipPairRead ? 'pair reads skipped (nft-nft route)' : 'pair reads complete');
 
