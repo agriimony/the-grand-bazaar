@@ -1,9 +1,15 @@
 import BazaarMvpClient from '../components/BazaarMvpClient';
 import AutoFitTitle from '../components/AutoFitTitle';
+import LandingConnect from '../components/LandingConnect';
 
 export default function Home({ searchParams }) {
   const compressed = searchParams?.order || '';
   const castHash = searchParams?.castHash || searchParams?.cast || searchParams?.c || '';
+
+  // Keep deeplink/order routes working on root, otherwise show landing screen.
+  if (!compressed && !castHash) {
+    return <LandingConnect />;
+  }
 
   return (
     <main className="bazaar-shell">

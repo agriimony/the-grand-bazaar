@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '' }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -873,7 +873,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [userPfpUrl, setUserPfpUrl] = useState('');
   const [autoConnectTried, setAutoConnectTried] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
-  const [makerMode, setMakerMode] = useState(false);
+  const [makerMode, setMakerMode] = useState(Boolean(startInMakerMode));
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenModalLoading, setTokenModalLoading] = useState(false);
   const [tokenModalStep, setTokenModalStep] = useState('grid');
