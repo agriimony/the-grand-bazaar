@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 
@@ -8,6 +8,23 @@ export default function LandingConnect() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    async function signalReady() {
+      try {
+        const mod = await import('@farcaster/miniapp-sdk');
+        const sdk = mod?.sdk || mod?.default || mod;
+        await sdk?.actions?.ready?.();
+      } catch {
+        // no-op outside farcaster clients
+      }
+    }
+    if (mounted) signalReady();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function onConnect() {
     if (busy) return;
