@@ -5,7 +5,7 @@ const { ethers } = require('ethers');
 const IN = process.env.IN_FILE || 'order.json';
 const OUT = process.env.OUT_FILE || '';
 const WEB_BASE = process.env.AIRSWAP_WEB_BASE || 'https://dex.airswap.xyz/#/order/';
-const MINIAPP_BASE = process.env.MINIAPP_BASE || 'https://bazaar.agrimonys.com/';
+const MINIAPP_BASE = process.env.MINIAPP_BASE || 'https://dev-bazaar.agrimonys.com/';
 
 function short(addr) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;

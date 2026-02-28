@@ -7,12 +7,12 @@
   "frame": {
     "version": "1",
     "name": "The Grand Bazaar",
-    "iconUrl": "https://bazaar.agrimonys.com/icon.jpg",
-    "homeUrl": "https://bazaar.agrimonys.com/",
-    "castShareUrl": "https://bazaar.agrimonys.com/share",
-    "imageUrl": "https://bazaar.agrimonys.com/api/og",
+    "iconUrl": "https://dev-bazaar.agrimonys.com/icon.jpg",
+    "homeUrl": "https://dev-bazaar.agrimonys.com/",
+    "castShareUrl": "https://dev-bazaar.agrimonys.com/share",
+    "imageUrl": "https://dev-bazaar.agrimonys.com/api/og",
     "buttonTitle": "Enter the Bazaar",
-    "splashImageUrl": "https://bazaar.agrimonys.com/splash.jpg",
+    "splashImageUrl": "https://dev-bazaar.agrimonys.com/splash.jpg",
     "splashBackgroundColor": "#A8CB58"
   }
 }

@@ -1,10 +1,10 @@
 # The Grand Bazaar - Agent Discovery
 
 Agent manifest:
-https://bazaar.agrimonys.com/api/agent-manifest
+https://dev-bazaar.agrimonys.com/api/agent-manifest
 
 Bundled skill root:
-https://bazaar.agrimonys.com/skills/grand-bazaar-swap/
+https://dev-bazaar.agrimonys.com/skills/grand-bazaar-swap/
 
 Primary skill:
 - grand-bazaar-swap

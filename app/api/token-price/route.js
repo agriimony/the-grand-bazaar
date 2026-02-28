@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 
 export const dynamic = 'force-dynamic';
 
-const APP_ORIGIN = process.env.APP_ORIGIN || 'https://bazaar.agrimonys.com';
+const APP_ORIGIN = process.env.APP_ORIGIN || 'https://dev-bazaar.agrimonys.com';
 
 function normHost(v = '') {
   try {
