@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 export const dynamic = 'force-dynamic';
 
 const ZAPPER_URL = 'https://public.zapper.xyz/graphql';
-const APP_ORIGIN = process.env.APP_ORIGIN || 'https://the-grand-bazaar.vercel.app';
+const APP_ORIGIN = process.env.APP_ORIGIN || 'https://bazaar.agrimonys.com';
 
 function normHost(v = '') {
   try { return new URL(v).host.toLowerCase(); } catch { return String(v || '').toLowerCase(); }

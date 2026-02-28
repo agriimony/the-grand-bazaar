@@ -662,7 +662,7 @@ function toAbsoluteHttpUrl(u = '') {
   if (!s) return '';
   const normalized = ipfsToHttp(s);
   if (/^https?:\/\//i.test(normalized)) return normalized;
-  if (normalized.startsWith('/')) return `https://the-grand-bazaar.vercel.app${normalized}`;
+  if (normalized.startsWith('/')) return `https://bazaar.agrimonys.com${normalized}`;
   return '';
 }
 
@@ -2361,7 +2361,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       dbg('maker sign signature parsed, encoding compressed order');
       const compressed = encodeCompressedOrder(fullOrder);
-      const miniappUrl = `https://the-grand-bazaar.vercel.app/?order=${encodeURIComponent(compressed)}`;
+      const miniappUrl = `https://bazaar.agrimonys.com/?order=${encodeURIComponent(compressed)}`;
       const isPrivateOrder = String(selectedCounterpartyWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
       const mentionPrefix = isPrivateOrder && counterpartyHandle ? `${counterpartyHandle} ` : '';
       const summaryLine = humanOfferLine({
@@ -2435,7 +2435,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         : makerCastText;
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
 
         let step2Hash = '';
@@ -2585,7 +2585,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ].join('\n');
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://the-grand-bazaar.vercel.app/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
         try {
           await compose({

@@ -8,14 +8,14 @@ const vt323 = VT323({ subsets: ['latin'], weight: '400', variable: '--font-pixel
 
 const miniAppEmbed = {
   version: '1',
-  imageUrl: 'https://the-grand-bazaar.vercel.app/api/og',
-  castShareUrl: 'https://the-grand-bazaar.vercel.app/share',
+  imageUrl: 'https://bazaar.agrimonys.com/api/og',
+  castShareUrl: 'https://bazaar.agrimonys.com/share',
   button: {
     title: 'Enter the Bazaar',
     action: {
       type: 'launch_frame',
       name: 'The Grand Bazaar',
-      splashImageUrl: 'https://the-grand-bazaar.vercel.app/splash.jpg',
+      splashImageUrl: 'https://bazaar.agrimonys.com/splash.jpg',
       splashBackgroundColor: '#A8CB58',
     },
   },
