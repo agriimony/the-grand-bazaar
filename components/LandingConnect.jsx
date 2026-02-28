@@ -67,18 +67,42 @@ export default function LandingConnect() {
   return (
     <div style={{
       minHeight: '100dvh',
+      position: 'relative',
       display: 'grid',
       placeItems: 'center',
-      background: 'linear-gradient(180deg, #403729 0%, #2a2318 45%, #18130d 100%)',
       color: '#f7e6b5',
       fontFamily: 'var(--font-pixel), monospace',
       padding: 16,
+      overflow: 'hidden',
+      background: '#17120b',
     }}>
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: -24,
+          backgroundImage: 'url(/landing-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          filter: 'blur(7px) brightness(0.5) saturate(0.9)',
+          transform: 'scale(1.04)',
+        }}
+      />
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(circle at 50% 40%, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.72) 100%)',
+        }}
+      />
       <div style={{
+        position: 'relative',
+        zIndex: 1,
         width: 'min(92vw, 520px)',
         border: '2px solid #7f6a3b',
-        boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 14px 36px rgba(0,0,0,0.55)',
-        background: 'linear-gradient(180deg, #4a4231 0%, #3b3326 55%, #30291f 100%)',
+        boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
+        background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
         borderRadius: 12,
         overflow: 'hidden',
       }}>
