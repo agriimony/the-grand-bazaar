@@ -824,9 +824,14 @@ async function readTokenForWallet(tokenAddr, wallet) {
   return { ok: false, rpc: 'none', balance: 0n, decimals: guessDecimals(tokenAddr), symbol: guessSymbol(tokenAddr) };
 }
 
-async function waitForTxConfirmation({ publicClient, txHash, timeoutMs = 180000 }) {
-  if (!publicClient) throw new Error('public client unavailable');
-  return publicClient.waitForTransactionReceipt({ hash: txHash, timeout: timeoutMs, confirmations: 1 });
+async function waitForTxConfirmation({ publicClient, provider, txHash, timeoutMs = 180000 }) {
+  if (publicClient) {
+    return publicClient.waitForTransactionReceipt({ hash: txHash, timeout: timeoutMs, confirmations: 1 });
+  }
+  if (provider) {
+    return provider.waitForTransaction(txHash, 1, timeoutMs);
+  }
+  throw new Error('no tx confirmation client');
 }
 
 function errText(e) {
@@ -912,6 +917,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (!keep) return;
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${text}`]);
   };
+
+  async function sendTx(request) {
+    if (sendTransactionAsync) return sendTransactionAsync(request);
+    if (!provider) throw new Error('wallet connector not ready');
+    const signer = await provider.getSigner();
+    const tx = await signer.sendTransaction(request);
+    return tx.hash;
+  }
+
+  async function signTyped(payload) {
+    if (signTypedDataAsync) return signTypedDataAsync(payload);
+    if (!provider) throw new Error('wallet connector not ready');
+    const signer = await provider.getSigner();
+    return signer.signTypedData(payload.domain, payload.types, payload.message);
+  }
 
   const showTopbarClose = Boolean(initialCompressed || initialCastHash);
 
@@ -1187,16 +1207,39 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   async function connectWallet() {
     try {
       setStatus('connecting wallet');
-      if (!isConnected && connectors?.[0]) {
-        try { await connect({ connector: connectors[0] }); } catch {}
+
+      let sdk = null;
+      let inMiniApp = false;
+      try {
+        const mod = await import('@farcaster/miniapp-sdk');
+        sdk = mod?.sdk || mod?.default || mod;
+        inMiniApp = Boolean(await sdk?.isInMiniApp?.());
+      } catch {
+        // not in farcaster context
       }
-      const mod = await import('@farcaster/miniapp-sdk');
-      const sdk = mod?.sdk || mod?.default || mod;
+
+      const farcasterConnector = (connectors || []).find((c) => /farcaster/i.test(String(c?.id || '')));
+      const injectedConnector = (connectors || []).find((c) => /injected|metamask|coinbase/i.test(String(c?.id || '')));
+      const walletConnectConnector = (connectors || []).find((c) => /walletconnect/i.test(String(c?.id || '')));
+      const preferredConnector = inMiniApp
+        ? (farcasterConnector || injectedConnector || walletConnectConnector || connectors?.[0])
+        : (injectedConnector || walletConnectConnector || farcasterConnector || connectors?.[0]);
+
+      if (!isConnected && preferredConnector) {
+        try { await connect({ connector: preferredConnector }); } catch {}
+      }
+
       let eip1193 = null;
       const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
-      if (getter) eip1193 = await getter();
+      if (inMiniApp && getter) {
+        try { eip1193 = await getter(); } catch {}
+      }
+      if (!eip1193 && preferredConnector?.getProvider) {
+        try { eip1193 = await preferredConnector.getProvider(); } catch {}
+      }
       if (!eip1193 && typeof window !== 'undefined' && window.ethereum) eip1193 = window.ethereum;
       if (!eip1193) throw new Error('No wallet provider found');
+
       const bp = new ethers.BrowserProvider(eip1193);
       const signer = await bp.getSigner();
       setAddress(await signer.getAddress());
@@ -1247,9 +1290,6 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const sdk = mod?.sdk || mod?.default || mod;
         const inMiniApp = await sdk?.isInMiniApp?.();
         if (inMiniApp) {
-          if (!isConnected && connectors?.[0]) {
-            try { await connect({ connector: connectors[0] }); } catch {}
-          }
           setAutoConnectTried(true);
           await connectWallet();
           return;
@@ -1867,7 +1907,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      if (!sendTransactionAsync || !publicClient) {
+      if ((!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
         setStatus('wallet connector not ready');
         return;
       }
@@ -1903,7 +1943,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, latestChecks.totalRequired]);
           let txHash;
           try {
-            txHash = await sendTransactionAsync({
+            txHash = await sendTx({
               account: address,
               chainId: 8453,
               to: parsed.senderToken,
@@ -1943,7 +1983,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
 
           setStatus(`approving ${approveSymbol}: confirming`);
-          await waitForTxConfirmation({ publicClient, txHash });
+          await waitForTxConfirmation({ publicClient, provider, txHash });
           setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
           setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}... ready to swap`);
         } catch (e) {
@@ -2022,7 +2062,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const swapData = isSwapErc20
         ? SWAP_ERC20_IFACE.encodeFunctionData('swap', swapErc20Args)
         : SWAP_IFACE.encodeFunctionData('swap', [address, maxRoyaltyForCall, orderForCall]);
-      const txHash = await sendTransactionAsync({
+      const txHash = await sendTx({
         account: address,
         chainId: 8453,
         to: parsed.swapContract,
@@ -2030,7 +2070,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         gas: gasLimit,
         value: 0n,
       });
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       setLastSwapTxHash(txHash);
       setStatus(`swap confirmed: ${txHash.slice(0, 10)}...`);
       setChecks((prev) => (prev ? { ...prev, takerApprovalOk: true } : prev));
@@ -2042,7 +2082,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
   async function onMakerApprove() {
     if (!makerMode) return;
-    if (!address || !sendTransactionAsync || !publicClient) {
+    if (!address || (!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
       setStatus('wallet connector not ready');
       return;
     }
@@ -2097,7 +2137,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       let txHash;
       try {
-        txHash = await sendTransactionAsync({
+        txHash = await sendTx({
           account: address,
           chainId: 8453,
           to: token,
@@ -2137,7 +2177,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       setStatus(`approving ${sym}: confirming`);
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       setMakerStep('sign');
       setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
@@ -2170,7 +2210,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     if (!makerMode) { dbg('maker sign aborted: no makerMode'); return; }
     if (!address) {
       dbg('maker sign aborted: no address');
-      setStatus('connect wallet');
+      setStatus('Connect');
       return;
     }
 
@@ -2277,7 +2317,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       try {
         if (!walletProvider?.request) throw new Error('wagmi skipped: no walletProvider.request');
         dbg('maker sign via wagmi useSignTypedData');
-        sig = await signTypedDataAsync({
+        sig = await signTyped({
           domain,
           types: isSwapErc20 ? ORDER_TYPES_ERC20 : ORDER_TYPES,
           primaryType: isSwapErc20 ? 'OrderERC20' : 'Order',
@@ -2510,7 +2550,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('order/checks not ready');
       return;
     }
-    if (!address || !sendTransactionAsync || !publicClient) {
+    if (!address || (!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
       setStatus('wallet connector not ready');
       return;
     }
@@ -2535,14 +2575,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         ? NFT_APPROVAL_IFACE.encodeFunctionData('setApprovalForAll', [parsed.swapContract, true])
         : ERC20_IFACE.encodeFunctionData('approve', [parsed.swapContract, approveAmount]);
       setStatus(`approving ${checks?.signerSymbol || 'token'}`);
-      const txHash = await sendTransactionAsync({
+      const txHash = await sendTx({
         account: address,
         chainId: 8453,
         to: parsed.signerToken,
         data: approveData,
         value: 0n,
       });
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       setStatus(`approve confirmed: ${String(txHash).slice(0, 10)}...`);
       await runChecks();
     } catch (e) {
@@ -2633,7 +2673,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('order not loaded');
       return;
     }
-    if (!address || !sendTransactionAsync || !publicClient) {
+    if (!address || (!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
       setStatus('wallet connector not ready');
       return;
     }
@@ -2644,7 +2684,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setStatus('cancelling order');
       let txHash;
       try {
-        txHash = await sendTransactionAsync({
+        txHash = await sendTx({
           account: address,
           chainId: 8453,
           to: parsed.swapContract,
@@ -2674,7 +2714,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
 
       setStatus('cancelling order: confirming');
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       setChecks((prev) => ({ ...(prev || {}), nonceUsed: true }));
       setStatus(`order cancelled: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
@@ -2685,7 +2725,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   async function onWrapFromEth() {
     if (!parsed || !checks) return;
     if (!checks.canWrapFromEth || !checks.wrapAmountNeeded || checks.wrapAmountNeeded <= 0n) return;
-    if (!address || !sendTransactionAsync || !publicClient) {
+    if (!address || (!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
       setStatus('wallet connector not ready');
       return;
     }
@@ -2693,7 +2733,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     try {
       setIsWrapping(true);
       setStatus('wrapping ETH to WETH');
-      const txHash = await sendTransactionAsync({
+      const txHash = await sendTx({
         account: address,
         chainId: 8453,
         to: BASE_WETH,
@@ -2701,7 +2741,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         value: checks.wrapAmountNeeded,
       });
       setStatus('wrapping ETH to WETH: confirming');
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
       await runChecks();
     } catch (e) {
@@ -2725,7 +2765,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       : (parsed?.signerWallet || (hasSpecificCounterparty ? String(makerOverrides.counterpartyWallet || '') : ''));
     const wallet = panelWallet || '';
     if (!wallet && !isPublicCounterpartyPanel) {
-      setStatus('connect wallet');
+      setStatus('Connect');
       return;
     }
     setTokenModalPanel(panel);
@@ -3508,7 +3548,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    if (!address || !sendTransactionAsync || !publicClient) {
+    if (!address || (!sendTransactionAsync && !provider) || (!publicClient && !provider)) {
       setStatus('wallet connector not ready');
       return;
     }
@@ -3517,7 +3557,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       setIsWrapping(true);
       const amountRaw = ethers.parseUnits(String(pendingAmount), 18);
       setStatus('wrapping ETH to WETH');
-      const txHash = await sendTransactionAsync({
+      const txHash = await sendTx({
         account: address,
         chainId: 8453,
         to: BASE_WETH,
@@ -3525,7 +3565,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         value: amountRaw,
       });
       setStatus('wrapping ETH to WETH: confirming');
-      await waitForTxConfirmation({ publicClient, txHash });
+      await waitForTxConfirmation({ publicClient, provider, txHash });
       await swapPendingEthToWeth();
       setStatus(`wrap confirmed: ${String(txHash).slice(0, 10)}...`);
     } catch (e) {
