@@ -118,7 +118,7 @@ export default function LandingConnect() {
                 cursor: busy ? 'default' : 'pointer',
               }}
             >
-              {busy ? 'Connecting...' : 'Connect Wallet'}
+              {busy ? 'Connecting...' : 'Connect'}
             </button>
           </div>
           {err ? <p style={{ marginTop: 10, color: '#ffb4a8' }}>{err}</p> : null}
