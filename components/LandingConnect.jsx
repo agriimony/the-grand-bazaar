@@ -84,7 +84,7 @@ export default function LandingConnect() {
           backgroundImage: 'url(/landing-bg.jpg)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'blur(7px) brightness(0.5) saturate(0.9)',
+          filter: 'blur(4.5px) brightness(0.5) saturate(0.9)',
           transform: 'scale(1.04)',
         }}
       />
