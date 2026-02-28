@@ -114,7 +114,7 @@ export default function LandingConnect() {
                 background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
                 color: '#17120b',
                 fontWeight: 800,
-                fontSize: 16,
+                fontSize: 20,
                 cursor: busy ? 'default' : 'pointer',
               }}
             >
