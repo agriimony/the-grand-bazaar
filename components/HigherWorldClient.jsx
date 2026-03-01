@@ -11,10 +11,17 @@ function hashToUnit(str) {
   return (h >>> 0) / 4294967295;
 }
 
+function trimText(s, max = 62) {
+  const t = String(s || '').trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
 export default function HigherWorldClient() {
   const size = 17;
   const center = Math.floor(size / 2);
   const [npcs, setNpcs] = useState([]);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let dead = false;
@@ -31,15 +38,27 @@ export default function HigherWorldClient() {
     };
   }, []);
 
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 6000);
+    return () => clearInterval(t);
+  }, []);
+
+  const npcsWithCurrentCast = useMemo(() => {
+    return (npcs || []).map((n) => {
+      const list = Array.isArray(n?.casts) ? n.casts : [];
+      const idx = list.length ? tick % list.length : 0;
+      return { ...n, currentCast: list[idx] || null };
+    });
+  }, [npcs, tick]);
+
   const byCell = useMemo(() => {
     const map = new Map();
-    for (const n of npcs) {
-      const seed = String(n.castHash || n.username || n.fid || '');
-      // Scatter around center, avoid the center tile itself.
+    for (const n of npcsWithCurrentCast) {
+      const seed = String(n.fid || n.username || n.currentCast?.castHash || 'npc');
+      // Scatter around center, avoid center tile itself.
       let x = Math.floor(hashToUnit(seed + 'x') * size);
       let y = Math.floor(hashToUnit(seed + 'y') * size);
       if (x === center && y === center) x = (x + 1) % size;
-      // If collision, nudge deterministically.
       let tries = 0;
       while (map.has(`${x}-${y}`) && tries < size * size) {
         x = (x + 2) % size;
@@ -50,13 +69,14 @@ export default function HigherWorldClient() {
       map.set(`${x}-${y}`, n);
     }
     return map;
-  }, [npcs]);
+  }, [npcsWithCurrentCast]);
 
   const cells = [];
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const key = `${x}-${y}`;
       const npc = byCell.get(key);
+      const current = npc?.currentCast || null;
       const isCenter = x === center && y === center;
       cells.push(
         <div
@@ -77,19 +97,42 @@ export default function HigherWorldClient() {
           {isCenter ? (
             '⛲'
           ) : npc ? (
-            <a
-              href={npc.castUrl}
-              target="_blank"
-              rel="noreferrer"
-              title={`@${npc.username}`}
-              style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}
-            >
-              <img
-                src={npc.pfp}
-                alt={npc.username}
-                style={{ width: '88%', height: '88%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(247,230,181,0.7)' }}
-              />
-            </a>
+            <>
+              {current?.text ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: 2,
+                    right: 2,
+                    fontSize: 9,
+                    lineHeight: 1.1,
+                    color: '#fff',
+                    textAlign: 'center',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+                    pointerEvents: 'none',
+                    background: 'linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.05))',
+                    borderRadius: 4,
+                    padding: '1px 2px',
+                  }}
+                >
+                  {trimText(current.text)}
+                </div>
+              ) : null}
+              <a
+                href={current?.castUrl || '#'}
+                target="_blank"
+                rel="noreferrer"
+                title={`@${npc.username}`}
+                style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}
+              >
+                <img
+                  src={npc.pfp}
+                  alt={npc.username}
+                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(247,230,181,0.7)' }}
+                />
+              </a>
+            </>
           ) : null}
         </div>
       );
