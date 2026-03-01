@@ -992,12 +992,42 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   ]);
 
   useEffect(() => {
-    const name = String(initialCounterparty || '').trim();
-    if (!makerMode || !name) return;
-    const clean = name.replace(/^@/, '');
-    if (!counterpartyInput) setCounterpartyInput(clean);
-    if (!counterpartyName || counterpartyName === 'Counterparty') setCounterpartyName(clean);
-    if (!counterpartyHandle) setCounterpartyHandle(clean.startsWith('@') ? clean : `@${clean}`);
+    let cancelled = false;
+    async function prefillCounterpartyFromQuery() {
+      const name = String(initialCounterparty || '').trim();
+      if (!makerMode || !name) return;
+      const clean = name.replace(/^@/, '');
+      const atHandle = clean.startsWith('@') ? clean : `@${clean}`;
+
+      setCounterpartyInput(clean);
+      setCounterpartyName(clean);
+      setCounterpartyHandle(atHandle);
+
+      // Best-effort lookup so maker flow can prefill richer profile and wallet.
+      try {
+        const r = await fetch(`/api/farcaster-name?q=${encodeURIComponent(clean)}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const d = await r.json();
+        const list = Array.isArray(d?.results) ? d.results : [];
+        const exact = list.find((u) => String(u?.username || '').toLowerCase() === clean.toLowerCase()) || list[0];
+        if (!exact || cancelled) return;
+
+        const wallet = /^0x[a-fA-F0-9]{40}$/.test(String(exact?.wallet || ''))
+          ? ethers.getAddress(String(exact.wallet)).toLowerCase()
+          : ethers.ZeroAddress;
+
+        setCounterpartyName(String(exact.displayName || exact.username || clean));
+        setCounterpartyHandle(`@${String(exact.username || clean).replace(/^@/, '')}`);
+        setCounterpartyProfileUrl(String(exact.profileUrl || ''));
+        setCounterpartyPfpUrl(String(exact.pfpUrl || ''));
+        setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: wallet }));
+      } catch {
+        // keep handle-only prefill
+      }
+    }
+
+    prefillCounterpartyFromQuery();
+    return () => { cancelled = true; };
   }, [makerMode, initialCounterparty]);
 
 
