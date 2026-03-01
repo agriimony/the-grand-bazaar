@@ -1128,13 +1128,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     async function resolveName() {
       if (!orderData?.signerWallet) {
         if (makerMode) {
-          setCounterpartyName('Anybody');
+          const hasMakerPrefill = Boolean(
+            (makerOverrides?.counterpartyWallet && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase())
+            || String(counterpartyInput || '').trim()
+            || String(counterpartyHandle || '').trim()
+            || String(initialCounterparty || '').trim()
+          );
+          if (!hasMakerPrefill) {
+            setCounterpartyName('Anybody');
+            setCounterpartyHandle('');
+            setCounterpartyProfileUrl('');
+            setCounterpartyPfpUrl('');
+          }
         } else {
           setCounterpartyName('Counterparty');
+          setCounterpartyHandle('');
+          setCounterpartyProfileUrl('');
+          setCounterpartyPfpUrl('');
         }
-        setCounterpartyHandle('');
-        setCounterpartyProfileUrl('');
-        setCounterpartyPfpUrl('');
         return;
       }
       try {
@@ -1154,7 +1165,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
     }
     resolveName();
-  }, [orderData?.signerWallet, makerMode]);
+  }, [orderData?.signerWallet, makerMode, makerOverrides?.counterpartyWallet, counterpartyInput, counterpartyHandle, initialCounterparty]);
 
   useEffect(() => {
     async function resolveSenderName() {
