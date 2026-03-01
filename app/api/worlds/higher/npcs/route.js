@@ -34,6 +34,11 @@ function mapCast(c) {
   const isPublicSwapOffer = hasGbzPayload && isOpenOffer;
   const castUrl = isPublicSwapOffer ? `/c/${hash}` : permalink;
 
+  const ethAddrs = Array.isArray(user?.verified_addresses?.eth_addresses)
+    ? user.verified_addresses.eth_addresses
+    : [];
+  const primaryWallet = ethAddrs.find((a) => /^0x[a-fA-F0-9]{40}$/.test(String(a || '').trim())) || '';
+
   const replies = getCount(c, ['replies.count', 'replies_count', 'reply_count']);
   const quotes = getCount(c, ['quotes.count', 'quotes_count', 'quote_count']);
   const recasts = getCount(c, ['recasts.count', 'recasts_count', 'recast_count']);
@@ -45,6 +50,7 @@ function mapCast(c) {
     username,
     displayName: String(user?.display_name || username),
     pfp,
+    primaryWallet,
     castHash: hash,
     parentHash,
     castUrl,

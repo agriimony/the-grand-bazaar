@@ -996,6 +996,17 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     async function prefillCounterpartyFromQuery() {
       const name = String(initialCounterparty || '').trim();
       if (!makerMode || !name) return;
+
+      // Wallet prefill path
+      if (/^0x[a-fA-F0-9]{40}$/.test(name)) {
+        const wallet = ethers.getAddress(name).toLowerCase();
+        setCounterpartyInput(wallet);
+        setCounterpartyName(`${wallet.slice(0, 6)}…${wallet.slice(-4)}`);
+        setCounterpartyHandle('');
+        setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: wallet }));
+        return;
+      }
+
       const clean = name.replace(/^@/, '');
       const atHandle = clean.startsWith('@') ? clean : `@${clean}`;
 

@@ -221,8 +221,10 @@ export default function HigherWorldClient() {
     if (offerHash) {
       router.push(`/c/${offerHash}`);
     } else {
-      const handle = String(menu.npc?.username || '').replace(/^@/, '');
-      router.push(`/maker?counterparty=${encodeURIComponent(handle)}`);
+      const wallet = String(menu.npc?.primaryWallet || '').trim();
+      const fallback = String(menu.npc?.username || '').replace(/^@/, '');
+      const cp = /^0x[a-fA-F0-9]{40}$/.test(wallet) ? wallet : fallback;
+      router.push(`/maker?counterparty=${encodeURIComponent(cp)}`);
     }
     setMenu(null);
   };
