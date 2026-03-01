@@ -37,25 +37,46 @@ export default function WorldsPage() {
         </div>
         <div style={{ padding: 18 }}>
           <p style={{ margin: '0 0 12px', textAlign: 'center' }}>Choose a world</p>
-          <Link
-            href="/higher"
-            style={{
-              display: 'block',
-              width: '100%',
-              textAlign: 'center',
-              padding: '12px 16px',
-              borderRadius: 6,
-              border: '2px solid #8f7a49',
-              boxShadow: '0 0 0 1px #2a2216 inset',
-              background: 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
-              color: '#17120b',
-              fontWeight: 800,
-              fontSize: 24,
-              textDecoration: 'none',
-            }}
-          >
-            /higher
-          </Link>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <Link
+              href="/higher"
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'center',
+                padding: '12px 16px',
+                borderRadius: 6,
+                border: '2px solid #8f7a49',
+                boxShadow: '0 0 0 1px #2a2216 inset',
+                background: 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
+                color: '#17120b',
+                fontWeight: 800,
+                fontSize: 24,
+                textDecoration: 'none',
+              }}
+            >
+              /higher
+            </Link>
+            <Link
+              href="/degen"
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'center',
+                padding: '12px 16px',
+                borderRadius: 6,
+                border: '2px solid #8f7a49',
+                boxShadow: '0 0 0 1px #2a2216 inset',
+                background: 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
+                color: '#17120b',
+                fontWeight: 800,
+                fontSize: 24,
+                textDecoration: 'none',
+              }}
+            >
+              /degen
+            </Link>
+          </div>
         </div>
       </div>
     </main>

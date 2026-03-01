@@ -18,7 +18,7 @@ function trimText(s, max = 62) {
   return `${t.slice(0, max - 1)}…`;
 }
 
-export default function HigherWorldClient() {
+export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
   const size = 13;
   const center = Math.floor(size / 2);
@@ -31,7 +31,8 @@ export default function HigherWorldClient() {
     let dead = false;
     async function load() {
       try {
-        const r = await fetch('/api/worlds/higher/npcs?v=2', { cache: 'no-store' });
+        const join = apiPath.includes('?') ? '&' : '?';
+        const r = await fetch(`${apiPath}${join}v=2`, { cache: 'no-store' });
         const d = await r.json();
         if (!dead && d?.ok && Array.isArray(d?.npcs)) setNpcs(d.npcs);
       } catch {}
@@ -40,7 +41,7 @@ export default function HigherWorldClient() {
     return () => {
       dead = true;
     };
-  }, []);
+  }, [apiPath]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((v) => v + 1), 6000);
@@ -350,7 +351,7 @@ export default function HigherWorldClient() {
             fontWeight: 700,
           }}
         >
-          /higher world
+          /{worldName} world
         </div>
 
         <section
