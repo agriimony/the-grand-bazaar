@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '' }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '', initialCounterpartyFid = '' }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -995,51 +995,44 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     let cancelled = false;
     async function prefillCounterpartyFromQuery() {
       const name = String(initialCounterparty || '').trim();
-      if (!makerMode || !name) return;
+      const fid = Number(initialCounterpartyFid || 0);
+      if (!makerMode || (!name && !Number.isFinite(fid))) return;
 
       // Wallet prefill path
-      if (/^0x[a-fA-F0-9]{40}$/.test(name)) {
+      if (name && /^0x[a-fA-F0-9]{40}$/.test(name)) {
         const wallet = ethers.getAddress(name).toLowerCase();
-        setCounterpartyInput(wallet);
-        setCounterpartyName(`${wallet.slice(0, 6)}…${wallet.slice(-4)}`);
-        setCounterpartyHandle('');
-        setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: wallet }));
+        applyCounterpartySelection({ name: short(wallet), address: wallet, profileUrl: '', pfpUrl: '' });
         return;
       }
 
-      const clean = name.replace(/^@/, '');
-      const atHandle = clean.startsWith('@') ? clean : `@${clean}`;
-
-      setCounterpartyInput(clean);
-      setCounterpartyName(clean);
-      setCounterpartyHandle(atHandle);
-
-      // Best-effort lookup so maker flow can prefill richer profile and wallet.
       try {
-        const r = await fetch(`/api/farcaster-name?q=${encodeURIComponent(clean)}`, { cache: 'no-store' });
+        const clean = name.replace(/^@/, '');
+        const byFid = Number.isFinite(fid) && fid > 0;
+        const q = byFid ? `fid=${encodeURIComponent(String(fid))}` : `query=${encodeURIComponent(clean)}`;
+        const r = await fetch(`/api/farcaster-name?${q}`, { cache: 'no-store' });
         if (!r.ok) return;
         const d = await r.json();
-        const list = Array.isArray(d?.results) ? d.results : [];
-        const exact = list.find((u) => String(u?.username || '').toLowerCase() === clean.toLowerCase()) || list[0];
-        if (!exact || cancelled) return;
-
-        const wallet = /^0x[a-fA-F0-9]{40}$/.test(String(exact?.wallet || ''))
-          ? ethers.getAddress(String(exact.wallet)).toLowerCase()
-          : ethers.ZeroAddress;
-
-        setCounterpartyName(String(exact.displayName || exact.username || clean));
-        setCounterpartyHandle(`@${String(exact.username || clean).replace(/^@/, '')}`);
-        setCounterpartyProfileUrl(String(exact.profileUrl || ''));
-        setCounterpartyPfpUrl(String(exact.pfpUrl || ''));
-        setMakerOverrides((prev) => ({ ...prev, counterpartyWallet: wallet }));
+        if (cancelled) return;
+        const selected = {
+          name: d?.name || clean || String(fid),
+          address: d?.address || '',
+          profileUrl: d?.profileUrl || '',
+          pfpUrl: d?.pfpUrl || '',
+        };
+        applyCounterpartySelection(selected);
       } catch {
-        // keep handle-only prefill
+        if (name) {
+          const clean = name.replace(/^@/, '');
+          setCounterpartyInput(clean);
+          setCounterpartyName(clean);
+          setCounterpartyHandle(clean ? `@${clean}` : '');
+        }
       }
     }
 
     prefillCounterpartyFromQuery();
     return () => { cancelled = true; };
-  }, [makerMode, initialCounterparty]);
+  }, [makerMode, initialCounterparty, initialCounterpartyFid]);
 
 
 
