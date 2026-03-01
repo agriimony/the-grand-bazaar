@@ -372,13 +372,13 @@ export default function HigherWorldClient() {
             overflow: 'hidden',
           }}
         >
-          <div style={{ padding: '6px 8px', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
+          <div style={{ padding: '7px 9px', fontSize: 15, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
             Choose Option
           </div>
-          <button onClick={onTalk} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#d6f7d6', border: 'none', padding: '8px 10px', cursor: 'pointer', fontSize: 14 }}>
+          <button onClick={onTalk} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#d6f7d6', border: 'none', padding: '9px 11px', cursor: 'pointer', fontSize: 17 }}>
             Talk to {menu.name}
           </button>
-          <button onClick={onTrade} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#b7f0ff', border: 'none', padding: '8px 10px', cursor: 'pointer', fontSize: 14 }}>
+          <button onClick={onTrade} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#b7f0ff', border: 'none', padding: '9px 11px', cursor: 'pointer', fontSize: 17 }}>
             Trade with {menu.name}
           </button>
         </div>
