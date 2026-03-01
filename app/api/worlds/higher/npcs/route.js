@@ -24,10 +24,15 @@ function mapCast(c) {
   const parentHash = String(c?.parent_hash || c?.parentHash || '').trim();
   const username = String(user?.username || user?.display_name || '').trim();
   const pfp = String(user?.pfp_url || '').trim();
-  const castUrl = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
+  const permalink = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
   const text = String(c?.text || '').trim();
   const ts = toIsoMs(c?.timestamp);
-  if (!hash || !username || !pfp || !castUrl || !ts || !text) return null;
+  if (!hash || !username || !pfp || !permalink || !ts || !text) return null;
+
+  const hasGbzPayload = /\bGBZ1:/i.test(text);
+  const isOpenOffer = /\bOpen\s+offer\b/i.test(text);
+  const isPublicSwapOffer = hasGbzPayload && isOpenOffer;
+  const castUrl = isPublicSwapOffer ? `/c/${hash}` : permalink;
 
   const replies = getCount(c, ['replies.count', 'replies_count', 'reply_count']);
   const quotes = getCount(c, ['quotes.count', 'quotes_count', 'quote_count']);
@@ -43,6 +48,8 @@ function mapCast(c) {
     castHash: hash,
     parentHash,
     castUrl,
+    permalink,
+    isPublicSwapOffer,
     text,
     timestamp: ts,
     engagement: { replies, quotes, recasts, likes },
