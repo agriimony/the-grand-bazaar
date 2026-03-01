@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400;
 
 function toIsoMs(v) {
   const t = Date.parse(String(v || ''));
@@ -44,7 +44,7 @@ export async function GET() {
     let casts = [];
     for (const u of urls) {
       try {
-        const r = await fetch(u, { headers, cache: 'no-store' });
+        const r = await fetch(u, { headers, next: { revalidate: 86400 } });
         if (!r.ok) continue;
         const d = await r.json();
         const list = Array.isArray(d?.casts) ? d.casts : Array.isArray(d?.result?.casts) ? d.result.casts : [];
@@ -67,7 +67,10 @@ export async function GET() {
       out.push(m);
     }
 
-    return NextResponse.json({ ok: true, npcs: out.slice(0, 40), count: out.length });
+    return NextResponse.json(
+      { ok: true, npcs: out.slice(0, 40), count: out.length },
+      { headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600' } }
+    );
   } catch (e) {
     return NextResponse.json({ ok: false, error: e?.message || 'failed' }, { status: 500 });
   }
