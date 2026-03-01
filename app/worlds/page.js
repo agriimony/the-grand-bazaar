@@ -50,11 +50,11 @@ export default function WorldsPage() {
               background: 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
               color: '#17120b',
               fontWeight: 800,
-              fontSize: 18,
+              fontSize: 24,
               textDecoration: 'none',
             }}
           >
-            Enter /higher
+            /higher
           </Link>
         </div>
       </div>
