@@ -52,23 +52,133 @@ export default function HigherWorldClient() {
   }, [npcs, tick]);
 
   const byCell = useMemo(() => {
-    const map = new Map();
-    for (const n of npcsWithCurrentCast) {
-      const seed = String(n.fid || n.username || n.currentCast?.castHash || 'npc');
-      // Scatter around center, avoid center tile itself.
-      let x = Math.floor(hashToUnit(seed + 'x') * size);
-      let y = Math.floor(hashToUnit(seed + 'y') * size);
-      if (x === center && y === center) x = (x + 1) % size;
-      let tries = 0;
-      while (map.has(`${x}-${y}`) && tries < size * size) {
-        x = (x + 2) % size;
-        y = (y + 3) % size;
-        if (x === center && y === center) x = (x + 1) % size;
-        tries += 1;
-      }
-      map.set(`${x}-${y}`, n);
+    const placed = new Map();
+    if (!npcsWithCurrentCast.length) return placed;
+
+    const users = npcsWithCurrentCast.map((n, idx) => ({
+      ...n,
+      _idx: idx,
+      _key: String(n.fid || n.username || idx),
+      _score: Number(n.topScore || n.currentCast?.engagementScore || 0),
+    }));
+
+    // Build cast->user index so reply edges can connect users.
+    const castOwner = new Map();
+    for (const u of users) {
+      const list = Array.isArray(u.casts) ? u.casts : [];
+      for (const c of list) castOwner.set(String(c.castHash), u._key);
     }
-    return map;
+
+    // Undirected weighted interaction graph between users.
+    const edges = new Map();
+    const bump = (a, b, w = 1) => {
+      if (!a || !b || a === b) return;
+      const x = a < b ? `${a}|${b}` : `${b}|${a}`;
+      edges.set(x, (edges.get(x) || 0) + w);
+    };
+    for (const u of users) {
+      const list = Array.isArray(u.casts) ? u.casts : [];
+      for (const c of list) {
+        const parentOwner = castOwner.get(String(c.parentHash || ''));
+        if (parentOwner) bump(u._key, parentOwner, 1);
+      }
+    }
+
+    // Components as loose conversation clusters.
+    const nbr = new Map(users.map((u) => [u._key, []]));
+    for (const [k, w] of edges.entries()) {
+      const [a, b] = k.split('|');
+      nbr.get(a)?.push({ to: b, w });
+      nbr.get(b)?.push({ to: a, w });
+    }
+
+    const seen = new Set();
+    const components = [];
+    for (const u of users) {
+      if (seen.has(u._key)) continue;
+      const stack = [u._key];
+      seen.add(u._key);
+      const comp = [];
+      while (stack.length) {
+        const cur = stack.pop();
+        comp.push(cur);
+        for (const n of nbr.get(cur) || []) {
+          if (seen.has(n.to)) continue;
+          seen.add(n.to);
+          stack.push(n.to);
+        }
+      }
+      components.push(comp);
+    }
+
+    const keyToUser = new Map(users.map((u) => [u._key, u]));
+    const maxScore = Math.max(1, ...users.map((u) => u._score));
+
+    // Place clusters around fountain; bigger clusters/scores closer to center.
+    const baseRadius = Math.max(2, Math.floor(size / 2) - 1);
+    const compSorted = components
+      .map((comp) => ({
+        keys: comp,
+        score: comp.reduce((s, k) => s + (keyToUser.get(k)?._score || 0), 0),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const targets = [];
+    for (let ci = 0; ci < compSorted.length; ci += 1) {
+      const comp = compSorted[ci];
+      const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
+      const clusterScoreNorm = Math.min(1, comp.score / Math.max(1, comp.keys.length * maxScore));
+      const clusterR = Math.max(1, Math.round(baseRadius * (1 - 0.55 * clusterScoreNorm)));
+      const cx = center + Math.cos(clusterAngle) * clusterR;
+      const cy = center + Math.sin(clusterAngle) * clusterR;
+
+      // Within cluster, keep strongly-linked users closer and nearby.
+      const keys = [...comp.keys].sort((a, b) => {
+        const aw = (nbr.get(a) || []).reduce((s, x) => s + x.w, 0);
+        const bw = (nbr.get(b) || []).reduce((s, x) => s + x.w, 0);
+        if (bw !== aw) return bw - aw;
+        return (keyToUser.get(b)?._score || 0) - (keyToUser.get(a)?._score || 0);
+      });
+
+      for (let i = 0; i < keys.length; i += 1) {
+        const k = keys[i];
+        const u = keyToUser.get(k);
+        if (!u) continue;
+        const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
+        const scoreNorm = Math.min(1, u._score / maxScore);
+        const localR = Math.max(0.6, 2.4 - Math.min(1.8, linkedWeight * 0.25) - scoreNorm * 0.9);
+        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.35;
+        const tx = cx + Math.cos(localAngle) * localR;
+        const ty = cy + Math.sin(localAngle) * localR;
+        targets.push({ u, tx, ty, scoreNorm });
+      }
+    }
+
+    // Highest scores placed first so they claim nearer-center cells.
+    targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
+
+    for (const t of targets) {
+      let x = Math.max(0, Math.min(size - 1, Math.round(t.tx)));
+      let y = Math.max(0, Math.min(size - 1, Math.round(t.ty)));
+      if (x === center && y === center) x = Math.min(size - 1, x + 1);
+
+      let tries = 0;
+      let r = 1;
+      while ((x === center && y === center) || placed.has(`${x}-${y}`)) {
+        const a = hashToUnit(`${t.u._key}:${tries}:a`) * 2 * Math.PI;
+        const nx = Math.round(t.tx + Math.cos(a) * r);
+        const ny = Math.round(t.ty + Math.sin(a) * r);
+        x = Math.max(0, Math.min(size - 1, nx));
+        y = Math.max(0, Math.min(size - 1, ny));
+        tries += 1;
+        if (tries % 8 === 0) r += 1;
+        if (tries > size * size) break;
+      }
+      if (x === center && y === center) continue;
+      placed.set(`${x}-${y}`, t.u);
+    }
+
+    return placed;
   }, [npcsWithCurrentCast]);
 
   const cells = [];
