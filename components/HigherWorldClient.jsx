@@ -215,12 +215,13 @@ export default function HigherWorldClient() {
                     bottom: '100%',
                     left: '50%',
                     transform: 'translate(-50%, -2px)',
-                    maxWidth: '180%',
-                    whiteSpace: 'nowrap',
+                    width: '220%',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
                     fontSize: 17,
-                    lineHeight: 1,
+                    lineHeight: 1.05,
                     color: '#fff8b2',
                     textAlign: 'center',
                     textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
@@ -230,7 +231,7 @@ export default function HigherWorldClient() {
                     padding: '0 2px',
                   }}
                 >
-                  {trimText(current.text, 42)}
+                  {trimText(current.text, 140)}
                 </div>
               ) : null}
               <a
