@@ -3861,8 +3861,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const hasSpecificMakerCounterparty = Boolean(
     makerMode
     && !parsed
-    && makerOverrides?.counterpartyWallet
-    && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+    && (
+      (makerOverrides?.counterpartyWallet && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase())
+      || String(counterpartyHandle || '').trim()
+      || String(counterpartyInput || '').trim()
+    )
   );
   const publicCounterpartyLabel = hasSpecificMakerCounterparty
     ? (counterpartyName || 'counterparty')
