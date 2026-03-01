@@ -31,7 +31,7 @@ export default function HigherWorldClient() {
     let dead = false;
     async function load() {
       try {
-        const r = await fetch('/api/worlds/higher/npcs', { cache: 'no-store' });
+        const r = await fetch('/api/worlds/higher/npcs?v=2', { cache: 'no-store' });
         const d = await r.json();
         if (!dead && d?.ok && Array.isArray(d?.npcs)) setNpcs(d.npcs);
       } catch {}

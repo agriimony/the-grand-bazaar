@@ -34,10 +34,13 @@ function mapCast(c) {
   const isPublicSwapOffer = hasGbzPayload && isOpenOffer;
   const castUrl = isPublicSwapOffer ? `/c/${hash}` : permalink;
 
+  const primaryEth = String(user?.verified_addresses?.primary?.eth_address || '').trim();
   const ethAddrs = Array.isArray(user?.verified_addresses?.eth_addresses)
     ? user.verified_addresses.eth_addresses
     : [];
-  const primaryWallet = ethAddrs.find((a) => /^0x[a-fA-F0-9]{40}$/.test(String(a || '').trim())) || '';
+  const primaryWallet = /^0x[a-fA-F0-9]{40}$/.test(primaryEth)
+    ? primaryEth
+    : (ethAddrs.find((a) => /^0x[a-fA-F0-9]{40}$/.test(String(a || '').trim())) || '');
 
   const replies = getCount(c, ['replies.count', 'replies_count', 'reply_count']);
   const quotes = getCount(c, ['quotes.count', 'quotes_count', 'quote_count']);
