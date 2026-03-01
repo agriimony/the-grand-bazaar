@@ -412,6 +412,8 @@ html, body {
 .rs-loading-wrap {
   width: 100%;
   max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .rs-loading-label {
