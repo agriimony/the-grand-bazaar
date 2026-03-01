@@ -18,7 +18,7 @@ function trimText(s, max = 62) {
 }
 
 export default function HigherWorldClient() {
-  const size = 17;
+  const size = 13;
   const center = Math.floor(size / 2);
   const [npcs, setNpcs] = useState([]);
   const [tick, setTick] = useState(0);
