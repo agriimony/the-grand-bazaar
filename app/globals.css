@@ -1040,3 +1040,41 @@ textarea { width: 100%; font-size: 42px; }
   .rs-value { font-size: 16px; }
   .rs-btn { font-size: 10px; }
 }
+
+@media (min-width: 1024px) {
+  .rs-loading-wrap {
+    max-width: 760px;
+  }
+
+  .rs-loading-track {
+    height: 34px;
+  }
+
+  .rs-loading-label {
+    font-size: 18px;
+    letter-spacing: 0.4px;
+  }
+
+  .rs-token-cell-amount {
+    font-size: 20px;
+    max-width: 82px;
+  }
+
+  .rs-token-cell-symbol {
+    font-size: 16px;
+    max-width: 82px;
+  }
+
+  .rs-token-cell-tokenid {
+    font-size: 13px;
+    max-width: 64px;
+  }
+
+  .rs-amount-overlay {
+    font-size: 28px;
+  }
+
+  .rs-symbol-overlay {
+    font-size: 22px;
+  }
+}
