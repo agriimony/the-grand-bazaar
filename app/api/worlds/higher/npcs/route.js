@@ -7,6 +7,17 @@ function toIsoMs(v) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function getCount(cast, keys = []) {
+  for (const k of keys) {
+    const parts = String(k).split('.');
+    let v = cast;
+    for (const p of parts) v = v?.[p];
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 0;
+}
+
 function mapCast(c) {
   const user = c?.author || {};
   const hash = String(c?.hash || '').trim();
@@ -15,6 +26,13 @@ function mapCast(c) {
   const castUrl = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
   const ts = toIsoMs(c?.timestamp);
   if (!hash || !username || !pfp || !castUrl || !ts) return null;
+
+  const replies = getCount(c, ['replies.count', 'replies_count', 'reply_count']);
+  const quotes = getCount(c, ['quotes.count', 'quotes_count', 'quote_count']);
+  const recasts = getCount(c, ['recasts.count', 'recasts_count', 'recast_count']);
+  const likes = getCount(c, ['reactions.likes_count', 'likes.count', 'likes_count']);
+  const engagementScore = replies * 5 + quotes * 5 + recasts * 3 + likes;
+
   return {
     fid: Number(user?.fid || 0),
     username,
@@ -23,6 +41,8 @@ function mapCast(c) {
     castHash: hash,
     castUrl,
     timestamp: ts,
+    engagement: { replies, quotes, recasts, likes },
+    engagementScore,
   };
 }
 
@@ -55,20 +75,25 @@ export async function GET() {
       } catch {}
     }
 
-    const out = [];
-    const seen = new Set();
+    const byUserBest = new Map();
     for (const c of casts) {
       const m = mapCast(c);
       if (!m) continue;
       if (m.timestamp < since) continue;
       const key = String(m.fid || m.username).toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(m);
+      const prev = byUserBest.get(key);
+      if (!prev || m.engagementScore > prev.engagementScore || (m.engagementScore === prev.engagementScore && m.timestamp > prev.timestamp)) {
+        byUserBest.set(key, m);
+      }
     }
 
+    const out = Array.from(byUserBest.values()).sort((a, b) => {
+      if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
+      return b.timestamp - a.timestamp;
+    });
+
     return NextResponse.json(
-      { ok: true, npcs: out.slice(0, 40), count: out.length },
+      { ok: true, npcs: out.slice(0, 100), count: out.length, sort: 'engagement_desc' },
       { headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600' } }
     );
   } catch (e) {
