@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '', initialCounterpartyFid = '' }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '' }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -995,8 +995,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     let cancelled = false;
     async function prefillCounterpartyFromQuery() {
       const name = String(initialCounterparty || '').trim();
-      const fid = Number(initialCounterpartyFid || 0);
-      if (!makerMode || (!name && !Number.isFinite(fid))) return;
+      if (!makerMode || !name) return;
 
       // Wallet prefill path
       if (name && /^0x[a-fA-F0-9]{40}$/.test(name)) {
@@ -1007,14 +1006,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       try {
         const clean = name.replace(/^@/, '');
-        const byFid = Number.isFinite(fid) && fid > 0;
-        const q = byFid ? `fid=${encodeURIComponent(String(fid))}` : `query=${encodeURIComponent(clean)}`;
+        const q = `query=${encodeURIComponent(clean)}`;
         const r = await fetch(`/api/farcaster-name?${q}`, { cache: 'no-store' });
         if (!r.ok) return;
         const d = await r.json();
         if (cancelled) return;
         const selected = {
-          name: d?.name || clean || String(fid),
+          name: d?.name || clean,
           address: d?.address || '',
           profileUrl: d?.profileUrl || '',
           pfpUrl: d?.pfpUrl || '',
@@ -1032,7 +1030,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     prefillCounterpartyFromQuery();
     return () => { cancelled = true; };
-  }, [makerMode, initialCounterparty, initialCounterpartyFid]);
+  }, [makerMode, initialCounterparty]);
 
 
 

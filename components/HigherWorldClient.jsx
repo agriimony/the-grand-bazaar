@@ -241,9 +241,7 @@ export default function HigherWorldClient() {
     }
 
     const cp = /^0x[a-fA-F0-9]{40}$/.test(wallet) ? wallet : fallback;
-    const fid = Number(menu.npc?.fid || 0);
-    const fidQuery = Number.isFinite(fid) && fid > 0 ? `&counterpartyFid=${encodeURIComponent(String(fid))}` : '';
-    router.push(`/maker?counterparty=${encodeURIComponent(cp)}${fidQuery}`);
+    router.push(`/maker?counterparty=${encodeURIComponent(cp)}`);
     setMenu(null);
   };
 
