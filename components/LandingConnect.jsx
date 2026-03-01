@@ -56,7 +56,7 @@ export default function LandingConnect() {
       }
 
       if (!connected) throw new Error('No wallet provider found');
-      router.push('/maker');
+      router.push('/worlds');
     } catch (e) {
       setErr(e?.message || 'Connect failed');
     } finally {
