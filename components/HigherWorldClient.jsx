@@ -91,7 +91,7 @@ export default function HigherWorldClient() {
             boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
             color: isCenter ? '#dff2ff' : '#cbb68a',
             position: 'relative',
-            overflow: 'hidden',
+            overflow: 'visible',
           }}
         >
           {isCenter ? (
@@ -102,21 +102,24 @@ export default function HigherWorldClient() {
                 <div
                   style={{
                     position: 'absolute',
-                    top: 2,
-                    left: 2,
-                    right: 2,
-                    fontSize: 9,
-                    lineHeight: 1.1,
-                    color: '#fff',
+                    bottom: '100%',
+                    left: '50%',
+                    transform: 'translate(-50%, -2px)',
+                    maxWidth: '180%',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    fontSize: 10,
+                    lineHeight: 1,
+                    color: '#fff8b2',
                     textAlign: 'center',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+                    textShadow: '0 1px 0 #000, 0 0 6px rgba(0,0,0,0.9)',
                     pointerEvents: 'none',
-                    background: 'linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.05))',
-                    borderRadius: 4,
-                    padding: '1px 2px',
+                    zIndex: 3,
+                    padding: '0 2px',
                   }}
                 >
-                  {trimText(current.text)}
+                  {trimText(current.text, 42)}
                 </div>
               ) : null}
               <a
