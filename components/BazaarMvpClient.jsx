@@ -4354,10 +4354,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-topbar">
           {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
           {makerMode && !parsed ? (
-            <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
-              <span>Trading with</span>
-              <span>{publicCounterpartyLabel}</span>
-            </button>
+            <>
+              <button className="rs-title-btn" onClick={() => router.push('/higher')} style={{ padding: '6px 8px', marginRight: 8 }}>
+                ←
+              </button>
+              <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
+                <span>Trading with</span>
+                <span>{publicCounterpartyLabel}</span>
+              </button>
+            </>
           ) : (
             <span className="rs-topbar-title">
               <span>Trading with</span>
