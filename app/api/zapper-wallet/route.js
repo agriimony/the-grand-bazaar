@@ -3,7 +3,8 @@ import { ethers } from 'ethers';
 export const dynamic = 'force-dynamic';
 
 const ZAPPER_URL = 'https://public.zapper.xyz/graphql';
-const APP_ORIGIN = process.env.APP_ORIGIN || 'https://dev-bazaar.agrimonys.com';
+const APP_ORIGIN = process.env.APP_ORIGIN || 'https://bazaar.agrimonys.com';
+const APP_ORIGIN_DEV = process.env.APP_ORIGIN_DEV || 'https://dev-bazaar.agrimonys.com';
 
 function normHost(v = '') {
   try { return new URL(v).host.toLowerCase(); } catch { return String(v || '').toLowerCase(); }
@@ -17,8 +18,19 @@ function shortAddress(v = '') {
 function isAllowedOrigin(req) {
   const originHost = normHost(req.headers.get('origin') || '');
   const refererHost = normHost(req.headers.get('referer') || '');
-  const appHost = normHost(APP_ORIGIN);
-  return (originHost && originHost === appHost) || (refererHost && refererHost === appHost);
+  const hostHeader = String(req.headers.get('x-forwarded-host') || req.headers.get('host') || '').toLowerCase();
+  const requestHost = normHost(req.url || '');
+  const allowedHosts = new Set([
+    normHost(APP_ORIGIN),
+    normHost(APP_ORIGIN_DEV),
+    hostHeader,
+    requestHost,
+  ].filter(Boolean));
+
+  // Same-origin server/client fetches may omit Origin; allow when Host matches allowed domain.
+  if (!originHost && !refererHost) return allowedHosts.has(hostHeader) || allowedHosts.has(requestHost);
+
+  return (originHost && allowedHosts.has(originHost)) || (refererHost && allowedHosts.has(refererHost));
 }
 
 const QUERY = `
