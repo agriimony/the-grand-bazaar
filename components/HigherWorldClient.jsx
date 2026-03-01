@@ -247,12 +247,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const cells = [];
+  const labels = [];
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const key = `${x}-${y}`;
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
       const isCenter = x === center && y === center;
+      if (!isCenter && npc && current?.text) {
+        labels.push({
+          key: `lbl-${key}`,
+          x,
+          y,
+          text: trimText(current.text, 140),
+        });
+      }
       cells.push(
         <div
           key={key}
@@ -266,39 +275,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
             color: isCenter ? '#dff2ff' : '#cbb68a',
             position: 'relative',
-            overflow: 'visible',
+            overflow: 'hidden',
           }}
         >
           {isCenter ? (
             '⛲'
           ) : npc ? (
             <>
-              {current?.text ? (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '100%',
-                    left: '50%',
-                    transform: 'translate(-50%, -2px)',
-                    width: '220%',
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: 'vertical',
-                    fontSize: 17,
-                    lineHeight: 1.05,
-                    color: '#fff8b2',
-                    textAlign: 'center',
-                    textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
-                    filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
-                    pointerEvents: 'none',
-                    zIndex: 3,
-                    padding: '0 2px',
-                  }}
-                >
-                  {trimText(current.text, 140)}
-                </div>
-              ) : null}
               <button
                 onClick={(e) => openNpcMenu(e, npc)}
                 title={`@${npc.username}`}
@@ -361,6 +344,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
             borderRadius: 12,
             padding: 10,
+            position: 'relative',
           }}
         >
           <div
@@ -371,6 +355,32 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             }}
           >
             {cells}
+          </div>
+          <div style={{ position: 'absolute', inset: 10, pointerEvents: 'none', zIndex: 5 }}>
+            {labels.map((l) => (
+              <div
+                key={l.key}
+                style={{
+                  position: 'absolute',
+                  left: `${((l.x + 0.5) / size) * 100}%`,
+                  top: `${(l.y / size) * 100}%`,
+                  transform: 'translate(-50%, -102%)',
+                  width: '14.5%',
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  fontSize: 17,
+                  lineHeight: 1.05,
+                  color: '#fff8b2',
+                  textAlign: 'center',
+                  textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
+                  filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
+                }}
+              >
+                {l.text}
+              </div>
+            ))}
           </div>
         </section>
       </div>
