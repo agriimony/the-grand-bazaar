@@ -158,6 +158,8 @@ export async function GET() {
       row.casts.push({
         castHash: c.castHash,
         castUrl: c.castUrl,
+        permalink: c.permalink,
+        isPublicSwapOffer: Boolean(c.isPublicSwapOffer),
         text: c.text,
         timestamp: c.timestamp,
         parentHash: c.parentHash || '',

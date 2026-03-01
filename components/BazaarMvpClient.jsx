@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '' }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -990,6 +990,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     makerOverrides.senderDecimals,
     makerExpirySec,
   ]);
+
+  useEffect(() => {
+    const name = String(initialCounterparty || '').trim();
+    if (!makerMode || !name) return;
+    const clean = name.replace(/^@/, '');
+    if (!counterpartyInput) setCounterpartyInput(clean);
+    if (!counterpartyName || counterpartyName === 'Counterparty') setCounterpartyName(clean);
+    if (!counterpartyHandle) setCounterpartyHandle(clean.startsWith('@') ? clean : `@${clean}`);
+  }, [makerMode, initialCounterparty]);
 
 
 

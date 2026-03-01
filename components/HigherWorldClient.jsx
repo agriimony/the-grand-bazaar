@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -18,10 +19,13 @@ function trimText(s, max = 62) {
 }
 
 export default function HigherWorldClient() {
+  const router = useRouter();
   const size = 13;
   const center = Math.floor(size / 2);
   const [npcs, setNpcs] = useState([]);
   const [tick, setTick] = useState(0);
+  const [menu, setMenu] = useState(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     let dead = false;
@@ -43,11 +47,29 @@ export default function HigherWorldClient() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    function onDown(e) {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target)) setMenu(null);
+    }
+    function onEsc(e) {
+      if (e.key === 'Escape') setMenu(null);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, []);
+
   const npcsWithCurrentCast = useMemo(() => {
     return (npcs || []).map((n) => {
       const list = Array.isArray(n?.casts) ? n.casts : [];
       const idx = list.length ? tick % list.length : 0;
-      return { ...n, currentCast: list[idx] || null };
+      const current = list[idx] || null;
+      const publicOffer = list.find((c) => c?.isPublicSwapOffer) || null;
+      return { ...n, currentCast: current, publicOfferCast: publicOffer };
     });
   }, [npcs, tick]);
 
@@ -62,14 +84,12 @@ export default function HigherWorldClient() {
       _score: Number(n.topScore || n.currentCast?.engagementScore || 0),
     }));
 
-    // Build cast->user index so reply edges can connect users.
     const castOwner = new Map();
     for (const u of users) {
       const list = Array.isArray(u.casts) ? u.casts : [];
       for (const c of list) castOwner.set(String(c.castHash), u._key);
     }
 
-    // Undirected weighted interaction graph between users.
     const edges = new Map();
     const bump = (a, b, w = 1) => {
       if (!a || !b || a === b) return;
@@ -84,7 +104,6 @@ export default function HigherWorldClient() {
       }
     }
 
-    // Components as loose conversation clusters.
     const nbr = new Map(users.map((u) => [u._key, []]));
     for (const [k, w] of edges.entries()) {
       const [a, b] = k.split('|');
@@ -113,9 +132,8 @@ export default function HigherWorldClient() {
 
     const keyToUser = new Map(users.map((u) => [u._key, u]));
     const maxScore = Math.max(1, ...users.map((u) => u._score));
-
-    // Place clusters around fountain; bigger clusters/scores closer to center.
     const baseRadius = Math.max(2, Math.floor(size / 2) - 1);
+
     const compSorted = components
       .map((comp) => ({
         keys: comp,
@@ -132,7 +150,6 @@ export default function HigherWorldClient() {
       const cx = center + Math.cos(clusterAngle) * clusterR;
       const cy = center + Math.sin(clusterAngle) * clusterR;
 
-      // Within cluster, keep strongly-linked users closer and nearby.
       const keys = [...comp.keys].sort((a, b) => {
         const aw = (nbr.get(a) || []).reduce((s, x) => s + x.w, 0);
         const bw = (nbr.get(b) || []).reduce((s, x) => s + x.w, 0);
@@ -154,7 +171,6 @@ export default function HigherWorldClient() {
       }
     }
 
-    // Highest scores placed first so they claim nearer-center cells.
     targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
 
     for (const t of targets) {
@@ -180,6 +196,36 @@ export default function HigherWorldClient() {
 
     return placed;
   }, [npcsWithCurrentCast]);
+
+  const openNpcMenu = (e, npc) => {
+    e.preventDefault();
+    const name = String(npc?.displayName || npc?.username || 'user');
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      npc,
+      name,
+    });
+  };
+
+  const onTalk = () => {
+    if (!menu?.npc) return;
+    const link = menu.npc?.currentCast?.permalink || menu.npc?.currentCast?.castUrl;
+    if (link) window.open(link, '_blank', 'noopener,noreferrer');
+    setMenu(null);
+  };
+
+  const onTrade = () => {
+    if (!menu?.npc) return;
+    const offerHash = menu.npc?.publicOfferCast?.castHash;
+    if (offerHash) {
+      router.push(`/c/${offerHash}`);
+    } else {
+      const handle = String(menu.npc?.username || '').replace(/^@/, '');
+      router.push(`/maker?counterparty=${encodeURIComponent(handle)}`);
+    }
+    setMenu(null);
+  };
 
   const cells = [];
   for (let y = 0; y < size; y += 1) {
@@ -234,19 +280,26 @@ export default function HigherWorldClient() {
                   {trimText(current.text, 140)}
                 </div>
               ) : null}
-              <a
-                href={current?.castUrl || '#'}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                onClick={(e) => openNpcMenu(e, npc)}
                 title={`@${npc.username}`}
-                style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                }}
               >
                 <img
                   src={npc.pfp}
                   alt={npc.username}
                   style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(247,230,181,0.7)' }}
                 />
-              </a>
+              </button>
             </>
           ) : null}
         </div>
@@ -262,6 +315,7 @@ export default function HigherWorldClient() {
         background: 'linear-gradient(180deg, #2d2519 0%, #1c160e 100%)',
         color: '#f7e6b5',
         fontFamily: 'var(--font-pixel), monospace',
+        position: 'relative',
       }}
     >
       <div style={{ maxWidth: 980, margin: '0 auto' }}>
@@ -301,6 +355,34 @@ export default function HigherWorldClient() {
           </div>
         </section>
       </div>
+
+      {menu ? (
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            left: Math.min(menu.x, (typeof window !== 'undefined' ? window.innerWidth : menu.x) - 220),
+            top: Math.min(menu.y, (typeof window !== 'undefined' ? window.innerHeight : menu.y) - 120),
+            width: 220,
+            zIndex: 50,
+            border: '2px solid #6d5a34',
+            boxShadow: '0 0 0 1px #20180f inset, 0 12px 26px rgba(0,0,0,0.75)',
+            background: 'linear-gradient(180deg, #3c3324 0%, #2d261b 100%)',
+            borderRadius: 4,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '6px 8px', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
+            Choose Option
+          </div>
+          <button onClick={onTalk} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#d6f7d6', border: 'none', padding: '8px 10px', cursor: 'pointer', fontSize: 14 }}>
+            Talk to {menu.name}
+          </button>
+          <button onClick={onTrade} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#b7f0ff', border: 'none', padding: '8px 10px', cursor: 'pointer', fontSize: 14 }}>
+            Trade with {menu.name}
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }
