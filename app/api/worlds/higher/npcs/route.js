@@ -24,8 +24,9 @@ function mapCast(c) {
   const username = String(user?.username || user?.display_name || '').trim();
   const pfp = String(user?.pfp_url || '').trim();
   const castUrl = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
+  const text = String(c?.text || '').trim();
   const ts = toIsoMs(c?.timestamp);
-  if (!hash || !username || !pfp || !castUrl || !ts) return null;
+  if (!hash || !username || !pfp || !castUrl || !ts || !text) return null;
 
   const replies = getCount(c, ['replies.count', 'replies_count', 'reply_count']);
   const quotes = getCount(c, ['quotes.count', 'quotes_count', 'quote_count']);
@@ -75,19 +76,15 @@ export async function GET() {
       } catch {}
     }
 
-    const byUserBest = new Map();
+    const out = [];
     for (const c of casts) {
       const m = mapCast(c);
       if (!m) continue;
       if (m.timestamp < since) continue;
-      const key = String(m.fid || m.username).toLowerCase();
-      const prev = byUserBest.get(key);
-      if (!prev || m.engagementScore > prev.engagementScore || (m.engagementScore === prev.engagementScore && m.timestamp > prev.timestamp)) {
-        byUserBest.set(key, m);
-      }
+      out.push(m);
     }
 
-    const out = Array.from(byUserBest.values()).sort((a, b) => {
+    out.sort((a, b) => {
       if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
       return b.timestamp - a.timestamp;
     });
