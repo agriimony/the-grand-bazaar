@@ -109,7 +109,7 @@ export default function HigherWorldClient() {
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    fontSize: 10,
+                    fontSize: 13,
                     lineHeight: 1,
                     color: '#fff8b2',
                     textAlign: 'center',
