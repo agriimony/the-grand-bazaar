@@ -151,23 +151,29 @@ export async function GET() {
     const since = Date.now() - 24 * 60 * 60 * 1000;
     const headers = { api_key: apiKey, accept: 'application/json' };
 
-    const urls = [
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&with_recasts=false&limit=500',
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=%2Fhigher&with_recasts=false&limit=500',
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&limit=500',
+    const baseUrls = [
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&with_recasts=false&limit=100',
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=%2Fhigher&with_recasts=false&limit=100',
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&limit=100',
     ];
 
     let raw = [];
-    for (const u of urls) {
+    for (const baseUrl of baseUrls) {
       try {
-        const r = await fetch(u, { headers, next: { revalidate: 86400 } });
-        if (!r.ok) continue;
-        const d = await r.json();
-        const list = Array.isArray(d?.casts) ? d.casts : Array.isArray(d?.result?.casts) ? d.result.casts : [];
-        if (list.length) {
-          raw = list;
-          break;
+        let cursor = '';
+        for (let page = 0; page < 5; page += 1) {
+          const join = baseUrl.includes('?') ? '&' : '?';
+          const u = cursor ? `${baseUrl}${join}cursor=${encodeURIComponent(cursor)}` : baseUrl;
+          const r = await fetch(u, { headers, next: { revalidate: 86400 } });
+          if (!r.ok) break;
+          const d = await r.json();
+          const list = Array.isArray(d?.casts) ? d.casts : Array.isArray(d?.result?.casts) ? d.result.casts : [];
+          if (!list.length) break;
+          raw.push(...list);
+          cursor = String(d?.next?.cursor || d?.result?.next?.cursor || '').trim();
+          if (!cursor) break;
         }
+        if (raw.length) break;
       } catch {}
     }
 
