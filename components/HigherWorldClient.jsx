@@ -346,11 +346,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               padding: '5px 8px',
               fontSize: 14,
               cursor: 'pointer',
+              width: 82,
             }}
           >
             ← Back
           </button>
           <div style={{ flex: 1, textAlign: 'center' }}>/{worldName}</div>
+          <div style={{ width: 82 }} aria-hidden />
         </div>
 
         <section
