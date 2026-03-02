@@ -251,7 +251,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const onTalk = () => {
     if (!menu?.npc) return;
-    const c = menu.npc?.currentCast || menu.npc?.lastCastShown || null;
+    const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
+    const c = menu.npc?.currentCast || menu.npc?.lastCastShown || firstCast;
     const link = c?.permalink || c?.castUrl;
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
     setMenu(null);
