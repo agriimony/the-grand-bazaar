@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const revalidate = 86400;
+export const revalidate = 3600;
 
 const SCORE_THRESHOLD = 0.7;
 const MAX_ROOT_CASTS = 100;
@@ -278,12 +278,21 @@ export async function GET() {
     const apiKey = process.env.NEYNAR_API_KEY || '';
     if (!apiKey) return NextResponse.json({ ok: false, error: 'missing neynar key' }, { status: 500 });
 
-    const since = Date.now() - 24 * 60 * 60 * 1000;
     const headers = { api_key: apiKey, accept: 'application/json' };
+
+    // Previous UTC day window: [00:00, 23:59:59.999] of yesterday.
+    const now = new Date();
+    const y = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 0, 0, 0, 0));
+    const yEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 23, 59, 59, 999));
+    const windowStartMs = y.getTime();
+    const windowEndMs = yEnd.getTime();
 
     // 1) Fetch top channel casts and score.
     const rawChannel = await fetchChannelCasts(headers);
-    let channelCasts = rawChannel.map(mapCast).filter(Boolean).filter((c) => c.timestamp >= since);
+    let channelCasts = rawChannel
+      .map(mapCast)
+      .filter(Boolean)
+      .filter((c) => c.timestamp >= windowStartMs && c.timestamp <= windowEndMs);
     channelCasts.sort((a, b) => {
       if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
       return b.timestamp - a.timestamp;
@@ -299,7 +308,10 @@ export async function GET() {
 
     // 4) Return child casts to remaining casts.
     const childRaw = await fetchChildCasts(filteredCasts, headers);
-    const children = childRaw.map(mapCast).filter(Boolean).filter((c) => c.timestamp >= since);
+    const children = childRaw
+      .map(mapCast)
+      .filter(Boolean)
+      .filter((c) => c.timestamp >= windowStartMs && c.timestamp <= windowEndMs);
 
     // Merge + dedupe by hash.
     const mergedByHash = new Map();
@@ -316,6 +328,9 @@ export async function GET() {
     applyInheritedScores(finalCasts);
     const npcs = aggregateByUser(finalCasts);
 
+    const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
+    const ttlSeconds = Math.max(1, Math.floor((nextUtcMidnight - now.getTime()) / 1000));
+
     return NextResponse.json(
       {
         ok: true,
@@ -330,9 +345,11 @@ export async function GET() {
           mergedCasts: merged.length,
           finalCasts: finalCasts.length,
           scoreThreshold: SCORE_THRESHOLD,
+          windowStartUtc: y.toISOString(),
+          windowEndUtc: yEnd.toISOString(),
         },
       },
-      { headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600' } }
+      { headers: { 'Cache-Control': `s-maxage=${ttlSeconds}, stale-while-revalidate=0` } }
     );
   } catch (e) {
     return NextResponse.json({ ok: false, error: e?.message || 'failed' }, { status: 500 });
