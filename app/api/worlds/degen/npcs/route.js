@@ -39,8 +39,7 @@ function mapCast(c) {
   const username = String(user?.username || user?.display_name || '').trim();
   const pfp = String(user?.pfp_url || '').trim();
   const permalink = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
-  const textRaw = String(c?.text || '').trim();
-  const text = textRaw.replace(/https?:\/\/\S+/gi, '').replace(/\s+/g, ' ').trim();
+  const text = String(c?.text || '').trim();
   const ts = toIsoMs(c?.timestamp);
   if (!hash || !username || !pfp || !permalink || !ts || !text) return null;
 
