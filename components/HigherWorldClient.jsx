@@ -23,7 +23,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const size = 13;
   const center = Math.floor(size / 2);
   const [npcs, setNpcs] = useState([]);
-  const [tick, setTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
   const menuRef = useRef(null);
 
@@ -44,7 +44,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [apiPath]);
 
   useEffect(() => {
-    const t = setInterval(() => setTick((v) => v + 1), 6000);
+    const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
 
@@ -67,12 +67,29 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const npcsWithCurrentCast = useMemo(() => {
     return (npcs || []).map((n) => {
       const list = Array.isArray(n?.casts) ? n.casts : [];
-      const idx = list.length ? tick % list.length : 0;
-      const current = list[idx] || null;
       const publicOffer = list.find((c) => c?.isPublicSwapOffer) || null;
-      return { ...n, currentCast: current, publicOfferCast: publicOffer };
+      if (!list.length) return { ...n, currentCast: null, lastCastShown: null, publicOfferCast: publicOffer };
+
+      const key = String(n?.fid || n?.username || 'npc');
+      const castDurationMs = 4000 + Math.floor(hashToUnit(`${key}:dur`) * 4000); // 4s..8s
+      const blankDurationMs = Math.floor(castDurationMs * 0.5);
+      const slotDurationMs = castDurationMs + blankDurationMs;
+      const cycleDurationMs = slotDurationMs * list.length;
+      const phaseOffset = Math.floor(hashToUnit(`${key}:phase`) * cycleDurationMs);
+      const t = (nowMs + phaseOffset) % cycleDurationMs;
+      const slotIdx = Math.floor(t / slotDurationMs);
+      const inSlot = t - slotIdx * slotDurationMs;
+      const shownCast = list[slotIdx] || list[0] || null;
+      const showText = inSlot < castDurationMs;
+
+      return {
+        ...n,
+        currentCast: showText ? shownCast : null,
+        lastCastShown: shownCast,
+        publicOfferCast: publicOffer,
+      };
     });
-  }, [npcs, tick]);
+  }, [npcs, nowMs]);
 
   const byCell = useMemo(() => {
     const placed = new Map();
@@ -211,7 +228,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const onTalk = () => {
     if (!menu?.npc) return;
-    const link = menu.npc?.currentCast?.permalink || menu.npc?.currentCast?.castUrl;
+    const c = menu.npc?.currentCast || menu.npc?.lastCastShown || null;
+    const link = c?.permalink || c?.castUrl;
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
     setMenu(null);
   };
