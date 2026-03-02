@@ -464,11 +464,43 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           <div style={{ padding: '7px 9px', fontSize: 15, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
             Choose Option
           </div>
-          <button onClick={onTalk} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#d6f7d6', border: 'none', padding: '9px 11px', cursor: 'pointer', fontSize: 17 }}>
-            Talk to {menu.name}
+          <button
+            onClick={onTalk}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              color: '#d6f7d6',
+              border: 'none',
+              padding: '9px 11px',
+              cursor: 'pointer',
+              fontSize: 17,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            title={`Talk to ${menu.name}`}
+          >
+            {`Talk to ${menu.name}`}
           </button>
-          <button onClick={onTrade} style={{ width: '100%', textAlign: 'left', background: 'transparent', color: '#b7f0ff', border: 'none', padding: '9px 11px', cursor: 'pointer', fontSize: 17 }}>
-            Trade with {menu.name}
+          <button
+            onClick={onTrade}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              color: '#b7f0ff',
+              border: 'none',
+              padding: '9px 11px',
+              cursor: 'pointer',
+              fontSize: 17,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            title={`Trade with ${menu.name}`}
+          >
+            {`Trade with ${menu.name}`}
           </button>
         </div>
       ) : null}
