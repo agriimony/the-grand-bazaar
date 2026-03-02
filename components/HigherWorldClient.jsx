@@ -324,17 +324,33 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         <div
           style={{
             marginBottom: 10,
-            textAlign: 'center',
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset',
             background: 'linear-gradient(180deg, #6f6248 0%, #5a4e38 100%)',
             borderRadius: 8,
-            padding: '10px 12px',
+            padding: '8px 10px',
             letterSpacing: 1,
             fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}
         >
-          /{worldName} world
+          <button
+            onClick={() => router.push('/worlds')}
+            style={{
+              border: '1px solid rgba(236,200,120,0.55)',
+              background: 'rgba(28,22,14,0.75)',
+              color: '#f4e3b8',
+              borderRadius: 6,
+              padding: '5px 8px',
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            ← Back
+          </button>
+          <div style={{ flex: 1, textAlign: 'center' }}>/{worldName}</div>
         </div>
 
         <section
