@@ -89,6 +89,12 @@ function buildGraphOrder(casts) {
     indegree.set(c.castHash, (indegree.get(c.castHash) || 0) + 1);
   }
 
+  const rootTimeSort = (a, b) => {
+    const A = byHash.get(a);
+    const B = byHash.get(b);
+    return (B?.timestamp || 0) - (A?.timestamp || 0);
+  };
+
   const scoreSort = (a, b) => {
     const A = byHash.get(a);
     const B = byHash.get(b);
@@ -99,7 +105,7 @@ function buildGraphOrder(casts) {
   const roots = casts
     .filter((c) => (indegree.get(c.castHash) || 0) === 0)
     .map((c) => c.castHash)
-    .sort(scoreSort);
+    .sort(rootTimeSort);
 
   for (const [k, arr] of childMap.entries()) {
     arr.sort(scoreSort);
