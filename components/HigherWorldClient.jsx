@@ -284,7 +284,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
 
     const cp = /^0x[a-fA-F0-9]{40}$/.test(wallet) ? wallet : fallback;
-    router.push(`/maker?counterparty=${encodeURIComponent(cp)}`);
+    router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(worldName)}`);
     setMenu(null);
   };
 

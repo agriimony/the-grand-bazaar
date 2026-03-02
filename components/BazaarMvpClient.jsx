@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '' }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '', initialChannel = '' }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -916,6 +916,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const keep = text.startsWith('check timing') || text.startsWith('pair read decision');
     if (!keep) return;
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${text}`]);
+  };
+
+  const composeChannelKey = String(initialChannel || '').replace(/^\//, '').trim();
+  const withComposeChannel = (payload) => {
+    if (!composeChannelKey) return payload;
+    return { ...payload, channelKey: composeChannelKey };
   };
 
   async function sendTx(request) {
@@ -1908,13 +1914,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const text = `Thanks for the swap 🤝\n${txUrl}`;
 
       try {
-        await compose({
+        await compose(withComposeChannel({
           text,
           embeds: [txUrl],
           parent: { type: 'cast', hash: parentHash },
-        });
+        }));
       } catch {
-        await compose(text);
+        await compose(withComposeChannel({ text }));
       }
 
       setSwapThanksSent(true);
@@ -2532,15 +2538,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
         let step2Hash = '';
         try {
-          const second = await compose({
+          const second = await compose(withComposeChannel({
             text: embedText,
             embeds: [deeplink],
             parent: { type: 'cast', hash: offerCastHash },
-          });
+          }));
           step2Hash = String(second?.cast?.hash || '').trim();
         } catch (e2) {
           dbg(`step2 compose object failed: ${errText(e2)}`);
-          const second = await compose(embedText);
+          const second = await compose(withComposeChannel({ text: embedText }));
           step2Hash = String(second?.cast?.hash || '').trim();
         }
 
@@ -2573,15 +2579,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let offerCastHash = '';
 
       try {
-        const first = await compose({
+        const first = await compose(withComposeChannel({
           text: step1Text,
           ...(step1Embeds.length ? { embeds: step1Embeds } : {}),
           ...(parent ? { parent } : {}),
-        });
+        }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch (e1) {
         dbg(`step1 compose object failed: ${errText(e1)}`);
-        const first = await compose(step1Text);
+        const first = await compose(withComposeChannel({ text: step1Text }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
@@ -2680,11 +2686,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         const deeplink = `https://dev-bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
         try {
-          await compose({
+          await compose(withComposeChannel({
             text: embedText,
             embeds: [deeplink],
             parent: { type: 'cast', hash: offerCastHash },
-          });
+          }));
           setStatus('order published');
         } catch {
           await compose(embedText);
@@ -2702,10 +2708,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         signerImgUrl: checks?.signerImgUrl || null,
       });
       try {
-        const first = await compose({ text: castText, ...(step1Embeds.length ? { embeds: step1Embeds } : {}), ...(parent ? { parent } : {}) });
+        const first = await compose(withComposeChannel({ text: castText, ...(step1Embeds.length ? { embeds: step1Embeds } : {}), ...(parent ? { parent } : {}) }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch {
-        const first = await compose(castText);
+        const first = await compose(withComposeChannel({ text: castText }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
