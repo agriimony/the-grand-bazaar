@@ -152,9 +152,9 @@ export async function GET() {
     const headers = { api_key: apiKey, accept: 'application/json' };
 
     const urls = [
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&with_recasts=false&limit=100',
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=%2Fhigher&with_recasts=false&limit=100',
-      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&limit=100',
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&with_recasts=false&limit=500',
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=%2Fhigher&with_recasts=false&limit=500',
+      'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=higher&limit=500',
     ];
 
     let raw = [];
