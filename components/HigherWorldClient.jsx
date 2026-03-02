@@ -65,22 +65,45 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, []);
 
   const npcsWithCurrentCast = useMemo(() => {
+    const allCasts = (npcs || [])
+      .flatMap((n) => (Array.isArray(n?.casts) ? n.casts : []))
+      .map((c) => Number(c?.graphIndex))
+      .filter((v) => Number.isFinite(v) && v >= 0 && v < Number.MAX_SAFE_INTEGER)
+      .sort((a, b) => a - b);
+
+    const maxGraphIndex = allCasts.length ? allCasts[allCasts.length - 1] : 0;
+    const eventMs = 2600;
+    const loopPauseMs = 3200;
+    const linearSpanMs = (maxGraphIndex + 1) * eventMs;
+    const loopMs = linearSpanMs + loopPauseMs;
+    const t = loopMs > 0 ? nowMs % loopMs : 0;
+    const globalCursor = t >= linearSpanMs ? maxGraphIndex : Math.floor(t / eventMs);
+
     return (npcs || []).map((n) => {
-      const list = Array.isArray(n?.casts) ? n.casts : [];
+      const list = (Array.isArray(n?.casts) ? n.casts : [])
+        .filter((c) => Number.isFinite(Number(c?.graphIndex)) && Number(c?.graphIndex) >= 0 && Number(c?.graphIndex) < Number.MAX_SAFE_INTEGER)
+        .sort((a, b) => Number(a.graphIndex) - Number(b.graphIndex));
+
       const publicOffer = list.find((c) => c?.isPublicSwapOffer) || null;
       if (!list.length) return { ...n, currentCast: null, lastCastShown: null, publicOfferCast: publicOffer };
 
+      // Global ordering projection: latest cast for this user that has appeared in global sequence.
+      let shownCast = null;
+      for (let i = 0; i < list.length; i += 1) {
+        const gi = Number(list[i].graphIndex);
+        if (gi <= globalCursor) shownCast = list[i];
+        else break;
+      }
+      if (!shownCast) shownCast = list[0];
+
+      // Keep independent per-tile blink/blank rhythm on top of globally-selected cast.
       const key = String(n?.fid || n?.username || 'npc');
-      const castDurationMs = 4000 + Math.floor(hashToUnit(`${key}:dur`) * 4000); // 4s..8s
+      const castDurationMs = 3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800); // 3.2s..6s
       const blankDurationMs = Math.floor(castDurationMs * 0.5);
-      const slotDurationMs = castDurationMs + blankDurationMs;
-      const cycleDurationMs = slotDurationMs * list.length;
-      const phaseOffset = Math.floor(hashToUnit(`${key}:phase`) * cycleDurationMs);
-      const t = (nowMs + phaseOffset) % cycleDurationMs;
-      const slotIdx = Math.floor(t / slotDurationMs);
-      const inSlot = t - slotIdx * slotDurationMs;
-      const shownCast = list[slotIdx] || list[0] || null;
-      const showText = inSlot < castDurationMs;
+      const tileCycle = castDurationMs + blankDurationMs;
+      const tileOffset = Math.floor(hashToUnit(`${key}:phase`) * tileCycle);
+      const tilePhase = (nowMs + tileOffset) % tileCycle;
+      const showText = tilePhase < castDurationMs;
 
       return {
         ...n,
