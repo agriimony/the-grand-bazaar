@@ -87,7 +87,7 @@ function applyInheritedScores(casts) {
   while (queue.length) {
     const h = queue.shift();
     const parent = byHash.get(h);
-    const inherited = Number(parent?.rankScore || 0) * 0.5;
+    const inherited = Number(parent?.rankScore || 0) * 0.8;
     for (const childHash of children.get(h) || []) {
       const child = byHash.get(childHash);
       if (child) {

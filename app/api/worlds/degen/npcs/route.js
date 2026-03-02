@@ -66,6 +66,39 @@ function mapCast(c) {
   };
 }
 
+function applyInheritedScores(casts) {
+  const byHash = new Map(casts.map((c) => [c.castHash, c]));
+  const children = new Map();
+  const indegree = new Map(casts.map((c) => [c.castHash, 0]));
+
+  for (const c of casts) {
+    if (!c.parentHash || !byHash.has(c.parentHash)) continue;
+    if (!children.has(c.parentHash)) children.set(c.parentHash, []);
+    children.get(c.parentHash).push(c.castHash);
+    indegree.set(c.castHash, (indegree.get(c.castHash) || 0) + 1);
+  }
+
+  const queue = casts.filter((c) => (indegree.get(c.castHash) || 0) === 0).map((c) => c.castHash);
+  for (const c of casts) {
+    c.baseEngagementScore = Number(c.engagementScore || 0);
+    c.rankScore = Number(c.baseEngagementScore || 0);
+  }
+
+  while (queue.length) {
+    const h = queue.shift();
+    const parent = byHash.get(h);
+    const inherited = Number(parent?.rankScore || 0) * 0.8;
+    for (const childHash of children.get(h) || []) {
+      const child = byHash.get(childHash);
+      if (child) {
+        child.rankScore = Number(child.baseEngagementScore || 0) + inherited;
+      }
+      indegree.set(childHash, (indegree.get(childHash) || 0) - 1);
+      if ((indegree.get(childHash) || 0) <= 0) queue.push(childHash);
+    }
+  }
+}
+
 function buildGraphOrder(casts) {
   const byHash = new Map(casts.map((c) => [c.castHash, c]));
   const childMap = new Map();
@@ -81,7 +114,7 @@ function buildGraphOrder(casts) {
   const scoreSort = (a, b) => {
     const A = byHash.get(a);
     const B = byHash.get(b);
-    if ((B?.engagementScore || 0) !== (A?.engagementScore || 0)) return (B?.engagementScore || 0) - (A?.engagementScore || 0);
+    if ((B?.rankScore || 0) !== (A?.rankScore || 0)) return (B?.rankScore || 0) - (A?.rankScore || 0);
     return (B?.timestamp || 0) - (A?.timestamp || 0);
   };
 
@@ -146,6 +179,7 @@ export async function GET() {
       casts.push(m);
     }
 
+    applyInheritedScores(casts);
     const globalRank = buildGraphOrder(casts);
     const rankIdx = new Map(globalRank.map((h, i) => [h, i]));
 
@@ -160,7 +194,7 @@ export async function GET() {
           displayName: c.displayName,
           pfp: c.pfp,
           casts: [],
-          topScore: c.engagementScore,
+          topScore: Number(c.rankScore || c.engagementScore || 0),
         });
       }
       const row = byUser.get(key);
@@ -173,10 +207,11 @@ export async function GET() {
         timestamp: c.timestamp,
         parentHash: c.parentHash || '',
         engagement: c.engagement,
-        engagementScore: c.engagementScore,
+        engagementScore: Number(c.rankScore || c.engagementScore || 0),
+        baseEngagementScore: Number(c.baseEngagementScore || c.engagementScore || 0),
         graphIndex: rankIdx.has(c.castHash) ? rankIdx.get(c.castHash) : Number.MAX_SAFE_INTEGER,
       });
-      if (c.engagementScore > row.topScore) row.topScore = c.engagementScore;
+      if (Number(c.rankScore || 0) > row.topScore) row.topScore = Number(c.rankScore || 0);
     }
 
     const npcs = Array.from(byUser.values()).map((u) => {
