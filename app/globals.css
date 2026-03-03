@@ -8,6 +8,10 @@ html, body {
 
 * { box-sizing: border-box; }
 
+.rs-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .bazaar-shell {
   max-width: 1040px;
   margin: 0 auto;

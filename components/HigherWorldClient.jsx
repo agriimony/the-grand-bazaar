@@ -27,6 +27,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [menu, setMenu] = useState(null);
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
+  const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
 
   useEffect(() => {
     let dead = false;
@@ -263,6 +264,38 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
   };
 
+  const onWorldMouseDown = (e) => {
+    const el = worldScrollRef.current;
+    if (!el) return;
+    dragRef.current = {
+      active: true,
+      x: e.clientX,
+      y: e.clientY,
+      left: el.scrollLeft,
+      top: el.scrollTop,
+    };
+    el.style.cursor = 'grabbing';
+    el.style.userSelect = 'none';
+  };
+
+  const onWorldMouseMove = (e) => {
+    const el = worldScrollRef.current;
+    const st = dragRef.current;
+    if (!el || !st.active) return;
+    const dx = e.clientX - st.x;
+    const dy = e.clientY - st.y;
+    el.scrollLeft = st.left - dx;
+    el.scrollTop = st.top - dy;
+  };
+
+  const onWorldMouseUp = () => {
+    const el = worldScrollRef.current;
+    dragRef.current.active = false;
+    if (!el) return;
+    el.style.cursor = 'grab';
+    el.style.userSelect = '';
+  };
+
   const onTalk = () => {
     if (!menu?.npc) return;
     const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
@@ -422,6 +455,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
         <section
           ref={worldScrollRef}
+          className="rs-hide-scrollbar"
+          onMouseDown={onWorldMouseDown}
+          onMouseMove={onWorldMouseMove}
+          onMouseUp={onWorldMouseUp}
+          onMouseLeave={onWorldMouseUp}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
@@ -431,6 +469,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             overflow: 'auto',
             height: frameHeight,
             boxSizing: 'border-box',
+            cursor: 'grab',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
           }}
         >
           <div
