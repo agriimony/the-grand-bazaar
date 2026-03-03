@@ -1018,19 +1018,18 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         if (!r.ok) return;
         const d = await r.json();
         if (cancelled) return;
-        const selected = {
-          name: d?.name || clean,
-          address: d?.address || '',
-          profileUrl: d?.profileUrl || '',
-          pfpUrl: d?.pfpUrl || '',
-        };
-        applyCounterpartySelection(selected);
+        const users = Array.isArray(d?.users) ? d.users : [];
+        if (users.length > 0) {
+          const exact = users.find((u) => String(u?.name || '').toLowerCase() === clean.toLowerCase()) || users[0];
+          applyCounterpartySelection(exact);
+        } else {
+          applyCounterpartySelection({ name: clean, address: '', profileUrl: '', pfpUrl: '' });
+        }
       } catch {
         if (name) {
           const clean = name.replace(/^@/, '');
           setCounterpartyInput(clean);
-          setCounterpartyName(clean);
-          setCounterpartyHandle(clean ? `@${clean}` : '');
+          applyCounterpartySelection({ name: clean, address: '', profileUrl: '', pfpUrl: '' });
         }
       }
     }
