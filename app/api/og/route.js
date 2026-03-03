@@ -225,7 +225,7 @@ export async function GET(req) {
   let signerImage = '';
   let senderImage = '';
 
-  const castHash = qp(url, 'castHash', '');
+  const castHash = qp(url, 'castHash', qp(url, 'casthash', ''));
   if (castHash) {
     try {
       const orderRes = await fetch(`${url.origin}/api/order-from-cast?castHash=${encodeURIComponent(castHash)}`, {
@@ -291,7 +291,8 @@ export async function GET(req) {
     }
   }
 
-  const baseImage = `${url.origin}/og-base.jpg?v=20260303b`;
+  const defaultBaseImage = `${url.origin}/og-base.jpg?v=20260303b`;
+  const castBaseImage = `${url.origin}/og-cast-base.jpg?v=20260303a`;
 
   if (!castHash) {
     return new ImageResponse(
@@ -307,7 +308,7 @@ export async function GET(req) {
           }}
         >
           <img
-            src={baseImage}
+            src={defaultBaseImage}
             alt=""
             width={1200}
             height={800}
@@ -343,7 +344,7 @@ export async function GET(req) {
         }}
       >
         <img
-          src={baseImage}
+          src={castBaseImage}
           alt=""
           width={1200}
           height={800}
