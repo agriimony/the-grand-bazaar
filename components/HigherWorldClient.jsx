@@ -33,6 +33,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
   const pointerTypeRef = useRef('mouse');
   const lastTouchLikeTsRef = useRef(0);
+  const touchCapableRef = useRef(false);
   const TOUCH_GHOST_WINDOW_MS = 2600;
 
   useEffect(() => {
@@ -54,6 +55,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const touchPoints = Number(navigator?.maxTouchPoints || 0);
+    const mq = window.matchMedia('(pointer: coarse), (any-pointer: coarse), (hover: none)');
+    const sync = () => {
+      touchCapableRef.current = touchPoints > 0 || Boolean(mq.matches);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
   }, []);
 
   useEffect(() => {
@@ -361,6 +374,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const onWorldWheel = (e) => {
+    if (touchCapableRef.current) return;
     const t = pointerTypeRef.current;
     const touchLikeRecent = Date.now() - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS;
     if (t === 'touch' || t === 'pen' || touchLikeRecent) return;
