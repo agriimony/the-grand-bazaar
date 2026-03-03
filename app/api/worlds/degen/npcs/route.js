@@ -1,9 +1,43 @@
 import { NextResponse } from 'next/server';
+import { decodeCompressedOrder } from '../../../../../lib/orders';
 
 export const revalidate = 120;
 
 const DEV_FIDS = [191780, 2584413, 2480582];
 const HOURS_24_MS = 24 * 60 * 60 * 1000;
+
+function extractCompressedOrder(text = '') {
+  const m = String(text || '').match(/(?:^|\n)GBZ1:([A-Za-z0-9+\-_%]+)(?:\n|$)/);
+  return m ? m[1] : null;
+}
+
+function toBatchItemFromCast(c) {
+  try {
+    if (!c?.isPublicSwapOffer) return null;
+    const compressed = extractCompressedOrder(c.text || '');
+    if (!compressed) return null;
+    const o = decodeCompressedOrder(compressed);
+    return {
+      id: c.castHash,
+      publicMode: true,
+      swapContract: o.swapContract,
+      senderWallet: o.senderWallet,
+      order: {
+        nonce: o.nonce,
+        expiry: o.expiry,
+        signer: { wallet: o.signerWallet, token: o.signerToken, kind: o.signerKind, id: o.signerId || 0, amount: o.signerAmount },
+        sender: { wallet: o.senderWallet, token: o.senderToken, kind: o.senderKind, id: o.senderId || 0, amount: o.senderAmount },
+        affiliateWallet: '0x0000000000000000000000000000000000000000',
+        affiliateAmount: 0,
+        v: o.v,
+        r: o.r,
+        s: o.s,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
 
 function toIsoMs(v) {
   const t = Date.parse(String(v || ''));
@@ -150,7 +184,7 @@ function aggregateByUser(casts) {
   return npcs;
 }
 
-export async function GET() {
+export async function GET(req) {
   try {
     const apiKey = process.env.NEYNAR_API_KEY || '';
     if (!apiKey) return NextResponse.json({ ok: false, error: 'missing neynar key' }, { status: 500 });
@@ -169,7 +203,39 @@ export async function GET() {
     for (const c of all) mergedByHash.set(c.castHash, c);
     const finalCasts = Array.from(mergedByHash.values());
 
-    const npcs = aggregateByUser(finalCasts);
+    const batchItems = finalCasts.map(toBatchItemFromCast).filter(Boolean);
+    let viableHashes = new Set();
+    let viableOffers = [];
+    if (batchItems.length) {
+      try {
+        const batchUrl = new URL('/api/order-check-batch', req.url).toString();
+        const br = await fetch(batchUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ items: batchItems }),
+          cache: 'no-store',
+        });
+        const bd = await br.json();
+        const rows = Array.isArray(bd?.results) ? bd.results : [];
+        viableOffers = rows.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0);
+        viableHashes = new Set(viableOffers.map((r) => String(r.id || '').toLowerCase()).filter(Boolean));
+      } catch {
+        viableHashes = new Set();
+        viableOffers = [];
+      }
+    }
+
+    const castsWithViability = finalCasts.map((c) => {
+      if (!c?.isPublicSwapOffer) return c;
+      const isViable = viableHashes.has(String(c.castHash || '').toLowerCase());
+      return {
+        ...c,
+        isPublicSwapOffer: isViable,
+        publicOfferViable: isViable,
+      };
+    });
+
+    const npcs = aggregateByUser(castsWithViability);
 
     return NextResponse.json(
       {
@@ -182,6 +248,9 @@ export async function GET() {
           world: 'degen',
           fids: DEV_FIDS,
           totalCasts: finalCasts.length,
+          publicOfferCasts: batchItems.length,
+          validPublicOffers: viableOffers.length,
+          validPublicOfferCastHashes: Array.from(viableHashes),
           windowStartUtc: new Date(windowStartMs).toISOString(),
           windowEndUtc: new Date(nowMs).toISOString(),
         },

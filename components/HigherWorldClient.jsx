@@ -456,6 +456,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           x,
           y,
           text: trimText(current.text, 140),
+          isValidPublicOffer: Boolean(current?.isPublicSwapOffer || current?.publicOfferViable),
         });
       }
       cells.push(
@@ -618,9 +619,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                     WebkitBoxOrient: 'vertical',
                     fontSize: 17,
                     lineHeight: 1.05,
-                    color: '#fff8b2',
+                    color: l.isValidPublicOffer ? '#7dff9f' : '#fff8b2',
+                    fontWeight: l.isValidPublicOffer ? 800 : 500,
                     textAlign: 'center',
-                    textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
+                    textShadow: l.isValidPublicOffer
+                      ? '0 2px 0 #000, 0 0 12px rgba(22,120,56,0.95)'
+                      : '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
                     filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
                   }}
                 >
