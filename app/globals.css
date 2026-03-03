@@ -57,6 +57,25 @@ html, body {
   transform: translateY(-1px);
 }
 
+.rs-topbar-back {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  width: 30px;
+  height: 26px;
+  border: 2px solid #2f271d;
+  background: linear-gradient(180deg, #7a6a56 0%, #645644 100%);
+  color: #f0c46e;
+  font-family: var(--font-pixel-heading), monospace;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #2a2218;
+  box-shadow: 0 2px 0 #2f271d;
+  transform: translateY(-1px);
+}
+
 .rs-topbar-close:active {
   transform: translateY(1px);
   box-shadow: 0 0 0 #2f271d;
@@ -945,6 +964,14 @@ textarea { width: 100%; font-size: 42px; }
   .rs-topbar-close {
     top: 3px;
     right: 6px;
+    width: 24px;
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .rs-topbar-back {
+    top: 3px;
+    left: 6px;
     width: 24px;
     height: 22px;
     font-size: 11px;
