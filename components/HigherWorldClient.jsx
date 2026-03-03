@@ -314,24 +314,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
-    let wallet = String(menu.npc?.primaryWallet || '').trim();
-    const fallback = String(menu.npc?.username || '').replace(/^@/, '');
-
-    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet) && fallback) {
-      try {
-        const r = await fetch(`/api/farcaster-name?q=${encodeURIComponent(fallback)}`, { cache: 'no-store' });
-        if (r.ok) {
-          const d = await r.json();
-          const list = Array.isArray(d?.results) ? d.results : [];
-          const exact = list.find((u) => String(u?.username || '').toLowerCase() === fallback.toLowerCase()) || list[0];
-          const w = String(exact?.wallet || '').trim();
-          if (/^0x[a-fA-F0-9]{40}$/.test(w)) wallet = w;
-        }
-      } catch {}
+    const fname = String(menu.npc?.username || '').replace(/^@/, '').trim();
+    if (!fname) {
+      setMenu(null);
+      return;
     }
 
-    const cp = /^0x[a-fA-F0-9]{40}$/.test(wallet) ? wallet : fallback;
-    router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(worldName)}`);
+    router.push(`/maker?counterparty=${encodeURIComponent(fname)}&channel=${encodeURIComponent(worldName)}`);
     setMenu(null);
   };
 
