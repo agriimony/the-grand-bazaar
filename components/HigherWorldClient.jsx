@@ -33,6 +33,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
   const pointerTypeRef = useRef('mouse');
   const lastTouchLikeTsRef = useRef(0);
+  const TOUCH_GHOST_WINDOW_MS = 2600;
 
   useEffect(() => {
     let dead = false;
@@ -333,18 +334,35 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const onWorldPointerDown = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
-    if (t) pointerTypeRef.current = t;
-    if (t === 'touch' || t === 'pen') lastTouchLikeTsRef.current = Date.now();
+    const now = Date.now();
+    if (t === 'touch' || t === 'pen') {
+      pointerTypeRef.current = t;
+      lastTouchLikeTsRef.current = now;
+      return;
+    }
+    if (t === 'mouse') {
+      if (now - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS) return;
+      pointerTypeRef.current = 'mouse';
+    }
   };
 
   const onWorldPointerMove = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
-    if (t) pointerTypeRef.current = t;
+    const now = Date.now();
+    if (t === 'touch' || t === 'pen') {
+      pointerTypeRef.current = t;
+      lastTouchLikeTsRef.current = now;
+      return;
+    }
+    if (t === 'mouse') {
+      if (now - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS) return;
+      pointerTypeRef.current = 'mouse';
+    }
   };
 
   const onWorldWheel = (e) => {
     const t = pointerTypeRef.current;
-    const touchLikeRecent = Date.now() - lastTouchLikeTsRef.current < 1200;
+    const touchLikeRecent = Date.now() - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS;
     if (t === 'touch' || t === 'pen' || touchLikeRecent) return;
     if (!e.ctrlKey && !e.metaKey) {
       e.preventDefault();
@@ -555,8 +573,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onWheel={onWorldWheel}
           onTouchStart={onWorldTouchStart}
           onTouchMove={onWorldTouchMove}
-          onTouchEnd={() => { pinchRef.current.active = false; onWorldMouseUp(); }}
-          onTouchCancel={() => { pinchRef.current.active = false; onWorldMouseUp(); }}
+          onTouchEnd={() => {
+            pinchRef.current.active = false;
+            pointerTypeRef.current = 'touch';
+            lastTouchLikeTsRef.current = Date.now();
+            onWorldMouseUp();
+          }}
+          onTouchCancel={() => {
+            pinchRef.current.active = false;
+            pointerTypeRef.current = 'touch';
+            lastTouchLikeTsRef.current = Date.now();
+            onWorldMouseUp();
+          }}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
