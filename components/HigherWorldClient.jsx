@@ -26,6 +26,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
   const menuRef = useRef(null);
+  const worldScrollRef = useRef(null);
 
   useEffect(() => {
     let dead = false;
@@ -62,6 +63,19 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onEsc);
     };
+  }, []);
+
+  useEffect(() => {
+    const el = worldScrollRef.current;
+    if (!el) return;
+    const centerWorld = () => {
+      const left = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+      const top = Math.max(0, (el.scrollHeight - el.clientHeight) / 2);
+      el.scrollTo({ left, top, behavior: 'auto' });
+    };
+    centerWorld();
+    window.addEventListener('resize', centerWorld);
+    return () => window.removeEventListener('resize', centerWorld);
   }, []);
 
   const npcsWithCurrentCast = useMemo(() => {
@@ -288,7 +302,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
-  const boardSide = 'clamp(520px, calc(100dvh - 220px), 1100px)';
+  const viewportBoardSide = 'calc(100dvh - 140px)';
+  const boardSide = `max(560px, ${viewportBoardSide})`;
   const cells = [];
   const labels = [];
   for (let y = 0; y < size; y += 1) {
@@ -399,6 +414,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         </div>
 
         <section
+          ref={worldScrollRef}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
@@ -406,7 +422,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             borderRadius: 12,
             padding: 10,
             overflow: 'auto',
-            maxHeight: 'calc(100dvh - 120px)',
+            height: 'calc(100dvh - 96px)',
           }}
         >
           <div
@@ -415,7 +431,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               height: boardSide,
               minWidth: boardSide,
               minHeight: boardSide,
-              margin: '0 auto',
               position: 'relative',
             }}
           >
