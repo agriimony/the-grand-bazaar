@@ -204,6 +204,10 @@ export async function GET(req) {
     const finalCasts = Array.from(mergedByHash.values());
 
     const batchItems = finalCasts.map(toBatchItemFromCast).filter(Boolean);
+    const publicOfferCandidates = finalCasts
+      .filter((c) => c?.isPublicSwapOffer)
+      .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || '').slice(0, 180) }));
+    console.log('[world/higher] public offer candidates', publicOfferCandidates);
     let viableHashes = new Set();
     let viableOffers = [];
     if (batchItems.length) {
