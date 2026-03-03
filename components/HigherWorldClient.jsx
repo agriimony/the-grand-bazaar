@@ -343,6 +343,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     el.style.userSelect = '';
   };
 
+  const onWorldDragStart = (e) => {
+    e.preventDefault();
+  };
+
   const onWorldPointerDown = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
     if (t !== 'touch') return;
@@ -493,7 +497,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 <img
                   src={npc.pfp}
                   alt={npc.username}
-                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(247,230,181,0.7)' }}
+                  draggable={false}
+                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(247,230,181,0.7)', userSelect: 'none', WebkitUserDrag: 'none' }}
                 />
               </button>
             </>
@@ -556,6 +561,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onMouseMove={onWorldMouseMove}
           onMouseUp={onWorldMouseUp}
           onMouseLeave={onWorldMouseUp}
+          onDragStart={onWorldDragStart}
           onPointerDown={onWorldPointerDown}
           onPointerMove={onWorldPointerMove}
           onPointerUp={onWorldPointerUp}
