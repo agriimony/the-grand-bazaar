@@ -209,7 +209,7 @@ export async function GET(req) {
     const batchItems = finalCasts.map(toBatchItemFromCast).filter(Boolean);
     const publicOfferCandidates = finalCasts
       .filter((c) => c?.isPublicSwapOffer)
-      .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || '').slice(0, 180) }));
+      .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
     console.log('[world/higher] public offer candidates', publicOfferCandidates);
     let viableHashes = new Set();
     let viableOffers = [];
@@ -228,7 +228,7 @@ export async function GET(req) {
         viableHashes = new Set(viableOffers.map((r) => String(r.id || '').toLowerCase()).filter(Boolean));
         const validCastDebug = finalCasts
           .filter((c) => viableHashes.has(String(c.castHash || '').toLowerCase()))
-          .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || '').slice(0, 180) }));
+          .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
         console.log('[world/higher] valid public offers', validCastDebug);
       } catch {
         viableHashes = new Set();
