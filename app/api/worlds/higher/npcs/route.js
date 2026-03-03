@@ -7,7 +7,7 @@ const DEV_FIDS = [191780, 2584413, 2480582];
 const HOURS_24_MS = 24 * 60 * 60 * 1000;
 
 function extractCompressedOrder(text = '') {
-  const m = String(text || '').match(/(?:^|\n)GBZ1:([^\s\n]+)/i);
+  const m = String(text || '').match(/(?:^|\s)GBZ1:([^\s]+)/i);
   if (!m) return null;
   const raw = String(m[1] || '').trim();
   const cleaned = raw.replace(/["'`’”.,;:!?\])}>]+$/g, '');

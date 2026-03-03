@@ -4,7 +4,7 @@ import path from 'path';
 
 function extractCompressedOrder(text = '') {
   // Accept full token after GBZ1: and trim common trailing quote/punctuation artifacts.
-  const m = String(text || '').match(/(?:^|\n)GBZ1:([^\s\n]+)/i);
+  const m = String(text || '').match(/(?:^|\s)GBZ1:([^\s]+)/i);
   if (!m) return null;
   const raw = String(m[1] || '').trim();
   const cleaned = raw.replace(/["'`’”.,;:!?\])}>]+$/g, '');
