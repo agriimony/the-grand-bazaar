@@ -139,6 +139,12 @@ function fitOfferName(v = '', max = 15) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+function fitOfferActor(v = '', max = 12) {
+  const clean = String(v || '').replace(/^@/, '');
+  if (!clean) return 'counterparty';
+  return clean.length > max ? `${clean.slice(0, Math.max(1, max - 3))}...` : clean;
+}
+
 function formatTokenIdLabel(tokenId = '', maxDigits = 5) {
   const raw = String(tokenId || '').replace(/^#/, '');
   if (!raw) return '#0';
@@ -4222,7 +4228,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
   const isPublicMakerOffer = makerMode && !parsed && !hasSpecificMakerCounterparty;
   const topTitle = isNeitherParty
-    ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferName(senderPartyName)} offers`
+    ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferActor(senderPartyName)} offers`
     : 'You offer';
   const topAmount = flipForSigner ? counterpartyAmountDisplayFinal : yourAmountDisplayFinal;
   const topSymbol = flipForSigner ? signerSymbolDisplay : senderSymbolDisplay;
@@ -4294,7 +4300,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'Anybody offers'
     : (flipForSigner && senderPartyName === 'Anybody'
       ? 'Anybody offers'
-      : `${fitOfferName(flipForSigner ? senderPartyName : counterpartyName)} offers`);
+      : `${fitOfferActor(flipForSigner ? senderPartyName : counterpartyName)} offers`);
   const bottomTitleLink = makerMode && !parsed && !hasSpecificMakerCounterparty
     ? ''
     : (flipForSigner ? senderPartyProfileUrl : counterpartyProfileUrl);
@@ -4951,17 +4957,17 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleCle
           {titleLink ? (
             <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link rs-title-with-pfp">
               {renderTitleAvatar()}
-              <span className="rs-title-ellipsis">{title}</span>
+              <span>{title}</span>
             </a>
           ) : onTitleClick ? (
             <button className="rs-title-btn rs-title-with-pfp" onClick={onTitleClick}>
               {renderTitleAvatar()}
-              <span className="rs-title-ellipsis">{title}</span>
+              <span>{title}</span>
             </button>
           ) : (
             <span className="rs-title-with-pfp">
               {renderTitleAvatar()}
-              <span className="rs-title-ellipsis">{title}</span>
+              <span>{title}</span>
             </span>
           )}
         </span>
