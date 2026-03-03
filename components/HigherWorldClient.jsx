@@ -31,6 +31,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
   const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
+  const pointerTypeRef = useRef('mouse');
+  const lastTouchLikeTsRef = useRef(0);
 
   useEffect(() => {
     let dead = false;
@@ -329,7 +331,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     el.style.userSelect = '';
   };
 
+  const onWorldPointerDown = (e) => {
+    const t = String(e?.pointerType || '').toLowerCase();
+    if (t) pointerTypeRef.current = t;
+    if (t === 'touch' || t === 'pen') lastTouchLikeTsRef.current = Date.now();
+  };
+
+  const onWorldPointerMove = (e) => {
+    const t = String(e?.pointerType || '').toLowerCase();
+    if (t) pointerTypeRef.current = t;
+  };
+
   const onWorldWheel = (e) => {
+    const t = pointerTypeRef.current;
+    const touchLikeRecent = Date.now() - lastTouchLikeTsRef.current < 1200;
+    if (t === 'touch' || t === 'pen' || touchLikeRecent) return;
     if (!e.ctrlKey && !e.metaKey) {
       e.preventDefault();
     }
@@ -338,6 +354,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const onWorldTouchStart = (e) => {
+    lastTouchLikeTsRef.current = Date.now();
     if (e.touches.length !== 2) {
       pinchRef.current.active = false;
       return;
@@ -533,6 +550,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onMouseMove={onWorldMouseMove}
           onMouseUp={onWorldMouseUp}
           onMouseLeave={onWorldMouseUp}
+          onPointerDown={onWorldPointerDown}
+          onPointerMove={onWorldPointerMove}
           onWheel={onWorldWheel}
           onTouchStart={onWorldTouchStart}
           onTouchMove={onWorldTouchMove}
