@@ -160,8 +160,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
       // Keep independent per-tile blink/blank rhythm on top of globally-selected cast.
       const key = String(n?.fid || n?.username || 'npc');
-      const castDurationMs = 3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800); // 3.2s..6s
-      const blankDurationMs = Math.floor(castDurationMs * 0.5);
+      const isValidPublicOffer = Boolean(shownCast?.isPublicSwapOffer || shownCast?.publicOfferViable);
+      const castDurationMs = isValidPublicOffer
+        ? 6000
+        : (3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800)); // valid offers pinned >=6s; others 3.2s..6s
+      const blankDurationMs = isValidPublicOffer ? 0 : Math.floor(castDurationMs * 0.5);
       const tileCycle = castDurationMs + blankDurationMs;
       const tileOffset = Math.floor(hashToUnit(`${key}:phase`) * tileCycle);
       const tilePhase = (nowMs + tileOffset) % tileCycle;
@@ -619,11 +622,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                     WebkitBoxOrient: 'vertical',
                     fontSize: 17,
                     lineHeight: 1.05,
-                    color: l.isValidPublicOffer ? '#7dff9f' : '#fff8b2',
+                    color: l.isValidPublicOffer ? '#39ff14' : '#fff8b2',
                     fontWeight: l.isValidPublicOffer ? 800 : 500,
                     textAlign: 'center',
                     textShadow: l.isValidPublicOffer
-                      ? '0 2px 0 #000, 0 0 12px rgba(22,120,56,0.95)'
+                      ? '0 2px 0 #000, 0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000'
                       : '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
                     filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
                   }}
