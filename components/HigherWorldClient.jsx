@@ -373,18 +373,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
   };
 
-  const onWorldWheel = (e) => {
-    if (touchCapableRef.current) return;
-    const t = pointerTypeRef.current;
-    const touchLikeRecent = Date.now() - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS;
-    if (t === 'touch' || t === 'pen' || touchLikeRecent) return;
-    if (!e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-    }
-    const factor = e.deltaY < 0 ? 1.08 : 0.92;
-    applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
-  };
-
   const onWorldTouchStart = (e) => {
     lastTouchLikeTsRef.current = Date.now();
     if (e.touches.length !== 2) {
@@ -584,7 +572,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onMouseLeave={onWorldMouseUp}
           onPointerDown={onWorldPointerDown}
           onPointerMove={onWorldPointerMove}
-          onWheel={onWorldWheel}
           onTouchStart={onWorldTouchStart}
           onTouchMove={onWorldTouchMove}
           onTouchEnd={() => {
