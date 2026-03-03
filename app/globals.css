@@ -183,7 +183,7 @@ html, body {
 .rs-title-ellipsis {
   display: inline-block;
   min-width: 0;
-  max-width: 18ch;
+  max-width: 24ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -995,7 +995,7 @@ textarea { width: 100%; font-size: 42px; }
   }
 
   .rs-title-ellipsis {
-    max-width: 13ch;
+    max-width: 12ch;
   }
 
   .rs-title-pfp {
