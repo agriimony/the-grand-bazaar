@@ -42,6 +42,23 @@ function toBatchItemFromCast(c) {
   }
 }
 
+function preRpcRejectReason(item) {
+  const isHex32 = (v) => /^0x[a-fA-F0-9]{64}$/.test(String(v || '').trim());
+  const isAddr = (v) => /^0x[a-fA-F0-9]{40}$/.test(String(v || '').trim());
+  const ord = item?.order || {};
+  const isOpen = String(ord?.sender?.wallet || '').toLowerCase() === '0x0000000000000000000000000000000000000000';
+  if (!isAddr(item?.swapContract || '')) return 'bad_swap_contract';
+  if (!isAddr(ord?.signer?.wallet || '')) return 'bad_signer_wallet';
+  if (!isOpen && !isAddr(ord?.sender?.wallet || '')) return 'bad_sender_wallet';
+  if (!Number.isFinite(Number(ord?.nonce))) return 'bad_nonce';
+  if (!Number.isFinite(Number(ord?.expiry))) return 'bad_expiry';
+  if (BigInt(ord?.signer?.amount || 0) <= 0n) return 'bad_signer_amount';
+  if (BigInt(ord?.sender?.amount || 0) <= 0n) return 'bad_sender_amount';
+  if (Number(ord?.v || 0) <= 0) return 'bad_v';
+  if (!isHex32(ord?.r) || !isHex32(ord?.s)) return 'bad_sig';
+  return '';
+}
+
 function toIsoMs(v) {
   const t = Date.parse(String(v || ''));
   return Number.isFinite(t) ? t : 0;
@@ -206,22 +223,42 @@ export async function GET(req) {
     for (const c of all) mergedByHash.set(c.castHash, c);
     const finalCasts = Array.from(mergedByHash.values());
 
-    const batchItems = finalCasts.map(toBatchItemFromCast).filter(Boolean);
     const publicOfferCandidates = finalCasts
       .filter((c) => c?.isPublicSwapOffer)
       .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
     console.log('[world/higher] public offer candidates', publicOfferCandidates);
+
+    const batchPrep = finalCasts
+      .filter((c) => c?.isPublicSwapOffer)
+      .map((c) => {
+        const item = toBatchItemFromCast(c);
+        if (!item) return { castHash: c.castHash, ok: false, reason: 'decode_failed' };
+        const reason = preRpcRejectReason(item);
+        return {
+          castHash: c.castHash,
+          ok: !reason,
+          reason: reason || 'ready',
+          swapContract: item.swapContract,
+          nonce: String(item?.order?.nonce || ''),
+          expiry: String(item?.order?.expiry || ''),
+        };
+      });
+    console.log('[world/higher] pre-rpc prep', batchPrep);
+
+    const batchItems = batchPrep.filter((x) => x.ok).map((x) => toBatchItemFromCast(finalCasts.find((c) => c.castHash === x.castHash))).filter(Boolean);
     let viableHashes = new Set();
     let viableOffers = [];
     if (batchItems.length) {
       try {
         const batchUrl = new URL('/api/order-check-batch', req.url).toString();
+        console.log('[world/higher] batch fetch start', { batchUrl, count: batchItems.length });
         const br = await fetch(batchUrl, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ items: batchItems }),
           cache: 'no-store',
         });
+        console.log('[world/higher] batch fetch response', { status: br.status, ok: br.ok });
         const bd = await br.json();
         const rows = Array.isArray(bd?.results) ? bd.results : [];
         console.log('[world/higher] batch raw results', rows);
@@ -231,7 +268,8 @@ export async function GET(req) {
           .filter((c) => viableHashes.has(String(c.castHash || '').toLowerCase()))
           .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
         console.log('[world/higher] valid public offers', validCastDebug);
-      } catch {
+      } catch (e) {
+        console.log('[world/higher] batch fetch error', { error: e?.message || 'unknown' });
         viableHashes = new Set();
         viableOffers = [];
       }
