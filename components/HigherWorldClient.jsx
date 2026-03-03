@@ -25,9 +25,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [npcs, setNpcs] = useState([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
+  const [zoom, setZoom] = useState(1);
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
+  const zoomRef = useRef(1);
+  const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0 });
 
   useEffect(() => {
     let dead = false;
@@ -67,6 +70,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, []);
 
   useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
     const el = worldScrollRef.current;
     if (!el) return;
     const centerWorld = () => {
@@ -78,6 +85,32 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     window.addEventListener('resize', centerWorld);
     return () => window.removeEventListener('resize', centerWorld);
   }, []);
+
+  const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
+
+  const applyZoomAtPoint = (nextZoom, clientX, clientY) => {
+    const el = worldScrollRef.current;
+    const prevZoom = zoomRef.current;
+    const z = clampZoom(nextZoom);
+    if (!el || !Number.isFinite(z) || Math.abs(z - prevZoom) < 0.001) return;
+
+    const rect = el.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const worldX = el.scrollLeft + px;
+    const worldY = el.scrollTop + py;
+    const ratio = z / prevZoom;
+
+    zoomRef.current = z;
+    setZoom(z);
+
+    requestAnimationFrame(() => {
+      const left = worldX * ratio - px;
+      const top = worldY * ratio - py;
+      el.scrollLeft = Math.max(0, left);
+      el.scrollTop = Math.max(0, top);
+    });
+  };
 
   const npcsWithCurrentCast = useMemo(() => {
     const allCasts = (npcs || [])
@@ -296,6 +329,44 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     el.style.userSelect = '';
   };
 
+  const onWorldWheel = (e) => {
+    if (!e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+    }
+    const factor = e.deltaY < 0 ? 1.08 : 0.92;
+    applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
+  };
+
+  const onWorldTouchStart = (e) => {
+    if (e.touches.length !== 2) return;
+    const [a, b] = e.touches;
+    const dx = b.clientX - a.clientX;
+    const dy = b.clientY - a.clientY;
+    pinchRef.current = {
+      startDist: Math.hypot(dx, dy),
+      startZoom: zoomRef.current,
+      midX: (a.clientX + b.clientX) / 2,
+      midY: (a.clientY + b.clientY) / 2,
+    };
+  };
+
+  const onWorldTouchMove = (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const [a, b] = e.touches;
+    const dx = b.clientX - a.clientX;
+    const dy = b.clientY - a.clientY;
+    const dist = Math.hypot(dx, dy);
+    const midX = (a.clientX + b.clientX) / 2;
+    const midY = (a.clientY + b.clientY) / 2;
+    const base = pinchRef.current.startDist || dist;
+    const startZoom = pinchRef.current.startZoom || zoomRef.current;
+    const next = startZoom * (dist / Math.max(1, base));
+    applyZoomAtPoint(next, midX, midY);
+    pinchRef.current.midX = midX;
+    pinchRef.current.midY = midY;
+  };
+
   const onTalk = () => {
     if (!menu?.npc) return;
     const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
@@ -325,7 +396,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const tileSize = 58;
-  const boardSide = `${size * tileSize}px`;
+  const boardSidePx = Math.round(size * tileSize * zoom);
+  const boardSide = `${boardSidePx}px`;
   const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
   const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
   const trees = ['🌲', '🌳', '🌴'];
@@ -449,6 +521,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onMouseMove={onWorldMouseMove}
           onMouseUp={onWorldMouseUp}
           onMouseLeave={onWorldMouseUp}
+          onWheel={onWorldWheel}
+          onTouchStart={onWorldTouchStart}
+          onTouchMove={onWorldTouchMove}
+          onTouchEnd={onWorldMouseUp}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
@@ -461,6 +537,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             cursor: 'grab',
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
+            touchAction: 'pan-x pan-y',
           }}
         >
           <div
