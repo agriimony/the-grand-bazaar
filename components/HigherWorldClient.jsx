@@ -31,6 +31,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
   const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
+  const isMobileInputRef = useRef(false);
 
   useEffect(() => {
     let dead = false;
@@ -51,6 +52,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(hover: none), (pointer: coarse), (any-pointer: coarse)');
+    const sync = () => { isMobileInputRef.current = Boolean(mq.matches); };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
   }, []);
 
   useEffect(() => {
@@ -330,6 +340,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const onWorldWheel = (e) => {
+    if (isMobileInputRef.current) return;
     if (!e.ctrlKey && !e.metaKey) {
       e.preventDefault();
     }
