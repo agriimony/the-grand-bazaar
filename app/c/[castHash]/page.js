@@ -3,8 +3,8 @@ import BazaarMvpClient from '../../../components/BazaarMvpClient';
 
 export function generateMetadata({ params }) {
   const castHash = params?.castHash || '';
-  const appUrl = `https://bazaar.agrimonys.com/c/${castHash}`;
-  const imageUrl = `https://bazaar.agrimonys.com/api/og?castHash=${encodeURIComponent(castHash)}`;
+  const appUrl = `https://dev-bazaar.agrimonys.com/c/${castHash}`;
+  const imageUrl = `https://dev-bazaar.agrimonys.com/api/og?castHash=${encodeURIComponent(castHash)}`;
 
   const miniAppEmbed = {
     version: '1',
@@ -15,7 +15,7 @@ export function generateMetadata({ params }) {
         type: 'launch_frame',
         name: 'The Grand Bazaar',
         url: appUrl,
-        splashImageUrl: 'https://bazaar.agrimonys.com/splash.jpg',
+        splashImageUrl: 'https://dev-bazaar.agrimonys.com/splash.jpg',
         splashBackgroundColor: '#111111',
       },
     },

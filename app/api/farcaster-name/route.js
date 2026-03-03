@@ -19,9 +19,11 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const address = (searchParams.get('address') || '').trim();
+    const fidRaw = (searchParams.get('fid') || '').trim();
+    const fid = Number(fidRaw);
     const queryRaw = (searchParams.get('query') || '').trim();
     const query = queryRaw.replace(/^@+/, '').trim();
-    if (!address && !query) return Response.json({ name: '', fallback: '', profileUrl: '', address: '' });
+    if (!address && !query && !Number.isFinite(fid)) return Response.json({ name: '', fallback: '', profileUrl: '', address: '' });
 
     const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
     let apiKey = process.env.NEYNAR_API_KEY || '';
@@ -32,6 +34,21 @@ export async function GET(req) {
 
     if (!apiKey) {
       return Response.json({ name: '', fallback: truncateAddress(address), profileUrl: '', address: address || '' });
+    }
+
+    if (Number.isFinite(fid) && fid > 0 && !address && !query) {
+      const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(String(fid))}`;
+      const r = await fetch(url, {
+        headers: { accept: 'application/json', api_key: apiKey },
+        cache: 'no-store',
+      });
+      if (!r.ok) return Response.json({ name: '', fallback: String(fid), profileUrl: '', address: '', pfpUrl: '' });
+      const data = await r.json();
+      const users = data?.users || data?.result?.users || [];
+      const u = users[0] || null;
+      const username = u?.username || u?.display_name || '';
+      const profileUrl = username ? `https://warpcast.com/${String(username).replace(/^@/, '')}` : '';
+      return Response.json({ name: username, fallback: String(fid), profileUrl, address: getPrimaryAddress(u) || '', pfpUrl: u?.pfp_url || u?.pfp?.url || '' });
     }
 
     if (query && !address) {

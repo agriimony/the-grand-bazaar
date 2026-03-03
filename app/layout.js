@@ -8,14 +8,14 @@ const vt323 = VT323({ subsets: ['latin'], weight: '400', variable: '--font-pixel
 
 const miniAppEmbed = {
   version: '1',
-  imageUrl: 'https://bazaar.agrimonys.com/api/og',
-  castShareUrl: 'https://bazaar.agrimonys.com/share',
+  imageUrl: 'https://dev-bazaar.agrimonys.com/api/og',
+  castShareUrl: 'https://dev-bazaar.agrimonys.com/share',
   button: {
     title: 'Enter the Bazaar',
     action: {
       type: 'launch_frame',
       name: 'The Grand Bazaar',
-      splashImageUrl: 'https://bazaar.agrimonys.com/splash.jpg',
+      splashImageUrl: 'https://dev-bazaar.agrimonys.com/splash.jpg',
       splashBackgroundColor: '#A8CB58',
     },
   },

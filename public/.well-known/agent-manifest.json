@@ -1,5 +1,5 @@
 {
   "name": "the-grand-bazaar",
-  "agent_manifest": "https://bazaar.agrimonys.com/api/agent-manifest",
-  "agents_txt": "https://bazaar.agrimonys.com/agents.txt"
+  "agent_manifest": "https://dev-bazaar.agrimonys.com/api/agent-manifest",
+  "agents_txt": "https://dev-bazaar.agrimonys.com/agents.txt"
 }

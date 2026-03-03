@@ -662,7 +662,7 @@ function toAbsoluteHttpUrl(u = '') {
   if (!s) return '';
   const normalized = ipfsToHttp(s);
   if (/^https?:\/\//i.test(normalized)) return normalized;
-  if (normalized.startsWith('/')) return `https://bazaar.agrimonys.com${normalized}`;
+  if (normalized.startsWith('/')) return `https://dev-bazaar.agrimonys.com${normalized}`;
   return '';
 }
 
@@ -838,7 +838,7 @@ function errText(e) {
   return e?.shortMessage || e?.reason || e?.message || 'unknown error';
 }
 
-export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false }) {
+export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '', initialChannel = '' }) {
   const router = useRouter();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
@@ -918,6 +918,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setDebugLog((prev) => [...prev.slice(-30), `${new Date().toISOString().slice(11, 19)} ${text}`]);
   };
 
+  const composeChannelKey = String(initialChannel || '').replace(/^\//, '').trim();
+  const withComposeChannel = (payload) => {
+    if (!composeChannelKey) return payload;
+    return { ...payload, channelKey: composeChannelKey };
+  };
+
   async function sendTx(request) {
     if (sendTransactionAsync) return sendTransactionAsync(request);
     if (!provider) throw new Error('wallet connector not ready');
@@ -990,6 +996,47 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     makerOverrides.senderDecimals,
     makerExpirySec,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function prefillCounterpartyFromQuery() {
+      const name = String(initialCounterparty || '').trim();
+      if (!makerMode || !name) return;
+
+      // Wallet prefill path
+      if (name && /^0x[a-fA-F0-9]{40}$/.test(name)) {
+        const wallet = ethers.getAddress(name).toLowerCase();
+        applyCounterpartySelection({ name: short(wallet), address: wallet, profileUrl: '', pfpUrl: '' });
+        return;
+      }
+
+      try {
+        const clean = name.replace(/^@/, '');
+        const q = `query=${encodeURIComponent(clean)}`;
+        const r = await fetch(`/api/farcaster-name?${q}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (cancelled) return;
+        const selected = {
+          name: d?.name || clean,
+          address: d?.address || '',
+          profileUrl: d?.profileUrl || '',
+          pfpUrl: d?.pfpUrl || '',
+        };
+        applyCounterpartySelection(selected);
+      } catch {
+        if (name) {
+          const clean = name.replace(/^@/, '');
+          setCounterpartyInput(clean);
+          setCounterpartyName(clean);
+          setCounterpartyHandle(clean ? `@${clean}` : '');
+        }
+      }
+    }
+
+    prefillCounterpartyFromQuery();
+    return () => { cancelled = true; };
+  }, [makerMode, initialCounterparty]);
 
 
 
@@ -1078,13 +1125,24 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     async function resolveName() {
       if (!orderData?.signerWallet) {
         if (makerMode) {
-          setCounterpartyName('Anybody');
+          const hasMakerPrefill = Boolean(
+            (makerOverrides?.counterpartyWallet && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase())
+            || String(counterpartyInput || '').trim()
+            || String(counterpartyHandle || '').trim()
+            || String(initialCounterparty || '').trim()
+          );
+          if (!hasMakerPrefill) {
+            setCounterpartyName('Anybody');
+            setCounterpartyHandle('');
+            setCounterpartyProfileUrl('');
+            setCounterpartyPfpUrl('');
+          }
         } else {
           setCounterpartyName('Counterparty');
+          setCounterpartyHandle('');
+          setCounterpartyProfileUrl('');
+          setCounterpartyPfpUrl('');
         }
-        setCounterpartyHandle('');
-        setCounterpartyProfileUrl('');
-        setCounterpartyPfpUrl('');
         return;
       }
       try {
@@ -1104,7 +1162,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       }
     }
     resolveName();
-  }, [orderData?.signerWallet, makerMode]);
+  }, [orderData?.signerWallet, makerMode, makerOverrides?.counterpartyWallet, counterpartyInput, counterpartyHandle, initialCounterparty]);
 
   useEffect(() => {
     async function resolveSenderName() {
@@ -1856,13 +1914,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const text = `Thanks for the swap 🤝\n${txUrl}`;
 
       try {
-        await compose({
+        await compose(withComposeChannel({
           text,
           embeds: [txUrl],
           parent: { type: 'cast', hash: parentHash },
-        });
+        }));
       } catch {
-        await compose(text);
+        await compose(withComposeChannel({ text }));
       }
 
       setSwapThanksSent(true);
@@ -2401,7 +2459,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       dbg('maker sign signature parsed, encoding compressed order');
       const compressed = encodeCompressedOrder(fullOrder);
-      const miniappUrl = `https://bazaar.agrimonys.com/?order=${encodeURIComponent(compressed)}`;
+      const miniappUrl = `https://dev-bazaar.agrimonys.com/?order=${encodeURIComponent(compressed)}`;
       const isPrivateOrder = String(selectedCounterpartyWallet || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase();
       const mentionPrefix = isPrivateOrder && counterpartyHandle ? `${counterpartyHandle} ` : '';
       const summaryLine = humanOfferLine({
@@ -2475,20 +2533,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         : makerCastText;
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://dev-bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
 
         let step2Hash = '';
         try {
-          const second = await compose({
+          const second = await compose(withComposeChannel({
             text: embedText,
             embeds: [deeplink],
             parent: { type: 'cast', hash: offerCastHash },
-          });
+          }));
           step2Hash = String(second?.cast?.hash || '').trim();
         } catch (e2) {
           dbg(`step2 compose object failed: ${errText(e2)}`);
-          const second = await compose(embedText);
+          const second = await compose(withComposeChannel({ text: embedText }));
           step2Hash = String(second?.cast?.hash || '').trim();
         }
 
@@ -2521,15 +2579,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       let offerCastHash = '';
 
       try {
-        const first = await compose({
+        const first = await compose(withComposeChannel({
           text: step1Text,
           ...(step1Embeds.length ? { embeds: step1Embeds } : {}),
           ...(parent ? { parent } : {}),
-        });
+        }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch (e1) {
         dbg(`step1 compose object failed: ${errText(e1)}`);
-        const first = await compose(step1Text);
+        const first = await compose(withComposeChannel({ text: step1Text }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
@@ -2625,14 +2683,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ].join('\n');
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://dev-bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
         try {
-          await compose({
+          await compose(withComposeChannel({
             text: embedText,
             embeds: [deeplink],
             parent: { type: 'cast', hash: offerCastHash },
-          });
+          }));
           setStatus('order published');
         } catch {
           await compose(embedText);
@@ -2650,10 +2708,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         signerImgUrl: checks?.signerImgUrl || null,
       });
       try {
-        const first = await compose({ text: castText, ...(step1Embeds.length ? { embeds: step1Embeds } : {}), ...(parent ? { parent } : {}) });
+        const first = await compose(withComposeChannel({ text: castText, ...(step1Embeds.length ? { embeds: step1Embeds } : {}), ...(parent ? { parent } : {}) }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       } catch {
-        const first = await compose(castText);
+        const first = await compose(withComposeChannel({ text: castText }));
         offerCastHash = String(first?.cast?.hash || '').trim();
       }
 
@@ -3822,8 +3880,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const hasSpecificMakerCounterparty = Boolean(
     makerMode
     && !parsed
-    && makerOverrides?.counterpartyWallet
-    && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase()
+    && (
+      (makerOverrides?.counterpartyWallet && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase())
+      || String(counterpartyHandle || '').trim()
+      || String(counterpartyInput || '').trim()
+    )
   );
   const publicCounterpartyLabel = hasSpecificMakerCounterparty
     ? (counterpartyName || 'counterparty')
@@ -4299,10 +4360,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         <div className="rs-topbar">
           {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
           {makerMode && !parsed ? (
-            <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
-              <span>Trading with</span>
-              <span>{publicCounterpartyLabel}</span>
-            </button>
+            <>
+              <button className="rs-title-btn" onClick={() => router.push('/higher')} style={{ padding: '6px 8px', marginRight: 8 }}>
+                ←
+              </button>
+              <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
+                <span>Trading with</span>
+                <span>{publicCounterpartyLabel}</span>
+              </button>
+            </>
           ) : (
             <span className="rs-topbar-title">
               <span>Trading with</span>
