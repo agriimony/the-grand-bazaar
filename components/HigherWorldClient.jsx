@@ -30,7 +30,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
-  const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0 });
+  const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
 
   useEffect(() => {
     let dead = false;
@@ -338,7 +338,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   };
 
   const onWorldTouchStart = (e) => {
-    if (e.touches.length !== 2) return;
+    if (e.touches.length !== 2) {
+      pinchRef.current.active = false;
+      return;
+    }
     const [a, b] = e.touches;
     const dx = b.clientX - a.clientX;
     const dy = b.clientY - a.clientY;
@@ -347,12 +350,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       startZoom: zoomRef.current,
       midX: (a.clientX + b.clientX) / 2,
       midY: (a.clientY + b.clientY) / 2,
+      active: false,
     };
   };
 
   const onWorldTouchMove = (e) => {
-    if (e.touches.length !== 2) return;
-    e.preventDefault();
+    if (e.touches.length !== 2) {
+      pinchRef.current.active = false;
+      return;
+    }
     const [a, b] = e.touches;
     const dx = b.clientX - a.clientX;
     const dy = b.clientY - a.clientY;
@@ -360,6 +366,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const midX = (a.clientX + b.clientX) / 2;
     const midY = (a.clientY + b.clientY) / 2;
     const base = pinchRef.current.startDist || dist;
+    const delta = Math.abs(dist - base);
+
+    if (!pinchRef.current.active && delta < 8) return;
+    pinchRef.current.active = true;
+
+    e.preventDefault();
     const startZoom = pinchRef.current.startZoom || zoomRef.current;
     const next = startZoom * (dist / Math.max(1, base));
     applyZoomAtPoint(next, midX, midY);
@@ -524,7 +536,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onWheel={onWorldWheel}
           onTouchStart={onWorldTouchStart}
           onTouchMove={onWorldTouchMove}
-          onTouchEnd={onWorldMouseUp}
+          onTouchEnd={() => { pinchRef.current.active = false; onWorldMouseUp(); }}
+          onTouchCancel={() => { pinchRef.current.active = false; onWorldMouseUp(); }}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
