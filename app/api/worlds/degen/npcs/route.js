@@ -224,6 +224,7 @@ export async function GET(req) {
         });
         const bd = await br.json();
         const rows = Array.isArray(bd?.results) ? bd.results : [];
+        console.log('[world/degen] batch raw results', rows);
         viableOffers = rows.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0);
         viableHashes = new Set(viableOffers.map((r) => String(r.id || '').toLowerCase()).filter(Boolean));
         const validCastDebug = finalCasts

@@ -76,6 +76,7 @@ function precheck(order, senderWallet) {
 }
 
 async function checkOne({ rpc, item }) {
+  const startedAt = Date.now();
   const provider = new ethers.JsonRpcProvider(rpc, undefined, { batchMaxCount: 1 });
   const swapContract = norm(item.swapContract || '');
   const senderWallet = norm(item.senderWallet || ethers.ZeroAddress);
@@ -172,6 +173,23 @@ async function checkOne({ rpc, item }) {
     checkErrorsFiltered = checkErrorsFiltered.filter((e) => e !== 'SenderBalanceLow' && e !== 'SenderAllowanceLow');
   }
 
+  console.log('[order-check-batch][item]', {
+    id: item.id,
+    rpc,
+    publicMode: Boolean(item.publicMode),
+    swapContract,
+    senderWallet,
+    signerWallet: norm(order?.signer?.wallet || ''),
+    nonce: String(order?.nonce || ''),
+    expiry: String(order?.expiry || ''),
+    nonceUsed: Boolean(nonceUsed),
+    protocolFeeOnchain: protocolFeeOnchain.toString(),
+    checkErrors,
+    checkErrorsFiltered,
+    pass: !Boolean(nonceUsed) && checkErrorsFiltered.length === 0,
+    ms: Date.now() - startedAt,
+  });
+
   return {
     ok: true,
     id: item.id,
@@ -184,9 +202,18 @@ async function checkOne({ rpc, item }) {
 
 export async function POST(req) {
   try {
+    const startedAt = Date.now();
     const body = await req.json();
     const items = Array.isArray(body?.items) ? body.items : [];
-    if (!items.length) return Response.json({ ok: true, results: [] });
+    if (!items.length) {
+      console.log('[order-check-batch] empty items');
+      return Response.json({ ok: true, results: [] });
+    }
+
+    console.log('[order-check-batch] start', {
+      total: items.length,
+      ids: items.map((i, idx) => i?.id || String(idx)),
+    });
 
     const prechecked = items.map((item, idx) => {
       const ord = item?.order || {};
@@ -217,6 +244,11 @@ export async function POST(req) {
       .filter((x) => !x.pre.ok)
       .map((x) => ({ ok: false, id: x.payload.id, error: x.pre.reason, preRpcRejected: true }));
 
+    if (earlyRejects.length) {
+      console.log('[order-check-batch] pre-rpc rejects', earlyRejects);
+    }
+    console.log('[order-check-batch] rpc-ready', ready.map((r) => ({ id: r.id, nonce: String(r?.order?.nonce || ''), swapContract: r.swapContract })));
+
     const results = [];
     for (const item of ready) {
       let lastErr = null;
@@ -227,13 +259,23 @@ export async function POST(req) {
           break;
         } catch (e) {
           lastErr = e;
+          console.log('[order-check-batch][rpc-error]', { id: item.id, rpc, error: e?.message || 'rpc failed' });
         }
       }
       if (success) results.push(success);
       else results.push({ ok: false, id: item.id, error: lastErr?.message || 'order-check failed' });
     }
 
-    return Response.json({ ok: true, results: [...earlyRejects, ...results] });
+    const merged = [...earlyRejects, ...results];
+    console.log('[order-check-batch] done', {
+      total: items.length,
+      preRejected: earlyRejects.length,
+      rpcProcessed: ready.length,
+      passed: merged.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0).length,
+      failed: merged.filter((r) => !r?.ok || r?.nonceUsed || (Array.isArray(r?.checkErrors) && r.checkErrors.length > 0)).length,
+      ms: Date.now() - startedAt,
+    });
+    return Response.json({ ok: true, results: merged });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || 'order-check batch failed' }, { status: 500 });
   }
