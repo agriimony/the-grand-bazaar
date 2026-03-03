@@ -636,7 +636,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                     fontSize: 17,
                     lineHeight: 1.05,
                     color: l.isValidPublicOffer ? '#39ff14' : '#fff8b2',
-                    fontWeight: l.isValidPublicOffer ? 800 : 500,
+                    fontWeight: l.isValidPublicOffer ? 500 : 500,
                     textAlign: 'center',
                     textShadow: l.isValidPublicOffer
                       ? '0 2px 0 #000, 0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000'
