@@ -291,7 +291,7 @@ export async function GET(req) {
     }
   }
 
-  const baseImage = `${url.origin}/og-base.jpg`;
+  const baseImage = `${url.origin}/og-base.jpg?v=20260303b`;
 
   if (!castHash) {
     return new ImageResponse(
