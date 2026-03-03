@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { decodeCompressedOrder } from '../../../../../lib/orders';
+import { runOrderCheckBatch } from '../../../../../lib/orderCheckBatch';
 
 export const revalidate = 120;
 
@@ -250,16 +251,8 @@ export async function GET(req) {
     let viableOffers = [];
     if (batchItems.length) {
       try {
-        const batchUrl = new URL('/api/order-check-batch', req.url).toString();
-        console.log('[world/higher] batch fetch start', { batchUrl, count: batchItems.length });
-        const br = await fetch(batchUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ items: batchItems }),
-          cache: 'no-store',
-        });
-        console.log('[world/higher] batch fetch response', { status: br.status, ok: br.ok });
-        const bd = await br.json();
+        console.log('[world/higher] batch run start', { count: batchItems.length });
+        const bd = await runOrderCheckBatch(batchItems);
         const rows = Array.isArray(bd?.results) ? bd.results : [];
         console.log('[world/higher] batch raw results', rows);
         viableOffers = rows.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0);
@@ -269,7 +262,7 @@ export async function GET(req) {
           .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
         console.log('[world/higher] valid public offers', validCastDebug);
       } catch (e) {
-        console.log('[world/higher] batch fetch error', { error: e?.message || 'unknown' });
+        console.log('[world/higher] batch run error', { error: e?.message || 'unknown' });
         viableHashes = new Set();
         viableOffers = [];
       }
