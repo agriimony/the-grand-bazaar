@@ -20,7 +20,7 @@ function trimText(s, max = 62) {
 
 export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
-  const size = 13;
+  const size = 15;
   const center = Math.floor(size / 2);
   const [npcs, setNpcs] = useState([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -229,9 +229,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
 
     for (const t of targets) {
-      let x = Math.max(0, Math.min(size - 1, Math.round(t.tx)));
-      let y = Math.max(0, Math.min(size - 1, Math.round(t.ty)));
-      if (x === center && y === center) x = Math.min(size - 1, x + 1);
+      let x = Math.max(1, Math.min(size - 2, Math.round(t.tx)));
+      let y = Math.max(1, Math.min(size - 2, Math.round(t.ty)));
+      if (x === center && y === center) x = Math.min(size - 2, x + 1);
 
       let tries = 0;
       let r = 1;
@@ -239,8 +239,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         const a = hashToUnit(`${t.u._key}:${tries}:a`) * 2 * Math.PI;
         const nx = Math.round(t.tx + Math.cos(a) * r);
         const ny = Math.round(t.ty + Math.sin(a) * r);
-        x = Math.max(0, Math.min(size - 1, nx));
-        y = Math.max(0, Math.min(size - 1, ny));
+        x = Math.max(1, Math.min(size - 2, nx));
+        y = Math.max(1, Math.min(size - 2, ny));
         tries += 1;
         if (tries % 8 === 0) r += 1;
         if (tries > size * size) break;
@@ -302,10 +302,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
-  const viewportBoardSide = 'calc(100dvh - 140px)';
-  const boardSide = `max(560px, ${viewportBoardSide})`;
-  const frameWidth = `min(${boardSide}, calc(100vw - 32px))`;
+  const tileSize = 58;
+  const boardSide = `${size * tileSize}px`;
+  const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
   const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
+  const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
   for (let y = 0; y < size; y += 1) {
@@ -314,7 +315,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
       const isCenter = x === center && y === center;
-      if (!isCenter && npc && current?.text) {
+      const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
+      const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
+      if (!isCenter && !isBorder && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
           x,
@@ -340,6 +343,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         >
           {isCenter ? (
             '⛲'
+          ) : isBorder ? (
+            <span style={{ fontSize: 22, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>{tree}</span>
           ) : npc ? (
             <>
               <button
