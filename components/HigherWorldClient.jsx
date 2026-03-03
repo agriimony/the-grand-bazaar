@@ -288,6 +288,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
+  const boardSide = 'clamp(520px, calc(100dvh - 220px), 1100px)';
   const cells = [];
   const labels = [];
   for (let y = 0; y < size; y += 1) {
@@ -404,43 +405,57 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
             borderRadius: 12,
             padding: 10,
-            position: 'relative',
+            overflow: 'auto',
+            maxHeight: 'calc(100dvh - 120px)',
           }}
         >
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${size}, 1fr)`,
-              gap: 2,
+              width: boardSide,
+              height: boardSide,
+              minWidth: boardSide,
+              minHeight: boardSide,
+              margin: '0 auto',
+              position: 'relative',
             }}
           >
-            {cells}
-          </div>
-          <div style={{ position: 'absolute', inset: 10, pointerEvents: 'none', zIndex: 5 }}>
-            {labels.map((l) => (
-              <div
-                key={l.key}
-                style={{
-                  position: 'absolute',
-                  left: `${((l.x + 0.5) / size) * 100}%`,
-                  top: `${(l.y / size) * 100}%`,
-                  transform: 'translate(-50%, -102%)',
-                  width: '14.5%',
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: 'vertical',
-                  fontSize: 17,
-                  lineHeight: 1.05,
-                  color: '#fff8b2',
-                  textAlign: 'center',
-                  textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
-                  filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
-                }}
-              >
-                {l.text}
-              </div>
-            ))}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${size}, 1fr)`,
+                gap: 2,
+                width: '100%',
+                height: '100%',
+              }}
+            >
+              {cells}
+            </div>
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
+              {labels.map((l) => (
+                <div
+                  key={l.key}
+                  style={{
+                    position: 'absolute',
+                    left: `${((l.x + 0.5) / size) * 100}%`,
+                    top: `${(l.y / size) * 100}%`,
+                    transform: 'translate(-50%, -102%)',
+                    width: '14.5%',
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    fontSize: 17,
+                    lineHeight: 1.05,
+                    color: '#fff8b2',
+                    textAlign: 'center',
+                    textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
+                    filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
+                  }}
+                >
+                  {l.text}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
