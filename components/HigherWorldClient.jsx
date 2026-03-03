@@ -30,11 +30,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
-  const pinchRef = useRef({ startDist: 0, startZoom: 1, midX: 0, midY: 0, active: false });
-  const pointerTypeRef = useRef('mouse');
-  const lastTouchLikeTsRef = useRef(0);
-  const touchCapableRef = useRef(false);
-  const TOUCH_GHOST_WINDOW_MS = 2600;
+  const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
+  const touchPointsRef = useRef(new Map());
 
   useEffect(() => {
     let dead = false;
@@ -55,18 +52,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const touchPoints = Number(navigator?.maxTouchPoints || 0);
-    const mq = window.matchMedia('(pointer: coarse), (any-pointer: coarse), (hover: none)');
-    const sync = () => {
-      touchCapableRef.current = touchPoints > 0 || Boolean(mq.matches);
-    };
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
   }, []);
 
   useEffect(() => {
@@ -347,73 +332,53 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const onWorldPointerDown = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
-    const now = Date.now();
-    if (t === 'touch' || t === 'pen') {
-      pointerTypeRef.current = t;
-      lastTouchLikeTsRef.current = now;
-      return;
-    }
-    if (t === 'mouse') {
-      if (now - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS) return;
-      pointerTypeRef.current = 'mouse';
+    if (t !== 'touch') return;
+
+    touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPointsRef.current.size === 2) {
+      const [a, b] = Array.from(touchPointsRef.current.values());
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      pinchRef.current = {
+        startDist: Math.hypot(dx, dy),
+        startZoom: zoomRef.current,
+        active: false,
+      };
     }
   };
 
   const onWorldPointerMove = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
-    const now = Date.now();
-    if (t === 'touch' || t === 'pen') {
-      pointerTypeRef.current = t;
-      lastTouchLikeTsRef.current = now;
-      return;
-    }
-    if (t === 'mouse') {
-      if (now - lastTouchLikeTsRef.current < TOUCH_GHOST_WINDOW_MS) return;
-      pointerTypeRef.current = 'mouse';
-    }
-  };
+    if (t !== 'touch') return;
+    if (!touchPointsRef.current.has(e.pointerId)) return;
 
-  const onWorldTouchStart = (e) => {
-    lastTouchLikeTsRef.current = Date.now();
-    if (e.touches.length !== 2) {
+    touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPointsRef.current.size !== 2) {
       pinchRef.current.active = false;
       return;
     }
-    const [a, b] = e.touches;
-    const dx = b.clientX - a.clientX;
-    const dy = b.clientY - a.clientY;
-    pinchRef.current = {
-      startDist: Math.hypot(dx, dy),
-      startZoom: zoomRef.current,
-      midX: (a.clientX + b.clientX) / 2,
-      midY: (a.clientY + b.clientY) / 2,
-      active: false,
-    };
-  };
 
-  const onWorldTouchMove = (e) => {
-    if (e.touches.length !== 2) {
-      pinchRef.current.active = false;
-      return;
-    }
-    const [a, b] = e.touches;
-    const dx = b.clientX - a.clientX;
-    const dy = b.clientY - a.clientY;
+    const [a, b] = Array.from(touchPointsRef.current.values());
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
     const dist = Math.hypot(dx, dy);
-    const midX = (a.clientX + b.clientX) / 2;
-    const midY = (a.clientY + b.clientY) / 2;
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
     const base = pinchRef.current.startDist || dist;
     const delta = Math.abs(dist - base);
 
-    if (!pinchRef.current.active && delta < 8) return;
+    if (!pinchRef.current.active && delta < 10) return;
     pinchRef.current.active = true;
 
     e.preventDefault();
     const startZoom = pinchRef.current.startZoom || zoomRef.current;
     const next = startZoom * (dist / Math.max(1, base));
     applyZoomAtPoint(next, midX, midY);
-    pinchRef.current.midX = midX;
-    pinchRef.current.midY = midY;
+  };
+
+  const onWorldPointerUp = (e) => {
+    touchPointsRef.current.delete(e.pointerId);
+    if (touchPointsRef.current.size < 2) pinchRef.current.active = false;
   };
 
   const onTalk = () => {
@@ -572,20 +537,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onMouseLeave={onWorldMouseUp}
           onPointerDown={onWorldPointerDown}
           onPointerMove={onWorldPointerMove}
-          onTouchStart={onWorldTouchStart}
-          onTouchMove={onWorldTouchMove}
-          onTouchEnd={() => {
-            pinchRef.current.active = false;
-            pointerTypeRef.current = 'touch';
-            lastTouchLikeTsRef.current = Date.now();
-            onWorldMouseUp();
-          }}
-          onTouchCancel={() => {
-            pinchRef.current.active = false;
-            pointerTypeRef.current = 'touch';
-            lastTouchLikeTsRef.current = Date.now();
-            onWorldMouseUp();
-          }}
+          onPointerUp={onWorldPointerUp}
+          onPointerCancel={onWorldPointerUp}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
