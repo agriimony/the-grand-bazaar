@@ -293,6 +293,42 @@ export async function GET(req) {
 
   const baseImage = `${url.origin}/og-base.jpg`;
 
+  if (!castHash) {
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: '1200px',
+            height: '800px',
+            display: 'flex',
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: '#000',
+          }}
+        >
+          <img
+            src={baseImage}
+            alt=""
+            width={1200}
+            height={800}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              objectFit: 'cover',
+            }}
+          />
+        </div>
+      ),
+      {
+        width: 1200,
+        height: 800,
+        headers: {
+          'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
+        },
+      }
+    );
+  }
+
   return new ImageResponse(
     (
       <div
