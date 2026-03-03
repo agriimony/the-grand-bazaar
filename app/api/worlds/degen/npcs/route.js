@@ -219,6 +219,10 @@ export async function GET(req) {
         const rows = Array.isArray(bd?.results) ? bd.results : [];
         viableOffers = rows.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0);
         viableHashes = new Set(viableOffers.map((r) => String(r.id || '').toLowerCase()).filter(Boolean));
+        const validCastDebug = finalCasts
+          .filter((c) => viableHashes.has(String(c.castHash || '').toLowerCase()))
+          .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || '').slice(0, 180) }));
+        console.log('[world/degen] valid public offers', validCastDebug);
       } catch {
         viableHashes = new Set();
         viableOffers = [];
