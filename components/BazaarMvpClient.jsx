@@ -906,6 +906,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const [makerProtocolFeeBps, setMakerProtocolFeeBps] = useState(50);
   const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false);
   const [counterpartyInput, setCounterpartyInput] = useState('');
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [counterpartyLoading, setCounterpartyLoading] = useState(false);
   const [counterpartyError, setCounterpartyError] = useState('');
   const [counterpartyResults, setCounterpartyResults] = useState([]);
@@ -1051,6 +1052,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setMakerMode(true);
     setStatus('maker flow');
   }, [initialCompressed, initialCastHash]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 720px)');
+    const sync = () => setIsMobileViewport(Boolean(mq.matches));
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     const fee = Number(orderData?.protocolFee || 0);
@@ -4227,8 +4237,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const signerInsufficientBalance = showSignerOwnerActions && checks?.makerBalanceOk === false;
   const isNeitherParty = !makerMode && checks?.connectedRole === 'none';
   const isPublicMakerOffer = makerMode && !parsed && !hasSpecificMakerCounterparty;
+  const offerActorMax = isMobileViewport ? 11 : 24;
   const topTitle = isNeitherParty
-    ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferActor(senderPartyName)} offers`
+    ? `${senderPartyName === 'Anybody' ? 'Anybody' : fitOfferActor(senderPartyName, offerActorMax)} offers`
     : 'You offer';
   const topAmount = flipForSigner ? counterpartyAmountDisplayFinal : yourAmountDisplayFinal;
   const topSymbol = flipForSigner ? signerSymbolDisplay : senderSymbolDisplay;
@@ -4300,7 +4311,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? 'Anybody offers'
     : (flipForSigner && senderPartyName === 'Anybody'
       ? 'Anybody offers'
-      : `${fitOfferActor(flipForSigner ? senderPartyName : counterpartyName)} offers`);
+      : `${fitOfferActor(flipForSigner ? senderPartyName : counterpartyName, offerActorMax)} offers`);
   const bottomTitleLink = makerMode && !parsed && !hasSpecificMakerCounterparty
     ? ''
     : (flipForSigner ? senderPartyProfileUrl : counterpartyProfileUrl);
