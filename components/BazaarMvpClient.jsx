@@ -4367,13 +4367,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
               </button>
               <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
                 <span>Trading with</span>
-                <span>{publicCounterpartyLabel}</span>
+                <span className="rs-title-ellipsis">{publicCounterpartyLabel}</span>
               </button>
             </>
           ) : (
             <span className="rs-topbar-title">
               <span>Trading with</span>
-              <span>{parsed ? topbarCounterpartyLabel : 'Counterparty'}</span>
+              <span className="rs-title-ellipsis">{parsed ? topbarCounterpartyLabel : 'Counterparty'}</span>
             </span>
           )}
         </div>
@@ -4955,17 +4955,17 @@ function TradePanel({ title, titleLink, titleAvatarUrl, onTitleClick, onTitleCle
           {titleLink ? (
             <a href={titleLink} target="_blank" rel="noreferrer" className="rs-title-link rs-title-with-pfp">
               {renderTitleAvatar()}
-              <span>{title}</span>
+              <span className="rs-title-ellipsis">{title}</span>
             </a>
           ) : onTitleClick ? (
             <button className="rs-title-btn rs-title-with-pfp" onClick={onTitleClick}>
               {renderTitleAvatar()}
-              <span>{title}</span>
+              <span className="rs-title-ellipsis">{title}</span>
             </button>
           ) : (
             <span className="rs-title-with-pfp">
               {renderTitleAvatar()}
-              <span>{title}</span>
+              <span className="rs-title-ellipsis">{title}</span>
             </span>
           )}
         </span>
