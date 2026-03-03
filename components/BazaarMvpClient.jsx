@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import { useAccount, useConnect, usePublicClient, useSendTransaction, useSignTypedData } from 'wagmi';
 import { decodeCompressedOrder, encodeCompressedOrder } from '../lib/orders';
@@ -840,6 +840,7 @@ function errText(e) {
 
 export default function BazaarMvpClient({ initialCompressed = '', initialCastHash = '', startInMakerMode = false, initialCounterparty = '', initialChannel = '' }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [compressed, setCompressed] = useState(initialCompressed);
   const [orderData, setOrderData] = useState(() => {
     if (!initialCompressed) return null;
@@ -4353,6 +4354,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ? (checks.takerBalanceOk && checks.takerApprovalOk ? 'ok' : 'bad')
       : (checks.makerAccepted ? 'ok' : 'bad'))
     : 'ok';
+  const showAirswapAttribution = pathname === '/maker' || String(pathname || '').startsWith('/c/');
 
   return (
     <>
@@ -4808,6 +4810,34 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             )}
           </div>
         </div>
+      ) : null}
+
+      {showAirswapAttribution ? (
+        <a
+          href="https://www.airswap.xyz/"
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            position: 'fixed',
+            right: 12,
+            bottom: 10,
+            zIndex: 40,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            color: '#f2e4bf',
+            textDecoration: 'none',
+            background: 'rgba(20,16,12,0.72)',
+            border: '1px solid rgba(236,200,120,0.35)',
+            borderRadius: 8,
+            padding: '4px 7px',
+            backdropFilter: 'blur(2px)',
+          }}
+        >
+          <span>Powered by</span>
+          <img src="https://www.airswap.xyz/favicon.ico" alt="AirSwap" width="14" height="14" style={{ borderRadius: 3 }} />
+        </a>
       ) : null}
 
       <div className="meta-block">
