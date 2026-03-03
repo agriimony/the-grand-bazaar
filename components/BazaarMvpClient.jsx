@@ -4836,7 +4836,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }}
         >
           <span>Powered by</span>
-          <img src="https://www.airswap.xyz/favicon.ico" alt="AirSwap" width="14" height="14" style={{ borderRadius: 3 }} />
+          <img src="/airswap-logo192.png" alt="AirSwap" width="14" height="14" style={{ borderRadius: 3 }} />
         </a>
       ) : null}
 
