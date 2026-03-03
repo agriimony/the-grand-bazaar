@@ -158,6 +158,19 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
       if (!shownCast) shownCast = list[0];
 
+      // Hold valid public offers on screen for at least 6s after their global appearance.
+      const validHoldMs = 6000;
+      const heldOffer = list
+        .filter((c) => Boolean(c?.isPublicSwapOffer || c?.publicOfferViable))
+        .filter((c) => {
+          const gi = Number(c?.graphIndex);
+          if (!Number.isFinite(gi) || gi < 0) return false;
+          const start = gi * eventMs;
+          return t >= start && t < start + validHoldMs;
+        })
+        .sort((a, b) => Number(b.graphIndex) - Number(a.graphIndex))[0] || null;
+      if (heldOffer) shownCast = heldOffer;
+
       // Keep independent per-tile blink/blank rhythm on top of globally-selected cast.
       const key = String(n?.fid || n?.username || 'npc');
       const isValidPublicOffer = Boolean(shownCast?.isPublicSwapOffer || shownCast?.publicOfferViable);
