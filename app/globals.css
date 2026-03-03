@@ -33,7 +33,7 @@ html, body {
   background: linear-gradient(180deg, #564a39 0%, #4a3f30 100%);
   color: #f0c46e;
   font-family: var(--font-pixel-heading), monospace;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 0.8px;
   text-shadow: 1px 1px 0 #2a2218;
 }
@@ -87,7 +87,7 @@ html, body {
   margin-bottom: 10px;
   text-shadow: 1px 1px 0 #2a2218;
   font-family: var(--font-pixel-heading), monospace;
-  font-size: 20px;
+  font-size: 14px;
   line-height: 1.2;
 }
 
@@ -985,7 +985,7 @@ textarea { width: 100%; font-size: 42px; }
   }
 
   .rs-panel-title {
-    font-size: 16px;
+    font-size: 14px;
     margin-bottom: 8px;
   }
 
