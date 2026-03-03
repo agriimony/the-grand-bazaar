@@ -32,6 +32,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const zoomRef = useRef(1);
   const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
+  const nonTouchInputRef = useRef(false);
 
   useEffect(() => {
     let dead = false;
@@ -52,6 +53,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(any-pointer: fine) and (hover: hover)');
+    const sync = () => {
+      const touchPoints = Number(navigator?.maxTouchPoints || 0);
+      nonTouchInputRef.current = Boolean(mq.matches) && touchPoints === 0;
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
   }, []);
 
   useEffect(() => {
@@ -381,6 +394,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (touchPointsRef.current.size < 2) pinchRef.current.active = false;
   };
 
+  const onWorldWheel = (e) => {
+    if (!nonTouchInputRef.current) return;
+    if (dragRef.current.active) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.92;
+    applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
+  };
+
   const onTalk = () => {
     if (!menu?.npc) return;
     const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
@@ -539,6 +560,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           onPointerMove={onWorldPointerMove}
           onPointerUp={onWorldPointerUp}
           onPointerCancel={onWorldPointerUp}
+          onWheel={onWorldWheel}
           style={{
             border: '2px solid #7f6a3b',
             boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
