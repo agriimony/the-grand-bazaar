@@ -305,6 +305,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const viewportBoardSide = 'calc(100dvh - 140px)';
   const boardSide = `max(560px, ${viewportBoardSide})`;
   const frameWidth = `min(${boardSide}, calc(100vw - 32px))`;
+  const frameHeight = `min(${boardSide}, calc(100dvh - 96px))`;
   const cells = [];
   const labels = [];
   for (let y = 0; y < size; y += 1) {
@@ -423,7 +424,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             borderRadius: 12,
             padding: 10,
             overflow: 'auto',
-            height: 'calc(100dvh - 96px)',
+            height: frameHeight,
           }}
         >
           <div
