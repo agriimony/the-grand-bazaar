@@ -164,7 +164,7 @@ async function fetchChannelCasts(headers) {
   let cursor = '';
   for (let page = 0; page < 5; page += 1) {
     const u = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
-    const r = await fetch(u, { headers, next: { revalidate: 86400 } });
+    const r = await fetch(u, { headers, cache: 'no-store' });
     if (!r.ok) break;
     const d = await r.json();
     const list = Array.isArray(d?.casts) ? d.casts : [];
@@ -184,7 +184,7 @@ async function fetchBulkUserScores(fids, headers) {
   for (const batch of chunks) {
     try {
       const u = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(batch.join(','))}`;
-      const r = await fetch(u, { headers, next: { revalidate: 86400 } });
+      const r = await fetch(u, { headers, cache: 'no-store' });
       if (!r.ok) continue;
       const d = await r.json();
       const users = Array.isArray(d?.users) ? d.users : [];
@@ -206,7 +206,7 @@ async function fetchChildCasts(seedCasts, headers) {
       const hash = String(c.castHash || '').trim();
       if (!hash) continue;
       const u = `https://api.neynar.com/v2/farcaster/cast/conversation?identifier=${encodeURIComponent(hash)}&type=hash&reply_depth=2&include_chronological_parent_casts=false&limit=50`;
-      const r = await fetch(u, { headers, next: { revalidate: 86400 } });
+      const r = await fetch(u, { headers, cache: 'no-store' });
       if (!r.ok) continue;
       const d = await r.json();
       const convo = Array.isArray(d?.conversation?.cast?.direct_replies)
