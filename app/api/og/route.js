@@ -143,10 +143,10 @@ async function rpcCall(rpc, to, data, id) {
   return r.json();
 }
 
-async function fetchNftImage(token, kind, tokenId = '0') {
+async function fetchNftMetadata(token, kind, tokenId = '0') {
   const k = String(kind || '').toLowerCase();
-  if (k !== KIND_ERC721 && k !== KIND_ERC1155) return '';
-  if (!/^0x[a-fA-F0-9]{40}$/.test(String(token || ''))) return '';
+  if (k !== KIND_ERC721 && k !== KIND_ERC1155) return { image: '', symbol: '', name: '' };
+  if (!/^0x[a-fA-F0-9]{40}$/.test(String(token || ''))) return { image: '', symbol: '', name: '' };
   const rpc = 'https://mainnet.base.org';
   try {
     const data = k === KIND_ERC721
@@ -158,24 +158,32 @@ async function fetchNftImage(token, kind, tokenId = '0') {
         ? String(ERC721_IFACE.decodeFunctionResult('tokenURI', res.result)?.[0] || '')
         : String(ERC1155_IFACE.decodeFunctionResult('uri', res.result)?.[0] || ''))
       : '';
-    if (!rawUri) return '';
+    if (!rawUri) return { image: '', symbol: '', name: '' };
 
     const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
     const tokenUri = ipfsToHttp(rawUri.replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0')));
-    if (!tokenUri) return '';
+    if (!tokenUri) return { image: '', symbol: '', name: '' };
 
     if (tokenUri.startsWith('data:application/json')) {
       const b64 = tokenUri.split(',')[1] || '';
       const j = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-      return ipfsToHttp(j?.image || j?.image_url || '');
+      return {
+        image: ipfsToHttp(j?.image || j?.image_url || ''),
+        symbol: String(j?.symbol || '').trim(),
+        name: String(j?.name || '').trim(),
+      };
     }
 
     const metaRes = await fetch(tokenUri, { cache: 'no-store' });
-    if (!metaRes.ok) return '';
+    if (!metaRes.ok) return { image: '', symbol: '', name: '' };
     const j = await metaRes.json();
-    return ipfsToHttp(j?.image || j?.image_url || '');
+    return {
+      image: ipfsToHttp(j?.image || j?.image_url || ''),
+      symbol: String(j?.symbol || '').trim(),
+      name: String(j?.name || '').trim(),
+    };
   } catch {
-    return '';
+    return { image: '', symbol: '', name: '' };
   }
 }
 
@@ -250,10 +258,20 @@ export async function GET(req) {
         signerSymbol = clampText((signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) ? (signerMeta.symbol || 'NFT') : signerMeta.symbol, 10);
         senderSymbol = clampText((senderKind === KIND_ERC721 || senderKind === KIND_ERC1155) ? (senderMeta.symbol || 'NFT') : senderMeta.symbol, 10);
 
-        [signerImage, senderImage] = await Promise.all([
-          fetchNftImage(signerToken, signerKind, signerId),
-          fetchNftImage(senderToken, senderKind, senderId),
+        const [signerNftMeta, senderNftMeta] = await Promise.all([
+          fetchNftMetadata(signerToken, signerKind, signerId),
+          fetchNftMetadata(senderToken, senderKind, senderId),
         ]);
+
+        signerImage = signerNftMeta.image || '';
+        senderImage = senderNftMeta.image || '';
+
+        if (signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) {
+          signerSymbol = clampText(signerNftMeta.symbol || signerNftMeta.name || signerMeta.symbol || 'NFT', 10);
+        }
+        if (senderKind === KIND_ERC721 || senderKind === KIND_ERC1155) {
+          senderSymbol = clampText(senderNftMeta.symbol || senderNftMeta.name || senderMeta.symbol || 'NFT', 10);
+        }
 
         const sanitizeEmbedUrl = (u) => {
           try {
