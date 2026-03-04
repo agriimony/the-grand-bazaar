@@ -500,17 +500,30 @@ async function readErc721Symbol(tokenAddr, rpOverride = null) {
   }
 }
 
-async function readErc1155Symbol(tokenAddr, rpOverride = null) {
+async function readErc1155Symbol(tokenAddr, tokenId = '0', rpOverride = null) {
   const startedAt = Date.now();
   try {
     const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
     const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
-    const symbol = await withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => '');
-    const out = String(symbol || '').trim() || 'NFT';
-    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, symbol: out });
+    const [symbol, uri] = await Promise.all([
+      withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
+      withTimeout(c.uri(tokenId).catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
+    ]);
+
+    const contractSymbol = String(symbol || '').trim();
+    if (contractSymbol && !contractSymbol.includes('?')) {
+      pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, symbol: contractSymbol, source: 'contract' });
+      return contractSymbol;
+    }
+
+    const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
+    const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
+    const meta = await readNftMetadataFromTokenUri(tokenUri);
+    const out = String(meta.symbol || '').trim() || String(meta.name || '').trim() || 'NFT';
+    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, symbol: out, source: 'metadata', tokenUri });
     return out;
   } catch (e) {
-    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, ms: Date.now() - startedAt, error: e?.message || 'symbol read failed' });
+    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: e?.message || 'symbol read failed' });
     return 'NFT';
   }
 }
@@ -1775,12 +1788,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           (signerKindNow === KIND_ERC721 && signerNeedsSymbol)
             ? readErc721Symbol(parsed.signerToken, readProvider)
             : (signerKindNow === KIND_ERC1155 && signerNeedsSymbol)
-            ? readErc1155Symbol(parsed.signerToken, readProvider)
+            ? readErc1155Symbol(parsed.signerToken, String(parsed.signerId || '0'), readProvider)
             : Promise.resolve(''),
           (senderKindNow === KIND_ERC721 && senderNeedsSymbol)
             ? readErc721Symbol(parsed.senderToken, readProvider)
             : (senderKindNow === KIND_ERC1155 && senderNeedsSymbol)
-            ? readErc1155Symbol(parsed.senderToken, readProvider)
+            ? readErc1155Symbol(parsed.senderToken, String(parsed.senderId || '0'), readProvider)
             : Promise.resolve(''),
         ]);
 
