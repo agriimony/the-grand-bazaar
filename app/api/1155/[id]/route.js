@@ -38,13 +38,10 @@ export async function GET(_req, { params }) {
       select
         token_id,
         name,
+        symbol,
         description,
         image,
-        animation_url,
-        external_url,
-        background_color,
-        attributes,
-        properties
+        attributes
       from ${table}
       where token_id = $1
       limit 1
@@ -64,10 +61,7 @@ export async function GET(_req, { params }) {
       attributes: toAttrArray(row.attributes),
     };
 
-    if (row.animation_url) out.animation_url = row.animation_url;
-    if (row.external_url) out.external_url = row.external_url;
-    if (row.background_color) out.background_color = row.background_color;
-    if (row.properties && typeof row.properties === 'object') out.properties = row.properties;
+    if (row.symbol) out.symbol = String(row.symbol);
 
     return NextResponse.json(out, {
       headers: {
