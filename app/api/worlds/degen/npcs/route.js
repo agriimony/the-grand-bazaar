@@ -4,7 +4,8 @@ import { runOrderCheckBatch } from '../../../../../lib/orderCheckBatch';
 
 export const revalidate = 120;
 
-const DEV_FIDS = [191780, 2584413, 2480582];
+const MY_FID = 191780;
+const CHANNEL_ID = 'degen';
 const HOURS_24_MS = 24 * 60 * 60 * 1000;
 
 function extractCompressedOrder(text = '') {
@@ -128,12 +129,12 @@ function mapCast(c) {
   };
 }
 
-async function fetchRecentCastsByFid(fid, headers, startMs) {
+async function fetchRecentChannelCastsByFid(channelId, fid, headers, startMs) {
   const out = [];
   let cursor = '';
 
-  for (let page = 0; page < 2; page += 1) {
-    const base = `https://api.neynar.com/v2/farcaster/feed/user/casts?fid=${encodeURIComponent(String(fid))}&limit=50&include_replies=true`;
+  for (let page = 0; page < 5; page += 1) {
+    const base = `https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=${encodeURIComponent(channelId)}&with_recasts=false&limit=100`;
     const url = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
     const r = await fetch(url, { headers, cache: 'no-store' });
     if (!r.ok) break;
@@ -142,10 +143,14 @@ async function fetchRecentCastsByFid(fid, headers, startMs) {
     const list = Array.isArray(d?.casts) ? d.casts : [];
     if (!list.length) break;
 
-    const mapped = list.map(mapCast).filter(Boolean);
+    const mine = list.filter((c) => Number(c?.author?.fid || 0) === Number(fid));
+    const mapped = mine.map(mapCast).filter(Boolean);
     out.push(...mapped);
 
-    const oldestTs = mapped.reduce((m, c) => Math.min(m, c.timestamp), Number.POSITIVE_INFINITY);
+    const oldestTs = list
+      .map((c) => toIsoMs(c?.timestamp))
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .reduce((m, v) => Math.min(m, v), Number.POSITIVE_INFINITY);
     if (Number.isFinite(oldestTs) && oldestTs < startMs) break;
 
     cursor = String(d?.next?.cursor || '').trim();
@@ -214,11 +219,7 @@ export async function GET(req) {
     const nowMs = Date.now();
     const windowStartMs = nowMs - HOURS_24_MS;
 
-    const all = [];
-    for (const fid of DEV_FIDS) {
-      const userCasts = await fetchRecentCastsByFid(fid, headers, windowStartMs);
-      all.push(...userCasts);
-    }
+    const all = await fetchRecentChannelCastsByFid(CHANNEL_ID, MY_FID, headers, windowStartMs);
 
     const mergedByHash = new Map();
     for (const c of all) mergedByHash.set(c.castHash, c);
@@ -289,7 +290,8 @@ export async function GET(req) {
         mode: 'dev-temp-fids-last-24h',
         meta: {
           world: 'degen',
-          fids: DEV_FIDS,
+          fids: [MY_FID],
+          channel: CHANNEL_ID,
           totalCasts: finalCasts.length,
           publicOfferCasts: batchItems.length,
           validPublicOffers: viableOffers.length,
