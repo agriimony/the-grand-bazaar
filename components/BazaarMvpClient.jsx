@@ -564,7 +564,10 @@ async function readNftMetadataFromTokenUri(tokenUri = '') {
       const imgUrl = ipfsToHttp(j?.image || j?.image_url || '');
       const symbol = String(j?.symbol || '').trim();
       const name = String(j?.name || '').trim();
-      if (imgUrl || symbol || name) return { imgUrl, symbol, name };
+      if (imgUrl || symbol || name) {
+        console.debug('[nft-meta][erc1155-json]', { tokenUri: uri, gatewayUrl: u, hasImage: Boolean(imgUrl), symbol, name });
+        return { imgUrl, symbol, name };
+      }
     } catch {
       // try next gateway
     }
@@ -574,11 +577,13 @@ async function readNftMetadataFromTokenUri(tokenUri = '') {
     const r = await fetchWithTimeout(`/api/nft-meta?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' }, NFT_URI_FETCH_TIMEOUT_MS);
     const d = await r.json();
     if (r.ok && d?.ok) {
-      return {
+      const fromProxy = {
         imgUrl: ipfsToHttp(d?.image || ''),
         symbol: String(d?.symbol || '').trim(),
         name: String(d?.name || '').trim(),
       };
+      console.debug('[nft-meta][erc1155-proxy-json]', { tokenUri: uri, hasImage: Boolean(fromProxy.imgUrl), symbol: fromProxy.symbol, name: fromProxy.name });
+      return fromProxy;
     }
   } catch {
     // ignore proxy failure
@@ -601,9 +606,20 @@ async function readErc1155Meta(tokenAddr, tokenId, rpOverride = null) {
     const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
     pushMetaDebugLog({ scope: "erc1155-rpc", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
     const meta = await readNftMetadataFromTokenUri(tokenUri);
-    const resolvedSymbol = String(symbol || '').trim() || meta.symbol || meta.name || 'NFT';
+    const contractSymbol = String(symbol || '').trim();
+    const resolvedSymbol = contractSymbol || meta.symbol || meta.name || 'NFT';
     const imgUrl = meta.imgUrl || '';
-    console.debug('[nft-meta][erc1155-total]', { token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, hasImage: Boolean(imgUrl), hasSymbol: Boolean(String(resolvedSymbol || '').trim()) });
+    console.debug('[nft-meta][erc1155-total]', {
+      token: tokenAddr,
+      tokenId: String(tokenId),
+      ms: Date.now() - startedAt,
+      tokenUri,
+      contractSymbol,
+      metaSymbol: meta.symbol || '',
+      metaName: meta.name || '',
+      resolvedSymbol,
+      hasImage: Boolean(imgUrl),
+    });
     return { symbol: resolvedSymbol, imgUrl: imgUrl || null };
   } catch (e) {
     pushMetaDebugLog({ scope: "erc1155-total", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || "erc1155 meta failed") });
