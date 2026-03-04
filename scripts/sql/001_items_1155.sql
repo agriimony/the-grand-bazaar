@@ -1,6 +1,7 @@
 create table if not exists items_1155 (
   token_id numeric(78,0) primary key,
   name text not null,
+  symbol text,
   description text default '',
   image text not null,
   attributes jsonb default '[]'::jsonb,

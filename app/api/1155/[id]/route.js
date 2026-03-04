@@ -38,6 +38,7 @@ export async function GET(_req, { params }) {
       select
         token_id,
         name,
+        symbol,
         description,
         image,
         animation_url,
@@ -63,6 +64,8 @@ export async function GET(_req, { params }) {
       image: row.image || '',
       attributes: toAttrArray(row.attributes),
     };
+
+    if (row.symbol) out.symbol = String(row.symbol);
 
     if (row.animation_url) out.animation_url = row.animation_url;
     if (row.external_url) out.external_url = row.external_url;
