@@ -133,6 +133,21 @@ function ipfsToHttp(u = '') {
   return s;
 }
 
+function toOgRenderableImage(u = '') {
+  const raw = String(u || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (/\.webp$/i.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/\.webp$/i, '.png');
+      return parsed.toString();
+    }
+    return raw;
+  } catch {
+    return raw.replace(/\.webp(\?.*)?$/i, '.png$1');
+  }
+}
+
 async function rpcCall(rpc, to, data, id) {
   const r = await fetch(rpc, {
     method: 'POST',
@@ -274,8 +289,8 @@ export async function GET(req) {
           fetchNftMetadata(senderToken, senderKind, senderId),
         ]);
 
-        signerImage = signerNftMeta.image || '';
-        senderImage = senderNftMeta.image || '';
+        signerImage = toOgRenderableImage(signerNftMeta.image || '');
+        senderImage = toOgRenderableImage(senderNftMeta.image || '');
 
         if (signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) {
           signerSymbol = clampText(signerNftMeta.symbol || signerNftMeta.name || signerMeta.symbol || 'NFT', 10);
