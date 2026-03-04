@@ -3,11 +3,7 @@ create table if not exists items_1155 (
   name text not null,
   description text default '',
   image text not null,
-  animation_url text,
-  external_url text,
-  background_color text,
   attributes jsonb default '[]'::jsonb,
-  properties jsonb default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
 
