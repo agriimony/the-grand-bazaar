@@ -219,6 +219,7 @@ function sideText({ amount, symbol, x, imageUrl, isNft }) {
 
 export async function GET(req) {
   const url = new URL(req.url);
+  console.log('[api/og] request', { path: url.pathname, castHash: qp(url, 'castHash', qp(url, 'casthash', '')) || '' });
 
   let signerAmount = clampText(qp(url, 'signerAmount', '-'), 14);
   let signerSymbol = clampText(qp(url, 'signerSymbol', 'TOKEN'), 10);
@@ -242,6 +243,16 @@ export async function GET(req) {
       const orderData = await orderRes.json();
       if (orderRes.ok && orderData?.ok && orderData?.compressedOrder) {
         const parsed = decodeCompressedOrder(orderData.compressedOrder);
+        console.log('[api/og] cast order parsed', {
+          castHash,
+          sourceCastHash: orderData?.sourceCastHash || '',
+          signerToken: parsed.signerToken,
+          senderToken: parsed.senderToken,
+          signerKind: parsed.signerKind,
+          senderKind: parsed.senderKind,
+          signerId: String(parsed.signerId || '0'),
+          senderId: String(parsed.senderId || '0'),
+        });
         signerKind = String(parsed.signerKind || KIND_ERC20).toLowerCase();
         senderKind = String(parsed.senderKind || KIND_ERC20).toLowerCase();
         signerToken = String(parsed.signerToken || '');
@@ -272,6 +283,28 @@ export async function GET(req) {
         if (senderKind === KIND_ERC721 || senderKind === KIND_ERC1155) {
           senderSymbol = clampText(senderNftMeta.symbol || senderNftMeta.name || senderMeta.symbol || 'NFT', 10);
         }
+
+        console.log('[api/og] nft resolved', {
+          castHash,
+          signer: {
+            kind: signerKind,
+            token: signerToken,
+            tokenId: signerId,
+            symbol: signerSymbol,
+            image: signerImage || '',
+            metaSymbol: signerNftMeta.symbol || '',
+            metaName: signerNftMeta.name || '',
+          },
+          sender: {
+            kind: senderKind,
+            token: senderToken,
+            tokenId: senderId,
+            symbol: senderSymbol,
+            image: senderImage || '',
+            metaSymbol: senderNftMeta.symbol || '',
+            metaName: senderNftMeta.name || '',
+          },
+        });
 
         const sanitizeEmbedUrl = (u) => {
           try {
@@ -304,7 +337,8 @@ export async function GET(req) {
           if (!senderImage && senderIsNft) senderImage = embedUrls[0] || '';
         }
       }
-    } catch {
+    } catch (e) {
+      console.log('[api/og] cast parse error', { castHash, error: String(e?.message || 'unknown') });
       // keep fallback values
     }
   }
