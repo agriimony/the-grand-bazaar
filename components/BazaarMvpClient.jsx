@@ -3259,14 +3259,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     let imgUrl = '';
+    let resolvedSymbol = String(symbolHint || '').trim();
     try {
-      const tokenUri = String(uri || '').replace('{id}', String(tokenId));
-      imgUrl = await readNftImageFromTokenUri(tokenUri);
-    } catch {}
+      const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
+      const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId));
+      const meta = await readNftMetadataFromTokenUri(tokenUri);
+      imgUrl = meta.imgUrl || '';
+      if (!resolvedSymbol || resolvedSymbol === 'NFT' || resolvedSymbol.includes('?')) {
+        resolvedSymbol = String(meta.symbol || '').trim() || String(meta.name || '').trim() || 'NFT';
+      }
+      console.log('[nft-meta][custom-erc1155-option]', { token: tokenAddr, tokenId: String(tokenId), tokenUri, metaSymbol: meta.symbol || '', metaName: meta.name || '', resolvedSymbol, hasImage: Boolean(imgUrl) });
+    } catch (e) {
+      console.log('[nft-meta][custom-erc1155-option]', { token: tokenAddr, tokenId: String(tokenId), error: String(e?.message || 'meta failed') });
+    }
 
     return {
       token: tokenAddr,
-      symbol: String(symbolHint || 'NFT'),
+      symbol: String(resolvedSymbol || 'NFT'),
       decimals: 0,
       balance: String(bal),
       availableAmount: Number(bal),
