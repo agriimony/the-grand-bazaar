@@ -1818,8 +1818,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
           }
         }
 
-        const signerNeedsSymbol = !String(finalSignerSymbol || '').trim() || String(finalSignerSymbol || '').includes('?');
-        const senderNeedsSymbol = !String(finalSenderSymbol || '').trim() || String(finalSenderSymbol || '').includes('?');
+        const signerSymNorm = String(finalSignerSymbol || '').trim();
+        const senderSymNorm = String(finalSenderSymbol || '').trim();
+        const signerNeedsSymbol = !signerSymNorm || signerSymNorm.includes('?') || signerSymNorm === 'NFT';
+        const senderNeedsSymbol = !senderSymNorm || senderSymNorm.includes('?') || senderSymNorm === 'NFT';
         const [signerNftSymbol, senderNftSymbol] = await Promise.all([
           (signerKindNow === KIND_ERC721 && signerNeedsSymbol)
             ? readErc721Symbol(parsed.signerToken, readProvider)
