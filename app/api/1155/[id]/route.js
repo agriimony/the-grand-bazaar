@@ -49,6 +49,7 @@ export async function GET(_req, { params }) {
 
     const rows = await sql.query(query, [tokenId]);
     const row = Array.isArray(rows) ? rows[0] : null;
+    console.log('[api/1155] fetch', { tokenId, table, found: Boolean(row), symbol: row?.symbol || '', name: row?.name || '', image: row?.image || '' });
 
     if (!row) {
       return NextResponse.json({ error: 'metadata not found', tokenId }, { status: 404 });
