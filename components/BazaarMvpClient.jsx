@@ -501,31 +501,8 @@ async function readErc721Symbol(tokenAddr, rpOverride = null) {
 }
 
 async function readErc1155Symbol(tokenAddr, tokenId = '0', rpOverride = null) {
-  const startedAt = Date.now();
-  try {
-    const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
-    const c = new ethers.Contract(tokenAddr, ERC1155_ABI, rp);
-    const [symbol, uri] = await Promise.all([
-      withTimeout(c.symbol().catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
-      withTimeout(c.uri(tokenId).catch(() => ''), NFT_META_RPC_TIMEOUT_MS).catch(() => ''),
-    ]);
-
-    const contractSymbol = String(symbol || '').trim();
-    if (contractSymbol && !contractSymbol.includes('?')) {
-      pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, symbol: contractSymbol, source: 'contract' });
-      return contractSymbol;
-    }
-
-    const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
-    const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
-    const meta = await readNftMetadataFromTokenUri(tokenUri);
-    const out = String(meta.symbol || '').trim() || String(meta.name || '').trim() || 'NFT';
-    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, symbol: out, source: 'metadata', tokenUri });
-    return out;
-  } catch (e) {
-    pushMetaDebugLog({ scope: 'erc1155-symbol-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: e?.message || 'symbol read failed' });
-    return 'NFT';
-  }
+  const m = await readErc1155ResolvedMeta(tokenAddr, tokenId, rpOverride);
+  return String(m.symbol || 'NFT');
 }
 
 async function readErc721Meta(tokenAddr, tokenId, rpOverride = null) {
@@ -605,7 +582,7 @@ async function readNftMetadataFromTokenUri(tokenUri = '') {
   return { imgUrl: '', symbol: '', name: '' };
 }
 
-async function readErc1155Meta(tokenAddr, tokenId, rpOverride = null) {
+async function readErc1155ResolvedMeta(tokenAddr, tokenId, rpOverride = null) {
   const startedAt = Date.now();
   try {
     const rp = rpOverride || new ethers.JsonRpcProvider(BASE_RPCS[0], undefined, { batchMaxCount: 1 });
@@ -617,12 +594,14 @@ async function readErc1155Meta(tokenAddr, tokenId, rpOverride = null) {
     ]);
     const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
     const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId || '0'));
-    pushMetaDebugLog({ scope: "erc1155-rpc", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
+    pushMetaDebugLog({ scope: 'erc1155-rpc', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - rpcStartedAt, hasUri: Boolean(tokenUri) });
+
     const meta = await readNftMetadataFromTokenUri(tokenUri);
     const contractSymbol = String(symbol || '').trim();
     const resolvedSymbol = contractSymbol || meta.symbol || meta.name || 'NFT';
     const imgUrl = meta.imgUrl || '';
-    console.debug('[nft-meta][erc1155-total]', {
+
+    console.log('[nft-meta][erc1155-resolved]', {
       token: tokenAddr,
       tokenId: String(tokenId),
       ms: Date.now() - startedAt,
@@ -633,11 +612,17 @@ async function readErc1155Meta(tokenAddr, tokenId, rpOverride = null) {
       resolvedSymbol,
       hasImage: Boolean(imgUrl),
     });
-    return { symbol: resolvedSymbol, imgUrl: imgUrl || null };
+
+    return { tokenUri, contractSymbol, metaSymbol: meta.symbol || '', metaName: meta.name || '', symbol: resolvedSymbol, imgUrl: imgUrl || null };
   } catch (e) {
-    pushMetaDebugLog({ scope: "erc1155-total", token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || "erc1155 meta failed") });
-    return { symbol: 'NFT', imgUrl: null };
+    pushMetaDebugLog({ scope: 'erc1155-total', token: tokenAddr, tokenId: String(tokenId), ms: Date.now() - startedAt, error: String(e?.message || 'erc1155 meta failed') });
+    return { tokenUri: '', contractSymbol: '', metaSymbol: '', metaName: '', symbol: 'NFT', imgUrl: null };
   }
+}
+
+async function readErc1155Meta(tokenAddr, tokenId, rpOverride = null) {
+  const m = await readErc1155ResolvedMeta(tokenAddr, tokenId, rpOverride);
+  return { symbol: m.symbol || 'NFT', imgUrl: m.imgUrl || null };
 }
 
 async function hasValidErc1155Metadata(tokenUri = '', tokenId = '') {
@@ -3297,14 +3282,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     let imgUrl = '';
     let resolvedSymbol = String(symbolHint || '').trim();
     try {
-      const hexId = BigInt(String(tokenId || '0')).toString(16).padStart(64, '0');
-      const tokenUri = String(uri || '').replaceAll('{id}', hexId).replace('{id}', String(tokenId));
-      const meta = await readNftMetadataFromTokenUri(tokenUri);
-      imgUrl = meta.imgUrl || '';
+      const m = await readErc1155ResolvedMeta(tokenAddr, String(tokenId), rp);
+      imgUrl = m.imgUrl || '';
       if (!resolvedSymbol || resolvedSymbol === 'NFT' || resolvedSymbol.includes('?')) {
-        resolvedSymbol = String(meta.symbol || '').trim() || String(meta.name || '').trim() || 'NFT';
+        resolvedSymbol = String(m.symbol || '').trim() || 'NFT';
       }
-      console.log('[nft-meta][custom-erc1155-option]', { token: tokenAddr, tokenId: String(tokenId), tokenUri, metaSymbol: meta.symbol || '', metaName: meta.name || '', resolvedSymbol, hasImage: Boolean(imgUrl) });
+      console.log('[nft-meta][custom-erc1155-option]', {
+        token: tokenAddr,
+        tokenId: String(tokenId),
+        tokenUri: m.tokenUri || '',
+        contractSymbol: m.contractSymbol || '',
+        metaSymbol: m.metaSymbol || '',
+        metaName: m.metaName || '',
+        resolvedSymbol,
+        hasImage: Boolean(imgUrl),
+      });
     } catch (e) {
       console.log('[nft-meta][custom-erc1155-option]', { token: tokenAddr, tokenId: String(tokenId), error: String(e?.message || 'meta failed') });
     }
