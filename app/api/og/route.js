@@ -104,26 +104,101 @@ async function guessMeta(addr = '', kind = KIND_ERC20) {
   return { symbol: shortAddr(addr), decimals: 18 };
 }
 
-function formatAmount(raw, decimals) {
-  try {
-    const v = ethers.formatUnits(BigInt(raw), decimals);
-    const n = Number(v);
-    if (!Number.isFinite(n)) return clampText(v, 14);
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2).replace(/\.00$/, '')}B`;
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.00$/, '')}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(2).replace(/\.00$/, '')}k`;
-    if (n >= 1) return n.toFixed(4).replace(/\.?0+$/, '');
-    return n.toPrecision(3).replace(/\.?0+$/, '');
-  } catch {
-    return '-';
+function formatTokenAmountParts(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return { number: String(value), suffix: '' };
+  const abs = Math.abs(n);
+  const suffixes = ['', 'k', 'M', 'B', 'T', 'Q'];
+  let tier = 0;
+
+  while (tier < suffixes.length - 1 && abs >= Math.pow(1000, tier + 1)) tier += 1;
+
+  let scaled = n / Math.pow(1000, tier);
+
+  // Prefer 4-digit style on lower tier when possible, e.g. 1.234M -> 1234k
+  if (Math.abs(scaled) < 1000 && tier > 0) {
+    const downScaled = n / Math.pow(1000, tier - 1);
+    if (Math.abs(downScaled) < 10000) {
+      tier -= 1;
+      scaled = downScaled;
+    }
   }
+
+  const absScaled = Math.abs(scaled);
+  let number;
+  if (absScaled >= 1000) number = scaled.toFixed(0);
+  else if (absScaled >= 100) number = scaled.toFixed(1);
+  else if (absScaled >= 10) number = scaled.toFixed(2);
+  else number = scaled.toFixed(3);
+
+  return { number, suffix: suffixes[tier] };
+}
+
+function toSubscriptDigits(v = '') {
+  const map = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
+  return String(v).split('').map((c) => map[c] || c).join('');
+}
+
+function formatSmallWithSubscript(n) {
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  const s = abs.toFixed(12).replace(/0+$/, '');
+  const [, frac = ''] = s.split('.');
+  const m = frac.match(/^(0+)(\d+)/);
+  if (!m) return `${sign}${s}`;
+  const zeroCount = m[1].length;
+  const sig = ((m[2] || '').slice(0, 2) || '00').padEnd(2, '0');
+  return `${sign}0.0${toSubscriptDigits(String(zeroCount))}${sig}`;
+}
+
+function formatTokenAmount(value) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n !== 0 && Math.abs(n) < 0.001) {
+    return formatSmallWithSubscript(n);
+  }
+  const p = formatTokenAmountParts(value);
+  return `${p.number}${p.suffix}`;
+}
+
+function formatIntegerAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value || '0');
+  const v = Math.max(0, Math.floor(n));
+  if (v < 1000) return String(v);
+
+  const suffixes = ['', 'k', 'M', 'B', 'T', 'Q'];
+  let tier = 0;
+  while (tier < suffixes.length - 1 && v >= Math.pow(1000, tier + 1)) tier += 1;
+
+  let scaled = v / Math.pow(1000, tier);
+
+  // Prefer 4-digit style on lower tier when possible (e.g. 1.234M -> 1234k)
+  if (scaled < 1000 && tier > 0) {
+    const downScaled = v / Math.pow(1000, tier - 1);
+    if (downScaled < 10000) {
+      tier -= 1;
+      scaled = downScaled;
+    }
+  }
+
+  let decimals = 0;
+  if (scaled < 10) decimals = 3;
+  else if (scaled < 100) decimals = 2;
+  else if (scaled < 1000) decimals = 1;
+
+  const s = scaled.toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  return `${s}${suffixes[tier]}`;
 }
 
 function formatAmountByKind(kind, raw, decimals, tokenId) {
   const k = String(kind || '').toLowerCase();
   if (k === KIND_ERC721) return `#${String(tokenId ?? 0)}`;
-  if (k === KIND_ERC1155) return clampText(String(raw || '0'), 14);
-  return formatAmount(raw, decimals);
+  if (k === KIND_ERC1155) return formatIntegerAmount(String(raw || '0'));
+  try {
+    return formatTokenAmount(ethers.formatUnits(BigInt(raw), decimals));
+  } catch {
+    return '-';
+  }
 }
 
 function ipfsToHttp(u = '') {
