@@ -50,7 +50,7 @@ export async function GET(_req, { params }) {
       limit 1
     `;
 
-    const rows = await sql(query, [tokenId]);
+    const rows = await sql.query(query, [tokenId]);
     const row = Array.isArray(rows) ? rows[0] : null;
 
     if (!row) {
