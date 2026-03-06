@@ -1501,6 +1501,42 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     };
 
     try {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const isHex32 = (v) => /^0x[a-fA-F0-9]{64}$/.test(String(v || '').trim());
+      const isValidAddress = (v) => ethers.isAddress(String(v || '').trim());
+      const isValidTokenRef = (v) => {
+        const raw = String(v || '').trim();
+        if (!raw) return false;
+        if (isEthSentinelAddr(raw)) return true;
+        return ethers.isAddress(raw);
+      };
+
+      const senderWalletNorm = normalizeAddr(parsed.senderWallet || ethers.ZeroAddress);
+      const isOpenOrderPreflight = senderWalletNorm === ethers.ZeroAddress.toLowerCase();
+      const malformed =
+        !isValidAddress(parsed.swapContract)
+        || !isValidAddress(parsed.signerWallet)
+        || (!isOpenOrderPreflight && !isValidAddress(parsed.senderWallet))
+        || !isValidTokenRef(parsed.signerToken)
+        || !isValidTokenRef(parsed.senderToken)
+        || !Number.isFinite(Number(parsed.nonce))
+        || !Number.isFinite(Number(parsed.expiry))
+        || BigInt(parsed.signerAmount || 0) <= 0n
+        || BigInt(parsed.senderAmount || 0) <= 0n
+        || Number(parsed.v) <= 0
+        || !isHex32(parsed.r)
+        || !isHex32(parsed.s);
+
+      if (Number(parsed.expiry) <= nowSec) {
+        setStatus('order expired');
+        return null;
+      }
+
+      if (malformed) {
+        setStatus('order malformed');
+        return null;
+      }
+
       setStatus('checking order');
       const readProvider = new ethers.JsonRpcProvider('https://mainnet.base.org', undefined, { batchMaxCount: 1 });
       markTiming('start');

@@ -3,10 +3,12 @@ import os from 'os';
 import path from 'path';
 
 function extractCompressedOrder(text = '') {
-  // Strict parser format: GBZ1:<compressedOrder>
-  const m = text.match(/(?:^|\n)GBZ1:([A-Za-z0-9+\-_%]+)(?:\n|$)/);
+  // Accept full token after GBZ1: and trim common trailing quote/punctuation artifacts.
+  const m = String(text || '').match(/(?:^|\s)GBZ1:([^\s]+)/i);
   if (!m) return null;
-  return m[1];
+  const raw = String(m[1] || '').trim();
+  const cleaned = raw.replace(/["'`’”.,;:!?\])}>]+$/g, '');
+  return cleaned || null;
 }
 
 export async function GET(req) {

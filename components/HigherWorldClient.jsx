@@ -18,14 +18,64 @@ function trimText(s, max = 62) {
   return `${t.slice(0, max - 1)}…`;
 }
 
+function cellKey(x, y) {
+  return `${x}-${y}`;
+}
+
+function findPath({ size, blocked, start, goal }) {
+  const inBounds = (x, y) => x >= 0 && y >= 0 && x < size && y < size;
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  const q = [[start.x, start.y]];
+  const seen = new Set([cellKey(start.x, start.y)]);
+  const prev = new Map();
+
+  while (q.length) {
+    const [x, y] = q.shift();
+    if (x === goal.x && y === goal.y) break;
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!inBounds(nx, ny)) continue;
+      const k = cellKey(nx, ny);
+      if (blocked.has(k) || seen.has(k)) continue;
+      seen.add(k);
+      prev.set(k, cellKey(x, y));
+      q.push([nx, ny]);
+    }
+  }
+
+  const goalKey = cellKey(goal.x, goal.y);
+  if (!seen.has(goalKey)) return [];
+
+  const out = [];
+  let cur = goalKey;
+  while (cur) {
+    const [x, y] = cur.split('-').map(Number);
+    out.push({ x, y });
+    cur = prev.get(cur);
+  }
+  out.reverse();
+  return out;
+}
+
 export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
   const size = 15;
   const center = Math.floor(size / 2);
+  const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [playerCell, setPlayerCell] = useState(null);
+  const [playerPath, setPlayerPath] = useState([]);
+  const [pendingAction, setPendingAction] = useState(null);
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
@@ -33,6 +83,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
   const nonTouchInputRef = useRef(false);
+
+  const tileSize = 58;
+  const boardSidePx = Math.round(size * tileSize * zoom);
+  const boardSide = `${boardSidePx}px`;
+  const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
+  const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
 
   useEffect(() => {
     let dead = false;
@@ -100,6 +156,73 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return () => window.removeEventListener('resize', centerWorld);
   }, []);
 
+  const centerOnPlayer = (behavior = 'smooth') => {
+    const el = worldScrollRef.current;
+    if (!el || !playerCell) return;
+    const tilePx = boardSidePx / size;
+    const targetLeft = (playerCell.x + 0.5) * tilePx - el.clientWidth / 2;
+    const targetTop = (playerCell.y + 0.5) * tilePx - el.clientHeight / 2;
+    const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const left = Math.max(0, Math.min(maxLeft, targetLeft));
+    const top = Math.max(0, Math.min(maxTop, targetTop));
+    el.scrollTo({ left, top, behavior });
+  };
+
+  useEffect(() => {
+    if (!playerCell) return;
+    const behavior = playerPath.length ? 'smooth' : 'auto';
+    centerOnPlayer(behavior);
+  }, [playerCell, boardSidePx]);
+
+  const blockedCells = useMemo(() => {
+    const b = new Set();
+    for (let i = 0; i < size; i += 1) {
+      b.add(cellKey(i, 0));
+      b.add(cellKey(i, size - 1));
+      b.add(cellKey(0, i));
+      b.add(cellKey(size - 1, i));
+    }
+    b.add(cellKey(center, center)); // fountain
+    b.add(cellKey(bankCell.x, bankCell.y)); // bank
+    return b;
+  }, [size, center, bankCell.x, bankCell.y]);
+
+  useEffect(() => {
+    if (playerCell) return;
+    const candidates = [
+      { x: bankCell.x - 1, y: bankCell.y },
+      { x: bankCell.x - 2, y: bankCell.y },
+      { x: bankCell.x, y: bankCell.y - 1 },
+      { x: bankCell.x, y: bankCell.y + 1 },
+      { x: bankCell.x + 1, y: bankCell.y },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2);
+
+    const spawn = candidates.find((c) => !blockedCells.has(cellKey(c.x, c.y))) || { x: center - 1, y: center };
+    setPlayerCell(spawn);
+  }, [playerCell, blockedCells, bankCell.x, bankCell.y, size, center]);
+
+  useEffect(() => {
+    if (!playerPath.length) return;
+    const t = setInterval(() => {
+      setPlayerPath((prev) => {
+        if (!prev.length) return prev;
+        const [next, ...rest] = prev;
+        setPlayerCell(next);
+        return rest;
+      });
+    }, 170);
+    return () => clearInterval(t);
+  }, [playerPath.length]);
+
+  useEffect(() => {
+    if (playerPath.length) return;
+    if (!pendingAction) return;
+    const fn = pendingAction;
+    setPendingAction(null);
+    fn();
+  }, [playerPath.length, pendingAction]);
+
   const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
 
   const applyZoomAtPoint = (nextZoom, clientX, clientY) => {
@@ -158,10 +281,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
       if (!shownCast) shownCast = list[0];
 
+      // Hold valid public offers on screen for at least 6s after their global appearance.
+      const validHoldMs = 6000;
+      const heldOffer = list
+        .filter((c) => Boolean(c?.isPublicSwapOffer || c?.publicOfferViable))
+        .filter((c) => {
+          const gi = Number(c?.graphIndex);
+          if (!Number.isFinite(gi) || gi < 0) return false;
+          const start = gi * eventMs;
+          return t >= start && t < start + validHoldMs;
+        })
+        .sort((a, b) => Number(b.graphIndex) - Number(a.graphIndex))[0] || null;
+      if (heldOffer) shownCast = heldOffer;
+
       // Keep independent per-tile blink/blank rhythm on top of globally-selected cast.
       const key = String(n?.fid || n?.username || 'npc');
-      const castDurationMs = 3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800); // 3.2s..6s
-      const blankDurationMs = Math.floor(castDurationMs * 0.5);
+      const isValidPublicOffer = Boolean(shownCast?.isPublicSwapOffer || shownCast?.publicOfferViable);
+      const castDurationMs = isValidPublicOffer
+        ? 6000
+        : (3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800)); // valid offers pinned >=6s; others 3.2s..6s
+      const blankDurationMs = isValidPublicOffer ? 0 : Math.floor(castDurationMs * 0.5);
       const tileCycle = castDurationMs + blankDurationMs;
       const tileOffset = Math.floor(hashToUnit(`${key}:phase`) * tileCycle);
       const tilePhase = (nowMs + tileOffset) % tileCycle;
@@ -245,6 +384,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       .sort((a, b) => b.score - a.score);
 
     const targets = [];
+    let seededFirstNearFountain = false;
     for (let ci = 0; ci < compSorted.length; ci += 1) {
       const comp = compSorted[ci];
       const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
@@ -266,6 +406,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         if (!u) continue;
         const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
         const scoreNorm = Math.min(1, u._score / maxScore);
+
+        // Seed the very first NPC near the fountain, nudged 1-2 cells.
+        if (!seededFirstNearFountain) {
+          const r = 1 + Math.round(hashToUnit(`${k}:first-around-fountain-r`)); // 1 or 2
+          const cardinals = [
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 },
+          ];
+          const ci = Math.floor(hashToUnit(`${k}:first-around-fountain-cardinal`) * cardinals.length) % cardinals.length;
+          const c = cardinals[ci];
+          const tx = center + c.dx * r;
+          const ty = center + c.dy * r;
+          targets.push({ u, tx, ty, scoreNorm: 1.1 });
+          seededFirstNearFountain = true;
+          continue;
+        }
+
         const localR = Math.max(0.6, 2.4 - Math.min(1.8, linkedWeight * 0.25) - scoreNorm * 0.9);
         const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.35;
         const tx = cx + Math.cos(localAngle) * localR;
@@ -276,6 +435,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
 
+    const bankKey = `${bankCell.x}-${bankCell.y}`;
+
     for (const t of targets) {
       let x = Math.max(1, Math.min(size - 2, Math.round(t.tx)));
       let y = Math.max(1, Math.min(size - 2, Math.round(t.ty)));
@@ -283,7 +444,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
       let tries = 0;
       let r = 1;
-      while ((x === center && y === center) || placed.has(`${x}-${y}`)) {
+      while ((x === center && y === center) || `${x}-${y}` === bankKey || placed.has(`${x}-${y}`)) {
         const a = hashToUnit(`${t.u._key}:${tries}:a`) * 2 * Math.PI;
         const nx = Math.round(t.tx + Math.cos(a) * r);
         const ny = Math.round(t.ty + Math.sin(a) * r);
@@ -302,12 +463,38 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const openNpcMenu = (e, npc) => {
     e.preventDefault();
+    e.stopPropagation();
     const name = String(npc?.displayName || npc?.username || 'user');
     setMenu({
       x: e.clientX,
       y: e.clientY,
+      type: 'npc',
       npc,
       name,
+    });
+  };
+
+  const openBankMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: 'bank',
+      name: 'Bazaar Bank',
+    });
+  };
+
+  const openTileMenu = (e, x, y) => {
+    if (dragRef.current.active) return;
+    e.preventDefault();
+    if (blockedCells.has(cellKey(x, y))) return;
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: 'tile',
+      tile: { x, y },
+      name: `Tile ${x},${y}`,
     });
   };
 
@@ -406,39 +593,141 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
   };
 
-  const onTalk = () => {
-    if (!menu?.npc) return;
-    const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
-    const c = menu.npc?.currentCast || menu.npc?.lastCastShown || firstCast;
+  const runTalk = (npc) => {
+    if (!npc) return;
+    const firstCast = Array.isArray(npc?.casts) ? (npc.casts[0] || null) : null;
+    const c = npc?.currentCast || npc?.lastCastShown || firstCast;
     const link = c?.permalink || c?.castUrl;
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
+  };
+
+  const runTrade = (npc) => {
+    if (!npc) return;
+    const offerHash = npc?.publicOfferCast?.castHash;
+    if (offerHash) {
+      router.push(`/c/${offerHash}`);
+      return;
+    }
+
+    const fname = String(npc?.username || '').replace(/^@/, '').trim();
+    if (!fname) return;
+    router.push(`/maker?counterparty=${encodeURIComponent(fname)}&channel=${encodeURIComponent(worldName)}`);
+  };
+
+  const moveToNpcAdjacentThen = (npc, action) => {
+    if (!npc || !playerCell) {
+      action?.();
+      return;
+    }
+    const npcCell = [...byCell.entries()].find(([, v]) => v?._key === npc?._key)?.[0] || null;
+    if (!npcCell) {
+      action?.();
+      return;
+    }
+    const [nx, ny] = npcCell.split('-').map(Number);
+    const adjacent = [
+      { x: nx + 1, y: ny },
+      { x: nx - 1, y: ny },
+      { x: nx, y: ny + 1 },
+      { x: nx, y: ny - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    if (!adjacent.length) {
+      action?.();
+      return;
+    }
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
+      return;
+    }
+
+    const candidates = adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    if (!candidates.length) {
+      action?.();
+      return;
+    }
+
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
+  const onTalk = () => {
+    if (!menu?.npc) return;
+    const npc = menu.npc;
     setMenu(null);
+    moveToNpcAdjacentThen(npc, () => runTalk(npc));
   };
 
   const onTrade = async () => {
     if (!menu?.npc) return;
-    const offerHash = menu.npc?.publicOfferCast?.castHash;
-    if (offerHash) {
-      router.push(`/c/${offerHash}`);
-      setMenu(null);
+    const npc = menu.npc;
+    setMenu(null);
+    moveToNpcAdjacentThen(npc, () => runTrade(npc));
+  };
+
+  const moveToBankAdjacentThen = (action) => {
+    if (!playerCell) {
+      action?.();
+      return;
+    }
+    const adjacent = [
+      { x: bankCell.x + 1, y: bankCell.y },
+      { x: bankCell.x - 1, y: bankCell.y },
+      { x: bankCell.x, y: bankCell.y + 1 },
+      { x: bankCell.x, y: bankCell.y - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
       return;
     }
 
-    const fname = String(menu.npc?.username || '').replace(/^@/, '').trim();
-    if (!fname) {
-      setMenu(null);
+    const candidates = adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    if (!candidates.length) {
+      action?.();
       return;
     }
 
-    router.push(`/maker?counterparty=${encodeURIComponent(fname)}&channel=${encodeURIComponent(worldName)}`);
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
+  const onTradeAnyone = () => {
+    setMenu(null);
+    moveToBankAdjacentThen(() => {
+      router.push(`/maker?channel=${encodeURIComponent(worldName)}`);
+    });
+  };
+
+  const onMoveHere = () => {
+    if (!menu?.tile || !playerCell) return;
+    const goal = menu.tile;
+    if (blockedCells.has(cellKey(goal.x, goal.y))) {
+      setMenu(null);
+      return;
+    }
+    const path = findPath({ size, blocked: blockedCells, start: playerCell, goal });
+    if (path.length > 1) {
+      setPlayerPath(path.slice(1));
+    } else {
+      setPlayerPath([]);
+    }
     setMenu(null);
   };
 
-  const tileSize = 58;
-  const boardSidePx = Math.round(size * tileSize * zoom);
-  const boardSide = `${boardSidePx}px`;
-  const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
-  const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
@@ -449,24 +738,28 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const current = npc?.currentCast || null;
       const isCenter = x === center && y === center;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
+      const isBank = x === bankCell.x && y === bankCell.y;
+      const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
-      if (!isCenter && !isBorder && npc && current?.text) {
+      if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
           x,
           y,
           text: trimText(current.text, 140),
+          isValidPublicOffer: Boolean(current?.isPublicSwapOffer || current?.publicOfferViable),
         });
       }
       cells.push(
         <div
           key={key}
+          onClick={(e) => openTileMenu(e, x, y)}
           style={{
             aspectRatio: '1 / 1',
             border: '1px solid rgba(220, 189, 116, 0.25)',
             display: 'grid',
             placeItems: 'center',
-            fontSize: isCenter ? 30 : 12,
+            fontSize: isCenter ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
             background: isCenter ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
             boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
             color: isCenter ? '#dff2ff' : '#cbb68a',
@@ -478,6 +771,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             '⛲'
           ) : isBorder ? (
             <span style={{ fontSize: 22, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>{tree}</span>
+          ) : isBank ? (
+            <button
+              onClick={openBankMenu}
+              title="Bazaar Bank"
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              🏦
+            </button>
           ) : npc ? (
             <>
               <button
@@ -502,6 +814,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 />
               </button>
             </>
+          ) : null}
+          {isPlayer ? (
+            <span
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: `${Math.max(18, Math.min(40, 26 * zoom))}px`,
+                pointerEvents: 'none',
+                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                zIndex: 2,
+              }}
+              title="You"
+            >
+              🧍
+            </span>
           ) : null}
         </div>
       );
@@ -618,9 +947,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                     WebkitBoxOrient: 'vertical',
                     fontSize: 17,
                     lineHeight: 1.05,
-                    color: '#fff8b2',
+                    color: l.isValidPublicOffer ? '#39ff14' : '#fff8b2',
+                    fontWeight: l.isValidPublicOffer ? 500 : 500,
                     textAlign: 'center',
-                    textShadow: '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
+                    textShadow: l.isValidPublicOffer
+                      ? '0 2px 0 #000, 0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000'
+                      : '0 2px 0 #000, 0 0 10px rgba(0,0,0,1)',
                     filter: 'drop-shadow(0 2px 6px rgba(0,0,0,1))',
                   }}
                 >
@@ -651,44 +983,88 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           <div style={{ padding: '7px 9px', fontSize: 15, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
             Choose Option
           </div>
-          <button
-            onClick={onTalk}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              background: 'transparent',
-              color: '#d6f7d6',
-              border: 'none',
-              padding: '9px 11px',
-              cursor: 'pointer',
-              fontSize: 17,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-            title={`Talk to ${menu.name}`}
-          >
-            {`Talk to ${menu.name}`}
-          </button>
-          <button
-            onClick={onTrade}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              background: 'transparent',
-              color: '#b7f0ff',
-              border: 'none',
-              padding: '9px 11px',
-              cursor: 'pointer',
-              fontSize: 17,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-            title={`Trade with ${menu.name}`}
-          >
-            {`Trade with ${menu.name}`}
-          </button>
+          {menu.type === 'bank' ? (
+            <button
+              onClick={onTradeAnyone}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                color: '#b7f0ff',
+                border: 'none',
+                padding: '9px 11px',
+                cursor: 'pointer',
+                fontSize: 17,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title="Trade with anyone"
+            >
+              Trade with anyone
+            </button>
+          ) : menu.type === 'tile' ? (
+            <button
+              onClick={onMoveHere}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                color: '#d6f7d6',
+                border: 'none',
+                padding: '9px 11px',
+                cursor: 'pointer',
+                fontSize: 17,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title="Move here"
+            >
+              Move here
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onTalk}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  color: '#d6f7d6',
+                  border: 'none',
+                  padding: '9px 11px',
+                  cursor: 'pointer',
+                  fontSize: 17,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={`Talk to ${menu.name}`}
+              >
+                {`Talk to ${menu.name}`}
+              </button>
+              <button
+                onClick={onTrade}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  color: '#b7f0ff',
+                  border: 'none',
+                  padding: '9px 11px',
+                  cursor: 'pointer',
+                  fontSize: 17,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={`Trade with ${menu.name}`}
+              >
+                {`Trade with ${menu.name}`}
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </main>
