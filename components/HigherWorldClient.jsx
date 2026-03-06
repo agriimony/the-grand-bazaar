@@ -759,7 +759,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             border: '1px solid rgba(220, 189, 116, 0.25)',
             display: 'grid',
             placeItems: 'center',
-            fontSize: isCenter ? 30 : 12,
+            fontSize: isCenter ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
             background: isCenter ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
             boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
             color: isCenter ? '#dff2ff' : '#cbb68a',
@@ -784,7 +784,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 border: 'none',
                 padding: 0,
                 cursor: 'pointer',
-                fontSize: 29,
+                fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
                 filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
               }}
             >
