@@ -76,6 +76,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [playerCell, setPlayerCell] = useState(null);
   const [playerPath, setPlayerPath] = useState([]);
   const [pendingAction, setPendingAction] = useState(null);
+  const playerPosStorageKey = `gbz:player-pos:${worldName}`;
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, moved: false, suppressClick: false, x: 0, y: 0, left: 0, top: 0 });
@@ -187,6 +188,30 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     b.add(cellKey(bankCell.x, bankCell.y)); // bank
     return b;
   }, [size, center, bankCell.x, bankCell.y]);
+
+  useEffect(() => {
+    if (playerCell) return;
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(playerPosStorageKey);
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      const x = Number(p?.x);
+      const y = Number(p?.y);
+      const inBounds = Number.isFinite(x) && Number.isFinite(y) && x >= 1 && y >= 1 && x <= size - 2 && y <= size - 2;
+      if (!inBounds) return;
+      if (blockedCells.has(cellKey(x, y))) return;
+      setPlayerCell({ x, y });
+    } catch {}
+  }, [playerCell, blockedCells, playerPosStorageKey, size]);
+
+  useEffect(() => {
+    if (!playerCell) return;
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(playerPosStorageKey, JSON.stringify({ x: playerCell.x, y: playerCell.y }));
+    } catch {}
+  }, [playerCell, playerPosStorageKey]);
 
   useEffect(() => {
     if (playerCell) return;
