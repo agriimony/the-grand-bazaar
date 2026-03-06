@@ -22,6 +22,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const router = useRouter();
   const size = 15;
   const center = Math.floor(size / 2);
+  const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
@@ -312,6 +313,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
 
+    const bankKey = `${bankCell.x}-${bankCell.y}`;
+
     for (const t of targets) {
       let x = Math.max(1, Math.min(size - 2, Math.round(t.tx)));
       let y = Math.max(1, Math.min(size - 2, Math.round(t.ty)));
@@ -319,7 +322,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
       let tries = 0;
       let r = 1;
-      while ((x === center && y === center) || placed.has(`${x}-${y}`)) {
+      while ((x === center && y === center) || `${x}-${y}` === bankKey || placed.has(`${x}-${y}`)) {
         const a = hashToUnit(`${t.u._key}:${tries}:a`) * 2 * Math.PI;
         const nx = Math.round(t.tx + Math.cos(a) * r);
         const ny = Math.round(t.ty + Math.sin(a) * r);
@@ -342,8 +345,19 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu({
       x: e.clientX,
       y: e.clientY,
+      type: 'npc',
       npc,
       name,
+    });
+  };
+
+  const openBankMenu = (e) => {
+    e.preventDefault();
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: 'bank',
+      name: 'Bazaar Bank',
     });
   };
 
@@ -470,6 +484,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
+  const onTradeAnyone = () => {
+    router.push(`/maker?channel=${encodeURIComponent(worldName)}`);
+    setMenu(null);
+  };
+
   const tileSize = 58;
   const boardSidePx = Math.round(size * tileSize * zoom);
   const boardSide = `${boardSidePx}px`;
@@ -485,8 +504,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const current = npc?.currentCast || null;
       const isCenter = x === center && y === center;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
+      const isBank = x === bankCell.x && y === bankCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
-      if (!isCenter && !isBorder && npc && current?.text) {
+      if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
           x,
@@ -515,6 +535,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             '⛲'
           ) : isBorder ? (
             <span style={{ fontSize: 22, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>{tree}</span>
+          ) : isBank ? (
+            <button
+              onClick={openBankMenu}
+              title="Bazaar Bank"
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: 29,
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              🏦
+            </button>
           ) : npc ? (
             <>
               <button
@@ -691,44 +730,68 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           <div style={{ padding: '7px 9px', fontSize: 15, borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f6e3ad' }}>
             Choose Option
           </div>
-          <button
-            onClick={onTalk}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              background: 'transparent',
-              color: '#d6f7d6',
-              border: 'none',
-              padding: '9px 11px',
-              cursor: 'pointer',
-              fontSize: 17,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-            title={`Talk to ${menu.name}`}
-          >
-            {`Talk to ${menu.name}`}
-          </button>
-          <button
-            onClick={onTrade}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              background: 'transparent',
-              color: '#b7f0ff',
-              border: 'none',
-              padding: '9px 11px',
-              cursor: 'pointer',
-              fontSize: 17,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-            title={`Trade with ${menu.name}`}
-          >
-            {`Trade with ${menu.name}`}
-          </button>
+          {menu.type === 'bank' ? (
+            <button
+              onClick={onTradeAnyone}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                color: '#b7f0ff',
+                border: 'none',
+                padding: '9px 11px',
+                cursor: 'pointer',
+                fontSize: 17,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title="Trade with anyone"
+            >
+              Trade with anyone
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onTalk}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  color: '#d6f7d6',
+                  border: 'none',
+                  padding: '9px 11px',
+                  cursor: 'pointer',
+                  fontSize: 17,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={`Talk to ${menu.name}`}
+              >
+                {`Talk to ${menu.name}`}
+              </button>
+              <button
+                onClick={onTrade}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  color: '#b7f0ff',
+                  border: 'none',
+                  padding: '9px 11px',
+                  cursor: 'pointer',
+                  fontSize: 17,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={`Trade with ${menu.name}`}
+              >
+                {`Trade with ${menu.name}`}
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </main>
