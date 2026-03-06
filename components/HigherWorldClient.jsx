@@ -76,6 +76,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [playerCell, setPlayerCell] = useState(null);
   const [playerPath, setPlayerPath] = useState([]);
   const [pendingAction, setPendingAction] = useState(null);
+  const [playerPosHydrated, setPlayerPosHydrated] = useState(false);
   const playerPosStorageKey = `gbz:player-pos:${worldName}`;
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
@@ -190,19 +191,27 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [size, center, bankCell.x, bankCell.y]);
 
   useEffect(() => {
-    if (playerCell) return;
-    if (typeof window === 'undefined') return;
+    if (playerCell) {
+      setPlayerPosHydrated(true);
+      return;
+    }
+    if (typeof window === 'undefined') {
+      setPlayerPosHydrated(true);
+      return;
+    }
     try {
       const raw = window.localStorage.getItem(playerPosStorageKey);
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      const x = Number(p?.x);
-      const y = Number(p?.y);
-      const inBounds = Number.isFinite(x) && Number.isFinite(y) && x >= 1 && y >= 1 && x <= size - 2 && y <= size - 2;
-      if (!inBounds) return;
-      if (blockedCells.has(cellKey(x, y))) return;
-      setPlayerCell({ x, y });
+      if (raw) {
+        const p = JSON.parse(raw);
+        const x = Number(p?.x);
+        const y = Number(p?.y);
+        const inBounds = Number.isFinite(x) && Number.isFinite(y) && x >= 1 && y >= 1 && x <= size - 2 && y <= size - 2;
+        if (inBounds && !blockedCells.has(cellKey(x, y))) {
+          setPlayerCell({ x, y });
+        }
+      }
     } catch {}
+    setPlayerPosHydrated(true);
   }, [playerCell, blockedCells, playerPosStorageKey, size]);
 
   useEffect(() => {
@@ -214,6 +223,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [playerCell, playerPosStorageKey]);
 
   useEffect(() => {
+    if (!playerPosHydrated) return;
     if (playerCell) return;
     const candidates = [
       { x: bankCell.x - 1, y: bankCell.y },
@@ -225,7 +235,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     const spawn = candidates.find((c) => !blockedCells.has(cellKey(c.x, c.y))) || { x: center - 1, y: center };
     setPlayerCell(spawn);
-  }, [playerCell, blockedCells, bankCell.x, bankCell.y, size, center]);
+  }, [playerPosHydrated, playerCell, blockedCells, bankCell.x, bankCell.y, size, center]);
 
   useEffect(() => {
     if (!playerPath.length) return;
