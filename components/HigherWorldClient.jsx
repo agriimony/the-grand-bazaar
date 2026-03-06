@@ -150,6 +150,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return () => window.removeEventListener('resize', centerWorld);
   }, []);
 
+  const centerOnPlayer = (behavior = 'smooth') => {
+    const el = worldScrollRef.current;
+    if (!el || !playerCell) return;
+    const tilePx = boardSidePx / size;
+    const targetLeft = (playerCell.x + 0.5) * tilePx - el.clientWidth / 2;
+    const targetTop = (playerCell.y + 0.5) * tilePx - el.clientHeight / 2;
+    const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const left = Math.max(0, Math.min(maxLeft, targetLeft));
+    const top = Math.max(0, Math.min(maxTop, targetTop));
+    el.scrollTo({ left, top, behavior });
+  };
+
+  useEffect(() => {
+    if (!playerCell) return;
+    const behavior = playerPath.length ? 'smooth' : 'auto';
+    centerOnPlayer(behavior);
+  }, [playerCell, boardSidePx]);
+
   const blockedCells = useMemo(() => {
     const b = new Set();
     for (let i = 0; i < size; i += 1) {
@@ -802,7 +821,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 inset: 0,
                 display: 'grid',
                 placeItems: 'center',
-                fontSize: 26,
+                fontSize: `${Math.max(18, Math.min(40, 26 * zoom))}px`,
                 pointerEvents: 'none',
                 textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                 zIndex: 2,
