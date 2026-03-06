@@ -84,6 +84,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const touchPointsRef = useRef(new Map());
   const nonTouchInputRef = useRef(false);
 
+  const tileSize = 58;
+  const boardSidePx = Math.round(size * tileSize * zoom);
+  const boardSide = `${boardSidePx}px`;
+  const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
+  const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
+
   useEffect(() => {
     let dead = false;
     async function load() {
@@ -722,11 +728,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
-  const tileSize = 58;
-  const boardSidePx = Math.round(size * tileSize * zoom);
-  const boardSide = `${boardSidePx}px`;
-  const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
-  const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
