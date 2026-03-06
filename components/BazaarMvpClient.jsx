@@ -4499,7 +4499,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       <section className="rs-window">
         <div className="rs-topbar">
           {showTopbarClose ? <button className="rs-topbar-close" onClick={resetToMainMakerFlow} aria-label="Close order">✕</button> : null}
-          {makerMode && !parsed ? <button className="rs-topbar-back" onClick={() => router.push('/higher')} aria-label="Back">&lt;</button> : null}
+          {makerMode && !parsed ? <button className="rs-topbar-back" onClick={() => router.push(initialChannel === 'degen' ? '/degen' : '/higher')} aria-label="Back">&lt;</button> : null}
           {makerMode && !parsed ? (
             <button className="rs-title-btn rs-topbar-title" onClick={openCounterpartySelector}>
               <span>Trading with</span>
