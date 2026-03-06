@@ -652,10 +652,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
-    const candidates = adjacent
-      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+    const npcCellKey = cellKey(nx, ny);
+    const blockedPreferNpcAvoid = withNpcBlocked(blockedCells, [npcCellKey]);
+    const blockedFallback = blockedCells;
+
+    const getCandidates = (blockedSet) => adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedSet, start: playerCell, goal }) }))
       .filter((x) => x.path.length > 1)
       .sort((a, b) => a.path.length - b.path.length);
+
+    let candidates = getCandidates(blockedPreferNpcAvoid);
+    if (!candidates.length) candidates = getCandidates(blockedFallback);
 
     if (!candidates.length) {
       action?.();
@@ -665,6 +672,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const best = candidates[0];
     setPendingAction(() => action);
     setPlayerPath(best.path.slice(1));
+  };
+
+  const withNpcBlocked = (baseBlocked = blockedCells, exceptKeys = []) => {
+    const out = new Set(baseBlocked);
+    for (const [k] of byCell.entries()) out.add(k);
+    for (const ex of exceptKeys) {
+      if (ex) out.delete(ex);
+    }
+    return out;
   };
 
   const onTalk = () => {
@@ -699,10 +715,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
-    const candidates = adjacent
-      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+    const blockedPreferNpcAvoid = withNpcBlocked(blockedCells);
+    const blockedFallback = blockedCells;
+
+    const getCandidates = (blockedSet) => adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedSet, start: playerCell, goal }) }))
       .filter((x) => x.path.length > 1)
       .sort((a, b) => a.path.length - b.path.length);
+
+    let candidates = getCandidates(blockedPreferNpcAvoid);
+    if (!candidates.length) candidates = getCandidates(blockedFallback);
 
     if (!candidates.length) {
       action?.();
@@ -728,9 +750,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setMenu(null);
       return;
     }
-    const path = findPath({ size, blocked: blockedCells, start: playerCell, goal });
-    if (path.length > 1) {
-      setPlayerPath(path.slice(1));
+
+    const blockedPreferNpcAvoid = withNpcBlocked(blockedCells);
+    const pathPrefer = findPath({ size, blocked: blockedPreferNpcAvoid, start: playerCell, goal });
+    const pathFallback = pathPrefer.length > 1 ? pathPrefer : findPath({ size, blocked: blockedCells, start: playerCell, goal });
+
+    if (pathFallback.length > 1) {
+      setPlayerPath(pathFallback.slice(1));
     } else {
       setPlayerPath([]);
     }
