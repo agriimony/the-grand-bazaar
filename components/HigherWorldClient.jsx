@@ -75,6 +75,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [zoom, setZoom] = useState(1);
   const [playerCell, setPlayerCell] = useState(null);
   const [playerPath, setPlayerPath] = useState([]);
+  const [pendingAction, setPendingAction] = useState(null);
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
@@ -188,6 +189,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }, 170);
     return () => clearInterval(t);
   }, [playerPath.length]);
+
+  useEffect(() => {
+    if (playerPath.length) return;
+    if (!pendingAction) return;
+    const fn = pendingAction;
+    setPendingAction(null);
+    fn();
+  }, [playerPath.length, pendingAction]);
 
   const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
 
@@ -559,32 +568,83 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
   };
 
-  const onTalk = () => {
-    if (!menu?.npc) return;
-    const firstCast = Array.isArray(menu.npc?.casts) ? (menu.npc.casts[0] || null) : null;
-    const c = menu.npc?.currentCast || menu.npc?.lastCastShown || firstCast;
+  const runTalk = (npc) => {
+    if (!npc) return;
+    const firstCast = Array.isArray(npc?.casts) ? (npc.casts[0] || null) : null;
+    const c = npc?.currentCast || npc?.lastCastShown || firstCast;
     const link = c?.permalink || c?.castUrl;
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
+  };
+
+  const runTrade = (npc) => {
+    if (!npc) return;
+    const offerHash = npc?.publicOfferCast?.castHash;
+    if (offerHash) {
+      router.push(`/c/${offerHash}`);
+      return;
+    }
+
+    const fname = String(npc?.username || '').replace(/^@/, '').trim();
+    if (!fname) return;
+    router.push(`/maker?counterparty=${encodeURIComponent(fname)}&channel=${encodeURIComponent(worldName)}`);
+  };
+
+  const moveToNpcAdjacentThen = (npc, action) => {
+    if (!npc || !playerCell) {
+      action?.();
+      return;
+    }
+    const npcCell = [...byCell.entries()].find(([, v]) => v?._key === npc?._key)?.[0] || null;
+    if (!npcCell) {
+      action?.();
+      return;
+    }
+    const [nx, ny] = npcCell.split('-').map(Number);
+    const adjacent = [
+      { x: nx + 1, y: ny },
+      { x: nx - 1, y: ny },
+      { x: nx, y: ny + 1 },
+      { x: nx, y: ny - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    if (!adjacent.length) {
+      action?.();
+      return;
+    }
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
+      return;
+    }
+
+    const candidates = adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    if (!candidates.length) {
+      action?.();
+      return;
+    }
+
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
+  const onTalk = () => {
+    if (!menu?.npc) return;
+    const npc = menu.npc;
     setMenu(null);
+    moveToNpcAdjacentThen(npc, () => runTalk(npc));
   };
 
   const onTrade = async () => {
     if (!menu?.npc) return;
-    const offerHash = menu.npc?.publicOfferCast?.castHash;
-    if (offerHash) {
-      router.push(`/c/${offerHash}`);
-      setMenu(null);
-      return;
-    }
-
-    const fname = String(menu.npc?.username || '').replace(/^@/, '').trim();
-    if (!fname) {
-      setMenu(null);
-      return;
-    }
-
-    router.push(`/maker?counterparty=${encodeURIComponent(fname)}&channel=${encodeURIComponent(worldName)}`);
+    const npc = menu.npc;
     setMenu(null);
+    moveToNpcAdjacentThen(npc, () => runTrade(npc));
   };
 
   const onTradeAnyone = () => {
