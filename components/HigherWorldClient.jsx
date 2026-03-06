@@ -261,6 +261,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       .sort((a, b) => b.score - a.score);
 
     const targets = [];
+    let seededFirstNearFountain = false;
     for (let ci = 0; ci < compSorted.length; ci += 1) {
       const comp = compSorted[ci];
       const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
@@ -282,6 +283,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         if (!u) continue;
         const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
         const scoreNorm = Math.min(1, u._score / maxScore);
+
+        // Seed the very first NPC near the fountain, nudged 1-2 cells.
+        if (!seededFirstNearFountain) {
+          const r = 1 + Math.round(hashToUnit(`${k}:first-around-fountain-r`)); // 1 or 2
+          const cardinals = [
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 },
+          ];
+          const ci = Math.floor(hashToUnit(`${k}:first-around-fountain-cardinal`) * cardinals.length) % cardinals.length;
+          const c = cardinals[ci];
+          const tx = center + c.dx * r;
+          const ty = center + c.dy * r;
+          targets.push({ u, tx, ty, scoreNorm: 1.1 });
+          seededFirstNearFountain = true;
+          continue;
+        }
+
         const localR = Math.max(0.6, 2.4 - Math.min(1.8, linkedWeight * 0.25) - scoreNorm * 0.9);
         const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.35;
         const tx = cx + Math.cos(localAngle) * localR;
