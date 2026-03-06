@@ -78,7 +78,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [pendingAction, setPendingAction] = useState(null);
   const menuRef = useRef(null);
   const worldScrollRef = useRef(null);
-  const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
+  const dragRef = useRef({ active: false, moved: false, suppressClick: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
   const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
@@ -487,6 +487,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const openTileMenu = (e, x, y) => {
     if (dragRef.current.active) return;
+    if (dragRef.current.suppressClick || dragRef.current.moved) {
+      dragRef.current.suppressClick = false;
+      dragRef.current.moved = false;
+      return;
+    }
     e.preventDefault();
     if (blockedCells.has(cellKey(x, y))) return;
     setMenu({
@@ -503,6 +508,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (!el) return;
     dragRef.current = {
       active: true,
+      moved: false,
+      suppressClick: false,
       x: e.clientX,
       y: e.clientY,
       left: el.scrollLeft,
@@ -518,6 +525,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (!el || !st.active) return;
     const dx = e.clientX - st.x;
     const dy = e.clientY - st.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) st.moved = true;
     el.scrollLeft = st.left - dx;
     el.scrollTop = st.top - dy;
   };
@@ -525,6 +533,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const onWorldMouseUp = () => {
     const el = worldScrollRef.current;
     dragRef.current.active = false;
+    if (dragRef.current.moved) dragRef.current.suppressClick = true;
     if (!el) return;
     el.style.cursor = 'grab';
     el.style.userSelect = '';
