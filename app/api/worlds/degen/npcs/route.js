@@ -1,65 +1,11 @@
 import { NextResponse } from 'next/server';
-import { decodeCompressedOrder } from '../../../../../lib/orders';
-import { runOrderCheckBatch } from '../../../../../lib/orderCheckBatch';
 
-export const revalidate = 120;
+export const revalidate = 3600;
 
-const MY_FID = 191780;
-const CHANNEL_ID = 'degen';
-const HOURS_24_MS = 24 * 60 * 60 * 1000;
-
-function extractCompressedOrder(text = '') {
-  const m = String(text || '').match(/(?:^|\s)GBZ1:([^\s]+)/i);
-  if (!m) return null;
-  const raw = String(m[1] || '').trim();
-  const cleaned = raw.replace(/["'`’”.,;:!?\])}>]+$/g, '');
-  return cleaned || null;
-}
-
-function toBatchItemFromCast(c) {
-  try {
-    if (!c?.isPublicSwapOffer) return null;
-    const compressed = extractCompressedOrder(c.text || '');
-    if (!compressed) return null;
-    const o = decodeCompressedOrder(compressed);
-    return {
-      id: c.castHash,
-      publicMode: true,
-      swapContract: o.swapContract,
-      senderWallet: o.senderWallet,
-      order: {
-        nonce: o.nonce,
-        expiry: o.expiry,
-        signer: { wallet: o.signerWallet, token: o.signerToken, kind: o.signerKind, id: o.signerId || 0, amount: o.signerAmount },
-        sender: { wallet: o.senderWallet, token: o.senderToken, kind: o.senderKind, id: o.senderId || 0, amount: o.senderAmount },
-        affiliateWallet: '0x0000000000000000000000000000000000000000',
-        affiliateAmount: 0,
-        v: o.v,
-        r: o.r,
-        s: o.s,
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-function preRpcRejectReason(item) {
-  const isHex32 = (v) => /^0x[a-fA-F0-9]{64}$/.test(String(v || '').trim());
-  const isAddr = (v) => /^0x[a-fA-F0-9]{40}$/.test(String(v || '').trim());
-  const ord = item?.order || {};
-  const isOpen = String(ord?.sender?.wallet || '').toLowerCase() === '0x0000000000000000000000000000000000000000';
-  if (!isAddr(item?.swapContract || '')) return 'bad_swap_contract';
-  if (!isAddr(ord?.signer?.wallet || '')) return 'bad_signer_wallet';
-  if (!isOpen && !isAddr(ord?.sender?.wallet || '')) return 'bad_sender_wallet';
-  if (!Number.isFinite(Number(ord?.nonce))) return 'bad_nonce';
-  if (!Number.isFinite(Number(ord?.expiry))) return 'bad_expiry';
-  if (BigInt(ord?.signer?.amount || 0) <= 0n) return 'bad_signer_amount';
-  if (BigInt(ord?.sender?.amount || 0) <= 0n) return 'bad_sender_amount';
-  if (Number(ord?.v || 0) <= 0) return 'bad_v';
-  if (!isHex32(ord?.r) || !isHex32(ord?.s)) return 'bad_sig';
-  return '';
-}
+const SCORE_THRESHOLD = 0.7;
+const MAX_ROOT_CASTS = 100;
+const MAX_CHILD_FETCH = 40;
+const MAX_USER_BULK = 100;
 
 function toIsoMs(v) {
   const t = Date.parse(String(v || ''));
@@ -91,7 +37,7 @@ function mapCast(c) {
   const hash = String(c?.hash || '').trim().toLowerCase();
   const parentHash = String(c?.parent_hash || c?.parentHash || '').trim().toLowerCase();
   const username = String(user?.username || user?.display_name || '').trim();
-  const pfp = String(user?.pfp_url || user?.pfp?.url || '').trim();
+  const pfp = String(user?.pfp_url || '').trim();
   const permalink = String(c?.permalink || (hash ? `https://farcaster.xyz/${username || 'unknown'}/${hash}` : '')).trim();
   const textRaw = String(c?.text || '').trim();
   const text = textRaw.replace(/https?:\/\/\S+/gi, '').replace(/\s+/g, ' ').trim();
@@ -104,7 +50,9 @@ function mapCast(c) {
   const castUrl = isPublicSwapOffer ? `/c/${hash}` : permalink;
 
   const primaryEth = String(user?.verified_addresses?.primary?.eth_address || '').trim();
-  const ethAddrs = Array.isArray(user?.verified_addresses?.eth_addresses) ? user.verified_addresses.eth_addresses : [];
+  const ethAddrs = Array.isArray(user?.verified_addresses?.eth_addresses)
+    ? user.verified_addresses.eth_addresses
+    : [];
   const primaryWallet = /^0x[a-fA-F0-9]{40}$/.test(primaryEth)
     ? primaryEth
     : (ethAddrs.find((a) => /^0x[a-fA-F0-9]{40}$/.test(String(a || '').trim())) || '');
@@ -129,42 +77,155 @@ function mapCast(c) {
   };
 }
 
-async function fetchRecentChannelCastsByFid(channelId, fid, headers, startMs) {
-  const out = [];
+function buildGraphOrder(casts) {
+  const byHash = new Map(casts.map((c) => [c.castHash, c]));
+  const childMap = new Map();
+  const indegree = new Map(casts.map((c) => [c.castHash, 0]));
+
+  for (const c of casts) {
+    if (!c.parentHash || !byHash.has(c.parentHash)) continue;
+    if (!childMap.has(c.parentHash)) childMap.set(c.parentHash, []);
+    childMap.get(c.parentHash).push(c.castHash);
+    indegree.set(c.castHash, (indegree.get(c.castHash) || 0) + 1);
+  }
+
+  const rootTimeSort = (a, b) => {
+    const A = byHash.get(a);
+    const B = byHash.get(b);
+    return (B?.timestamp || 0) - (A?.timestamp || 0);
+  };
+
+  const scoreSort = (a, b) => {
+    const A = byHash.get(a);
+    const B = byHash.get(b);
+    if ((B?.rankScore || 0) !== (A?.rankScore || 0)) return (B?.rankScore || 0) - (A?.rankScore || 0);
+    return (B?.timestamp || 0) - (A?.timestamp || 0);
+  };
+
+  const roots = casts
+    .filter((c) => (indegree.get(c.castHash) || 0) === 0)
+    .map((c) => c.castHash)
+    .sort(rootTimeSort);
+
+  for (const [k, arr] of childMap.entries()) {
+    arr.sort(scoreSort);
+    childMap.set(k, arr);
+  }
+
+  const order = [];
+  const seen = new Set();
+  const dfs = (hash) => {
+    if (!hash || seen.has(hash) || !byHash.has(hash)) return;
+    seen.add(hash);
+    order.push(hash);
+    const kids = childMap.get(hash) || [];
+    for (const k of kids) dfs(k);
+  };
+
+  for (const r of roots) dfs(r);
+  for (const c of casts) if (!seen.has(c.castHash)) dfs(c.castHash);
+  return order;
+}
+
+function applyInheritedScores(casts) {
+  const byHash = new Map(casts.map((c) => [c.castHash, c]));
+  const children = new Map();
+  const indegree = new Map(casts.map((c) => [c.castHash, 0]));
+
+  for (const c of casts) {
+    if (!c.parentHash || !byHash.has(c.parentHash)) continue;
+    if (!children.has(c.parentHash)) children.set(c.parentHash, []);
+    children.get(c.parentHash).push(c.castHash);
+    indegree.set(c.castHash, (indegree.get(c.castHash) || 0) + 1);
+  }
+
+  const queue = casts.filter((c) => (indegree.get(c.castHash) || 0) === 0).map((c) => c.castHash);
+  for (const c of casts) {
+    c.baseEngagementScore = Number(c.engagementScore || 0);
+    c.rankScore = Number(c.baseEngagementScore || 0);
+  }
+
+  while (queue.length) {
+    const h = queue.shift();
+    const parent = byHash.get(h);
+    const inherited = Number(parent?.rankScore || 0) * 0.5;
+    for (const childHash of children.get(h) || []) {
+      const child = byHash.get(childHash);
+      if (child) child.rankScore = Number(child.baseEngagementScore || 0) + inherited;
+      indegree.set(childHash, (indegree.get(childHash) || 0) - 1);
+      if ((indegree.get(childHash) || 0) <= 0) queue.push(childHash);
+    }
+  }
+}
+
+async function fetchChannelCasts(headers) {
+  const base = 'https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=degen&with_recasts=false&limit=100';
+  let out = [];
   let cursor = '';
-
   for (let page = 0; page < 5; page += 1) {
-    const base = `https://api.neynar.com/v2/farcaster/feed/channels?channel_ids=${encodeURIComponent(channelId)}&with_recasts=false&limit=100`;
-    const url = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
-    const r = await fetch(url, { headers, cache: 'no-store' });
+    const u = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
+    const r = await fetch(u, { headers, cache: 'no-store' });
     if (!r.ok) break;
-
     const d = await r.json();
     const list = Array.isArray(d?.casts) ? d.casts : [];
     if (!list.length) break;
-
-    const mine = list.filter((c) => Number(c?.author?.fid || 0) === Number(fid));
-    const mapped = mine.map(mapCast).filter(Boolean);
-    out.push(...mapped);
-
-    const oldestTs = list
-      .map((c) => toIsoMs(c?.timestamp))
-      .filter((v) => Number.isFinite(v) && v > 0)
-      .reduce((m, v) => Math.min(m, v), Number.POSITIVE_INFINITY);
-    if (Number.isFinite(oldestTs) && oldestTs < startMs) break;
-
+    out.push(...list);
     cursor = String(d?.next?.cursor || '').trim();
     if (!cursor) break;
   }
+  return out;
+}
 
-  return out.filter((c) => c.timestamp >= startMs);
+async function fetchBulkUserScores(fids, headers) {
+  if (!fids.length) return new Map();
+  const chunks = [];
+  for (let i = 0; i < fids.length; i += MAX_USER_BULK) chunks.push(fids.slice(i, i + MAX_USER_BULK));
+  const scoreMap = new Map();
+  for (const batch of chunks) {
+    try {
+      const u = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(batch.join(','))}`;
+      const r = await fetch(u, { headers, cache: 'no-store' });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const users = Array.isArray(d?.users) ? d.users : [];
+      for (const usr of users) {
+        const s = Number(
+          usr?.score ?? usr?.user_score ?? usr?.quality_score ?? usr?.rank?.score ?? usr?.power_badge_score ?? 0
+        );
+        scoreMap.set(Number(usr?.fid || 0), Number.isFinite(s) ? s : 0);
+      }
+    } catch {}
+  }
+  return scoreMap;
+}
+
+async function fetchChildCasts(seedCasts, headers) {
+  const out = [];
+  for (const c of seedCasts.slice(0, MAX_CHILD_FETCH)) {
+    try {
+      const hash = String(c.castHash || '').trim();
+      if (!hash) continue;
+      const u = `https://api.neynar.com/v2/farcaster/cast/conversation?identifier=${encodeURIComponent(hash)}&type=hash&reply_depth=2&include_chronological_parent_casts=false&limit=50`;
+      const r = await fetch(u, { headers, cache: 'no-store' });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const convo = Array.isArray(d?.conversation?.cast?.direct_replies)
+        ? d.conversation.cast.direct_replies
+        : Array.isArray(d?.conversation?.direct_replies)
+        ? d.conversation.direct_replies
+        : [];
+      out.push(...convo);
+    } catch {}
+  }
+  return out;
 }
 
 function aggregateByUser(casts) {
+  const globalRank = buildGraphOrder(casts);
+  const rankIdx = new Map(globalRank.map((h, i) => [h, i]));
   const byUser = new Map();
 
-  const ordered = [...casts].sort((a, b) => b.timestamp - a.timestamp);
-  ordered.forEach((c, i) => {
+  for (const c of casts) {
     const key = String(c.fid || c.username).toLowerCase();
     if (!byUser.has(key)) {
       byUser.set(key, {
@@ -174,10 +235,9 @@ function aggregateByUser(casts) {
         pfp: c.pfp,
         primaryWallet: c.primaryWallet,
         casts: [],
-        topScore: Number(c.engagementScore || 0),
+        topScore: Number(c.rankScore || c.engagementScore || 0),
       });
     }
-
     const row = byUser.get(key);
     row.casts.push({
       castHash: c.castHash,
@@ -188,17 +248,20 @@ function aggregateByUser(casts) {
       timestamp: c.timestamp,
       parentHash: c.parentHash || '',
       engagement: c.engagement,
-      engagementScore: Number(c.engagementScore || 0),
-      baseEngagementScore: Number(c.engagementScore || 0),
-      graphIndex: i,
+      engagementScore: Number(c.rankScore || c.engagementScore || 0),
+      baseEngagementScore: Number(c.baseEngagementScore || c.engagementScore || 0),
+      graphIndex: rankIdx.has(c.castHash) ? rankIdx.get(c.castHash) : Number.MAX_SAFE_INTEGER,
     });
-
-    if (Number(c.engagementScore || 0) > row.topScore) row.topScore = Number(c.engagementScore || 0);
+    if (Number(c.rankScore || 0) > row.topScore) row.topScore = Number(c.rankScore || 0);
     if (!row.primaryWallet && c.primaryWallet) row.primaryWallet = c.primaryWallet;
-  });
+  }
 
   const npcs = Array.from(byUser.values()).map((u) => {
-    u.casts.sort((a, b) => b.timestamp - a.timestamp);
+    u.casts.sort((a, b) => {
+      if (a.graphIndex !== b.graphIndex) return a.graphIndex - b.graphIndex;
+      if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
+      return b.timestamp - a.timestamp;
+    });
     return u;
   });
 
@@ -210,97 +273,83 @@ function aggregateByUser(casts) {
   return npcs;
 }
 
-export async function GET(req) {
+export async function GET() {
   try {
     const apiKey = process.env.NEYNAR_API_KEY || '';
     if (!apiKey) return NextResponse.json({ ok: false, error: 'missing neynar key' }, { status: 500 });
 
     const headers = { api_key: apiKey, accept: 'application/json' };
-    const nowMs = Date.now();
-    const windowStartMs = nowMs - HOURS_24_MS;
 
-    const all = await fetchRecentChannelCastsByFid(CHANNEL_ID, MY_FID, headers, windowStartMs);
+    // Previous UTC day window: [00:00, 23:59:59.999] of yesterday.
+    const now = new Date();
+    const y = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 0, 0, 0, 0));
+    const yEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 23, 59, 59, 999));
+    const windowStartMs = y.getTime();
+    const windowEndMs = yEnd.getTime();
 
-    const mergedByHash = new Map();
-    for (const c of all) mergedByHash.set(c.castHash, c);
-    const finalCasts = Array.from(mergedByHash.values());
-
-    const publicOfferCandidates = finalCasts
-      .filter((c) => c?.isPublicSwapOffer)
-      .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
-    console.log('[world/degen] public offer candidates', publicOfferCandidates);
-
-    const batchPrep = finalCasts
-      .filter((c) => c?.isPublicSwapOffer)
-      .map((c) => {
-        const item = toBatchItemFromCast(c);
-        if (!item) return { castHash: c.castHash, ok: false, reason: 'decode_failed' };
-        const reason = preRpcRejectReason(item);
-        return {
-          castHash: c.castHash,
-          ok: !reason,
-          reason: reason || 'ready',
-          swapContract: item.swapContract,
-          nonce: String(item?.order?.nonce || ''),
-          expiry: String(item?.order?.expiry || ''),
-        };
-      });
-    console.log('[world/degen] pre-rpc prep', batchPrep);
-
-    const batchItems = batchPrep.filter((x) => x.ok).map((x) => toBatchItemFromCast(finalCasts.find((c) => c.castHash === x.castHash))).filter(Boolean);
-    let viableHashes = new Set();
-    let viableOffers = [];
-    if (batchItems.length) {
-      try {
-        console.log('[world/degen] batch run start', { count: batchItems.length });
-        const bd = await runOrderCheckBatch(batchItems);
-        const rows = Array.isArray(bd?.results) ? bd.results : [];
-        console.log('[world/degen] batch raw results', rows);
-        viableOffers = rows.filter((r) => r?.ok && !r?.nonceUsed && Array.isArray(r?.checkErrors) && r.checkErrors.length === 0);
-        viableHashes = new Set(viableOffers.map((r) => String(r.id || '').toLowerCase()).filter(Boolean));
-        const validCastDebug = finalCasts
-          .filter((c) => viableHashes.has(String(c.castHash || '').toLowerCase()))
-          .map((c) => ({ castHash: c.castHash, username: c.username, text: String(c.text || ''), textLen: String(c.text || '').length }));
-        console.log('[world/degen] valid public offers', validCastDebug);
-      } catch (e) {
-        console.log('[world/degen] batch run error', { error: e?.message || 'unknown' });
-        viableHashes = new Set();
-        viableOffers = [];
-      }
-    }
-
-    const castsWithViability = finalCasts.map((c) => {
-      if (!c?.isPublicSwapOffer) return c;
-      const isViable = viableHashes.has(String(c.castHash || '').toLowerCase());
-      return {
-        ...c,
-        isPublicSwapOffer: isViable,
-        publicOfferViable: isViable,
-      };
+    // 1) Fetch top channel casts and score.
+    const rawChannel = await fetchChannelCasts(headers);
+    let channelCasts = rawChannel
+      .map(mapCast)
+      .filter(Boolean)
+      .filter((c) => c.timestamp >= windowStartMs && c.timestamp <= windowEndMs);
+    channelCasts.sort((a, b) => {
+      if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
+      return b.timestamp - a.timestamp;
     });
+    channelCasts = channelCasts.slice(0, MAX_ROOT_CASTS);
 
-    const npcs = aggregateByUser(castsWithViability);
+    // 2) Aggregate by user.
+    // 3) Filter users by Neynar score > threshold.
+    const fids = [...new Set(channelCasts.map((c) => c.fid).filter((n) => Number.isFinite(n) && n > 0))];
+    const userScores = await fetchBulkUserScores(fids, headers);
+    const allowedFids = new Set(fids.filter((fid) => (userScores.get(fid) || 0) > SCORE_THRESHOLD));
+    let filteredCasts = channelCasts.filter((c) => allowedFids.has(c.fid));
+
+    // 4) Return child casts to remaining casts.
+    const childRaw = await fetchChildCasts(filteredCasts, headers);
+    const children = childRaw
+      .map(mapCast)
+      .filter(Boolean)
+      .filter((c) => c.timestamp >= windowStartMs && c.timestamp <= windowEndMs);
+
+    // Merge + dedupe by hash.
+    const mergedByHash = new Map();
+    for (const c of [...filteredCasts, ...children]) mergedByHash.set(c.castHash, c);
+
+    // 5) Repeat 2-4 once more after child expansion.
+    const merged = Array.from(mergedByHash.values());
+    const mergedFids = [...new Set(merged.map((c) => c.fid).filter((n) => Number.isFinite(n) && n > 0))];
+    const mergedScores = await fetchBulkUserScores(mergedFids, headers);
+    const mergedAllowed = new Set(mergedFids.filter((fid) => (mergedScores.get(fid) || 0) > SCORE_THRESHOLD));
+    const finalCasts = merged.filter((c) => mergedAllowed.has(c.fid));
+
+    // 6) Build graph + inherited ranking and aggregate NPC timelines.
+    applyInheritedScores(finalCasts);
+    const npcs = aggregateByUser(finalCasts);
+
+    const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
+    const ttlSeconds = Math.max(1, Math.floor((nextUtcMidnight - now.getTime()) / 1000));
 
     return NextResponse.json(
       {
         ok: true,
-        npcs,
+        npcs: npcs.slice(0, 100),
         count: npcs.length,
-        sort: 'timestamp_desc_dev_fid_filter',
-        mode: 'dev-temp-fids-last-24h',
+        sort: 'engagement_desc_with_parent_inheritance',
+        mode: 'grouped-user-timeline',
         meta: {
-          world: 'degen',
-          fids: [MY_FID],
-          channel: CHANNEL_ID,
-          totalCasts: finalCasts.length,
-          publicOfferCasts: batchItems.length,
-          validPublicOffers: viableOffers.length,
-          validPublicOfferCastHashes: Array.from(viableHashes),
-          windowStartUtc: new Date(windowStartMs).toISOString(),
-          windowEndUtc: new Date(nowMs).toISOString(),
+          rootCasts: channelCasts.length,
+          afterScoreFilter: filteredCasts.length,
+          childCasts: children.length,
+          mergedCasts: merged.length,
+          finalCasts: finalCasts.length,
+          scoreThreshold: SCORE_THRESHOLD,
+          windowStartUtc: y.toISOString(),
+          windowEndUtc: yEnd.toISOString(),
         },
       },
-      { headers: { 'Cache-Control': 's-maxage=120, stale-while-revalidate=30' } }
+      { headers: { 'Cache-Control': `s-maxage=${ttlSeconds}, stale-while-revalidate=0` } }
     );
   } catch (e) {
     return NextResponse.json({ ok: false, error: e?.message || 'failed' }, { status: 500 });
