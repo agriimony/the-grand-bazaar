@@ -647,9 +647,44 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     moveToNpcAdjacentThen(npc, () => runTrade(npc));
   };
 
+  const moveToBankAdjacentThen = (action) => {
+    if (!playerCell) {
+      action?.();
+      return;
+    }
+    const adjacent = [
+      { x: bankCell.x + 1, y: bankCell.y },
+      { x: bankCell.x - 1, y: bankCell.y },
+      { x: bankCell.x, y: bankCell.y + 1 },
+      { x: bankCell.x, y: bankCell.y - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
+      return;
+    }
+
+    const candidates = adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedCells, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    if (!candidates.length) {
+      action?.();
+      return;
+    }
+
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
   const onTradeAnyone = () => {
-    router.push(`/maker?channel=${encodeURIComponent(worldName)}`);
     setMenu(null);
+    moveToBankAdjacentThen(() => {
+      router.push(`/maker?channel=${encodeURIComponent(worldName)}`);
+    });
   };
 
   const onMoveHere = () => {
