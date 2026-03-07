@@ -55,6 +55,47 @@ const ERC20_ABI = [
 const ERC721_ABI = ['function approve(address to,uint256 tokenId)'];
 const ERC1155_ABI = ['function setApprovalForAll(address operator,bool approved)'];
 
+const SWAP_ABI = [
+  'function protocolFee() view returns (uint256)',
+  'function requiredSenderKind() view returns (bytes4)',
+  'function swap(address recipient,uint256 maxRoyalty,(uint256 nonce,uint256 expiry,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) signer,(address wallet,address token,bytes4 kind,uint256 id,uint256 amount) sender,address affiliateWallet,uint256 affiliateAmount,uint8 v,bytes32 r,bytes32 s) order) external',
+];
+const SWAP_ERC20_ABI = [
+  'function protocolFee() view returns (uint256)',
+  'function swap(address recipient,uint256 nonce,uint256 expiry,address signerWallet,address signerToken,uint256 signerAmount,address senderToken,uint256 senderAmount,uint8 v,bytes32 r,bytes32 s) external',
+];
+const ORDER_TYPES = {
+  Order: [
+    { name: 'nonce', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'protocolFee', type: 'uint256' },
+    { name: 'signer', type: 'Party' },
+    { name: 'sender', type: 'Party' },
+    { name: 'affiliateWallet', type: 'address' },
+    { name: 'affiliateAmount', type: 'uint256' },
+  ],
+  Party: [
+    { name: 'wallet', type: 'address' },
+    { name: 'token', type: 'address' },
+    { name: 'kind', type: 'bytes4' },
+    { name: 'id', type: 'uint256' },
+    { name: 'amount', type: 'uint256' },
+  ],
+};
+const ORDER_TYPES_ERC20 = {
+  OrderERC20: [
+    { name: 'nonce', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'signerWallet', type: 'address' },
+    { name: 'signerToken', type: 'address' },
+    { name: 'signerAmount', type: 'uint256' },
+    { name: 'protocolFee', type: 'uint256' },
+    { name: 'senderWallet', type: 'address' },
+    { name: 'senderToken', type: 'address' },
+    { name: 'senderAmount', type: 'uint256' },
+  ],
+};
+
 const ROYALTY_ABI = [
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
   'function royaltyInfo(uint256 tokenId,uint256 salePrice) view returns (address receiver,uint256 royaltyAmount)',
@@ -90,6 +131,8 @@ function normalizeSelection(sel) {
     decimals: String(sel?.decimals || ''),
   };
 }
+
+const IS_SWAP_ERC20 = (addr = '') => String(addr || '').toLowerCase() === String(BASE_SWAP_CONTRACT_ERC20_ERC20).toLowerCase();
 
 function resolveSwapContractForSelections(signerSel, senderSel) {
   const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
@@ -939,38 +982,166 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     const ch = channelRef.current;
     if (!ch) return;
 
-    // TODO: replace payload with exact /maker signed order object once shared signer module is extracted.
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    const payload = {
-      roomId,
-      byRole: 'signer',
-      byName: localFname || identity.playerId,
-      expiresAt,
-      signedOrder: {
-        signerSelection: tradeState.signerSelection,
-        senderSelection: tradeState.senderSelection,
-      },
-    };
+    try {
+      const signerWallet = String(identity.playerId || '').trim();
+      const senderWallet = String(otherPeer?.playerId || '').trim();
+      if (!/^0x[a-fA-F0-9]{40}$/.test(signerWallet) || !/^0x[a-fA-F0-9]{40}$/.test(senderWallet)) {
+        setStatus('wallet identities missing for live sign');
+        return;
+      }
 
-    setSignedOrderState({ byRole: 'signer', byName: localFname || identity.playerId, expiresAt, payload: payload.signedOrder });
-    setLivePhase('await_sender');
+      const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
+      const isSwapErc20 = IS_SWAP_ERC20(swapContract);
+      const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+      const swap = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
+      const protocolFee = await swap.protocolFee();
 
-    ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
+      const signerDecimals = Number(tradeState.signerSelection?.decimals || 18);
+      const senderDecimals = Number(tradeState.senderSelection?.decimals || 18);
+      const signerAmount = (String(tradeState.signerSelection?.kind || '').toLowerCase() === KIND_ERC721)
+        ? '0'
+        : ethers.parseUnits(String(tradeState.signerSelection?.amount || '0'), Number.isFinite(signerDecimals) ? signerDecimals : 18).toString();
+      const senderAmount = (String(tradeState.senderSelection?.kind || '').toLowerCase() === KIND_ERC721)
+        ? '0'
+        : ethers.parseUnits(String(tradeState.senderSelection?.amount || '0'), Number.isFinite(senderDecimals) ? senderDecimals : 18).toString();
+
+      const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
+      const expirySec = Math.floor(Date.now() / 1000) + 5 * 60;
+
+      const signerToken = String(tradeState.signerSelection?.token || '').split(':')[0];
+      const senderToken = String(tradeState.senderSelection?.token || '').split(':')[0];
+      const signerKind = String(tradeState.signerSelection?.kind || KIND_ERC20);
+      const senderKind = String(tradeState.senderSelection?.kind || KIND_ERC20);
+      const signerId = Number(tradeState.signerSelection?.tokenId || 0);
+      const senderId = Number(tradeState.senderSelection?.tokenId || 0);
+
+      const domain = {
+        name: isSwapErc20 ? 'SWAP_ERC20' : 'SWAP',
+        version: isSwapErc20 ? '4.3' : '4.2',
+        chainId: 8453,
+        verifyingContract: swapContract,
+      };
+
+      const typedOrder = {
+        nonce,
+        expiry: expirySec,
+        protocolFee: Number(protocolFee.toString()),
+        signer: { wallet: signerWallet, token: signerToken, kind: signerKind, id: signerId, amount: signerAmount },
+        sender: { wallet: senderWallet, token: senderToken, kind: senderKind, id: senderId, amount: senderAmount },
+        affiliateWallet: ethers.ZeroAddress,
+        affiliateAmount: 0,
+      };
+      const typedOrderErc20 = {
+        nonce,
+        expiry: expirySec,
+        signerWallet,
+        signerToken,
+        signerAmount,
+        protocolFee: Number(protocolFee.toString()),
+        senderWallet,
+        senderToken,
+        senderAmount,
+      };
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const ws = await provider.getSigner();
+      const sig = await ws.signTypedData(domain, isSwapErc20 ? ORDER_TYPES_ERC20 : ORDER_TYPES, isSwapErc20 ? typedOrderErc20 : typedOrder);
+      const split = ethers.Signature.from(sig);
+
+      const signedOrder = {
+        chainId: 8453,
+        swapContract,
+        nonce,
+        expiry: String(expirySec),
+        signerWallet,
+        signerToken,
+        signerAmount,
+        signerKind,
+        signerId: String(signerId),
+        protocolFee: String(protocolFee),
+        senderWallet,
+        senderToken,
+        senderAmount,
+        senderKind,
+        senderId: String(senderId),
+        v: Number(split.v),
+        r: split.r,
+        s: split.s,
+      };
+
+      const expiresAt = expirySec * 1000;
+      const payload = {
+        roomId,
+        byRole: 'signer',
+        byName: localFname || identity.playerId,
+        expiresAt,
+        signedOrder,
+      };
+
+      setSignedOrderState({ byRole: 'signer', byName: localFname || identity.playerId, expiresAt, payload: signedOrder });
+      setLivePhase('await_sender');
+      ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
+    } catch (e) {
+      setStatus(`sign failed: ${e?.message || 'unknown'}`);
+    }
   };
 
   const onSenderSwap = async () => {
     if (myRole !== 'sender') return;
-    if (!signedOrderState) return;
+    if (!signedOrderState?.payload) return;
 
     const ch = channelRef.current;
     if (!ch) return;
 
-    setLivePhase('swapping');
-    ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId, ts: Date.now() } });
+    try {
+      setLivePhase('swapping');
+      ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId, ts: Date.now() } });
 
-    // Temporary bridge: route to /maker for actual tx execution until live swap executor is extracted.
-    const cp = String(otherPeer?.fname || otherPeer?.playerId || '').replace(/^@/, '').trim();
-    router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`);
+      const o = signedOrderState.payload;
+      const isSwapErc20 = IS_SWAP_ERC20(o.swapContract);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const ws = await provider.getSigner();
+      const swap = new ethers.Contract(o.swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, ws);
+
+      let tx;
+      if (isSwapErc20) {
+        tx = await swap.swap(
+          identity.playerId,
+          BigInt(o.nonce),
+          BigInt(o.expiry),
+          o.signerWallet,
+          o.signerToken,
+          BigInt(o.signerAmount),
+          o.senderToken,
+          BigInt(o.senderAmount),
+          Number(o.v),
+          o.r,
+          o.s
+        );
+      } else {
+        const orderForCall = {
+          nonce: BigInt(o.nonce),
+          expiry: BigInt(o.expiry),
+          signer: { wallet: o.signerWallet, token: o.signerToken, kind: o.signerKind, id: BigInt(o.signerId || 0), amount: BigInt(o.signerAmount) },
+          sender: { wallet: o.senderWallet, token: o.senderToken, kind: o.senderKind, id: BigInt(o.senderId || 0), amount: BigInt(o.senderAmount) },
+          affiliateWallet: ethers.ZeroAddress,
+          affiliateAmount: 0n,
+          v: Number(o.v),
+          r: o.r,
+          s: o.s,
+        };
+        tx = await swap.swap(identity.playerId, 0n, orderForCall);
+      }
+
+      const rec = await tx.wait();
+      const txHash = String(rec?.hash || tx?.hash || '');
+      setSwapTxHash(txHash);
+      setLivePhase('success');
+      ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId, txHash, ts: Date.now() } });
+    } catch (e) {
+      setStatus(`swap failed: ${e?.message || 'unknown'}`);
+      setLivePhase('await_sender');
+    }
   };
 
   const onDecline = async () => {
