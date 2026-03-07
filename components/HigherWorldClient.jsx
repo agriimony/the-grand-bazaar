@@ -66,7 +66,7 @@ function findPath({ size, blocked, start, goal }) {
 
 export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
-  const size = 15;
+  const size = 37;
   const center = Math.floor(size / 2);
   const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
@@ -414,7 +414,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     const keyToUser = new Map(users.map((u) => [u._key, u]));
     const maxScore = Math.max(1, ...users.map((u) => u._score));
-    const baseRadius = Math.max(2, Math.floor(size / 2) - 1);
+    const minClusterRadius = Math.max(4, Math.floor(size * 0.22));
+    const maxClusterRadius = Math.max(minClusterRadius + 2, Math.floor(size * 0.46));
 
     const compSorted = components
       .map((comp) => ({
@@ -429,7 +430,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const comp = compSorted[ci];
       const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
       const clusterScoreNorm = Math.min(1, comp.score / Math.max(1, comp.keys.length * maxScore));
-      const clusterR = Math.max(1, Math.round(baseRadius * (1 - 0.55 * clusterScoreNorm)));
+      const radialJitter = hashToUnit(`cluster:${ci}:r`);
+      const spreadBias = 0.35 + 0.65 * radialJitter;
+      const clusterR = Math.round(
+        minClusterRadius + (maxClusterRadius - minClusterRadius) * (1 - 0.45 * clusterScoreNorm) * spreadBias
+      );
       const cx = center + Math.cos(clusterAngle) * clusterR;
       const cy = center + Math.sin(clusterAngle) * clusterR;
 
@@ -465,8 +470,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           continue;
         }
 
-        const localR = Math.max(0.6, 2.4 - Math.min(1.8, linkedWeight * 0.25) - scoreNorm * 0.9);
-        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.35;
+        const localR = Math.max(1.4, 3.8 - Math.min(2.3, linkedWeight * 0.22) - scoreNorm * 1.1);
+        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.7;
         const tx = cx + Math.cos(localAngle) * localR;
         const ty = cy + Math.sin(localAngle) * localR;
         targets.push({ u, tx, ty, scoreNorm });
@@ -816,6 +821,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const isBank = x === bankCell.x && y === bankCell.y;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
+      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && hashToUnit(`scatter-tree:${key}`) < 0.07;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
@@ -844,8 +850,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         >
           {isCenter ? (
             '⛲'
-          ) : isBorder ? (
-            <span style={{ fontSize: 22, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>{tree}</span>
+          ) : isBorder || isScatteredTree ? (
+            <span
+              style={{
+                fontSize: isScatteredTree ? 18 : 22,
+                opacity: isScatteredTree ? 0.9 : 1,
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              {tree}
+            </span>
           ) : isBank ? (
             <button
               onClick={openBankMenu}
