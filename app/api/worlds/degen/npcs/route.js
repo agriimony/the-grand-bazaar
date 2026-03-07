@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { neynarCachedGetJson } from '../../../../../lib/neynar-cache';
 
 export const revalidate = 3600;
 
@@ -164,9 +165,13 @@ async function fetchChannelCasts(headers) {
   let cursor = '';
   for (let page = 0; page < 5; page += 1) {
     const u = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
-    const r = await fetch(u, { headers, cache: 'no-store' });
-    if (!r.ok) break;
-    const d = await r.json();
+    const { ok, json: d } = await neynarCachedGetJson({
+      url: u,
+      headers,
+      namespace: 'degen:feed:channels',
+      ttlSeconds: 300,
+    });
+    if (!ok) break;
     const list = Array.isArray(d?.casts) ? d.casts : [];
     if (!list.length) break;
     out.push(...list);
@@ -184,9 +189,13 @@ async function fetchBulkUserScores(fids, headers) {
   for (const batch of chunks) {
     try {
       const u = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(batch.join(','))}`;
-      const r = await fetch(u, { headers, cache: 'no-store' });
-      if (!r.ok) continue;
-      const d = await r.json();
+      const { ok, json: d } = await neynarCachedGetJson({
+        url: u,
+        headers,
+        namespace: 'degen:user:bulk',
+        ttlSeconds: 6 * 60 * 60,
+      });
+      if (!ok) continue;
       const users = Array.isArray(d?.users) ? d.users : [];
       for (const usr of users) {
         const s = Number(
@@ -206,9 +215,13 @@ async function fetchChildCasts(seedCasts, headers) {
       const hash = String(c.castHash || '').trim();
       if (!hash) continue;
       const u = `https://api.neynar.com/v2/farcaster/cast/conversation?identifier=${encodeURIComponent(hash)}&type=hash&reply_depth=2&include_chronological_parent_casts=false&limit=50`;
-      const r = await fetch(u, { headers, cache: 'no-store' });
-      if (!r.ok) continue;
-      const d = await r.json();
+      const { ok, json: d } = await neynarCachedGetJson({
+        url: u,
+        headers,
+        namespace: 'degen:cast:conversation',
+        ttlSeconds: 30 * 60,
+      });
+      if (!ok) continue;
       const convo = Array.isArray(d?.conversation?.cast?.direct_replies)
         ? d.conversation.cast.direct_replies
         : Array.isArray(d?.conversation?.direct_replies)
