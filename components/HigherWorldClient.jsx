@@ -29,6 +29,10 @@ function randomId(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
+function createRoomId() {
+  return `room_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+}
+
 function findPath({ size, blocked, start, goal }) {
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < size && y < size;
   const dirs = [
@@ -334,6 +338,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         fromSessionId,
         fromPlayerId,
         fromFname,
+        roomId: String(payload?.roomId || ''),
         world: String(payload?.world || worldName),
         at: Number(payload?.ts || Date.now()),
         expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
@@ -348,9 +353,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setOutgoingTradeInvite(null);
       if (decision === 'accept') {
         setTradeToast(`${fromName} accepted your trade request`);
-        const target = String(payload?.fromFname || payload?.fromPlayerId || '').replace(/^@/, '').trim();
-        if (target) {
-          router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
+        const roomId = String(payload?.roomId || '').trim();
+        if (roomId) {
+          router.push(`/maker/live/${encodeURIComponent(roomId)}?role=signer&channel=${encodeURIComponent(worldName)}`);
         }
       }
       if (decision === 'decline') {
@@ -1139,6 +1144,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
 
     const expiresAt = Date.now() + 60_000;
+    const roomId = createRoomId();
     ch.send({
       type: 'broadcast',
       event: 'trade_invite',
@@ -1148,6 +1154,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         fromSessionId: playerIdentity.sessionId,
         fromPlayerId: playerIdentity.playerId,
         fromFname: localFname,
+        roomId,
         ts: Date.now(),
         expiresAt,
       },
@@ -1155,6 +1162,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setOutgoingTradeInvite({
       toSessionId: targetSessionId,
       toName: targetName,
+      roomId,
       expiresAt,
     });
   };
@@ -1175,6 +1183,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         fromSessionId: playerIdentity.sessionId,
         fromPlayerId: playerIdentity.playerId,
         fromFname: localFname,
+        roomId: invite.roomId,
         decision,
         ts: Date.now(),
       },
@@ -1183,8 +1192,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (decision === 'accept') {
       const target = String(invite.fromFname || invite.fromPlayerId || '').replace(/^@/, '').trim();
       setTradeToast(`accepted trade with ${target || 'player'}`);
-      if (target) {
-        router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
+      const roomId = String(invite.roomId || '').trim();
+      if (roomId) {
+        router.push(`/maker/live/${encodeURIComponent(roomId)}?role=sender&channel=${encodeURIComponent(worldName)}`);
       }
     }
     if (decision === 'decline') {
