@@ -15,6 +15,28 @@ function shortAddr(v = '') {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
+const CATALOG_ICON_BY_SYMBOL = {
+  higher: '/higher-icon.png',
+  eth: '/eth-icon.png',
+  weth: '/eth-icon.png',
+};
+
+function tokenIconUrl(token = '') {
+  const t = String(token || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(t)) return '';
+  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${t}/logo.png`;
+}
+
+function fallbackTokenArt(token = '', symbol = '') {
+  const bySymbol = CATALOG_ICON_BY_SYMBOL[String(symbol || '').trim().toLowerCase()];
+  if (bySymbol) return bySymbol;
+
+  const addrOnly = String(token || '').split(':')[0].trim();
+  if (/^0x[a-fA-F0-9]{40}$/.test(addrOnly)) return tokenIconUrl(addrOnly);
+
+  return '';
+}
+
 function isFilled(sel) {
   return Boolean(String(sel?.token || '').trim() && String(sel?.amount || '').trim());
 }
@@ -42,9 +64,9 @@ function normalizeSelection(sel) {
 function OfferPanel({ title, selection, editable, onChange, onOpenInventory }) {
   const token = String(selection?.token || '');
   const amount = String(selection?.amount || '');
-  const imgUrl = String(selection?.imgUrl || '');
   const symbol = String(selection?.symbol || '');
   const tokenId = String(selection?.tokenId || '');
+  const imgUrl = String(selection?.imgUrl || fallbackTokenArt(token, symbol) || '');
 
   return (
     <div className="rs-panel">
@@ -129,6 +151,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const [customTokenOpen, setCustomTokenOpen] = useState(false);
   const [customTokenValue, setCustomTokenValue] = useState('');
   const [customTokenAmount, setCustomTokenAmount] = useState('');
+  const [inventoryView, setInventoryView] = useState('tokens');
 
   const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   const enabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && supabasePublicKey && roomId);
@@ -356,6 +379,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     setCustomTokenOpen(false);
     setCustomTokenValue('');
     setCustomTokenAmount('');
+    setInventoryView('tokens');
 
     const owner = String(identity.playerId || '').trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(owner)) {
@@ -368,7 +392,29 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     setInventoryLoading(true);
     setInventoryError('');
 
+    const cacheKey = `gbz:zapper:livemaker:${String(owner).toLowerCase()}`;
+    const cacheTtlMs = 15 * 60 * 1000;
+
     try {
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = window.localStorage.getItem(cacheKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const ts = Number(parsed?.ts || 0);
+            const age = Date.now() - ts;
+            if (age >= 0 && age < cacheTtlMs && Array.isArray(parsed?.tokens)) {
+              const tokens = parsed.tokens;
+              const nfts = Array.isArray(parsed?.nfts) ? parsed.nfts : [];
+              setInventoryTokens(tokens);
+              setInventoryNfts(nfts);
+              setInventoryLoading(false);
+              return;
+            }
+          }
+        } catch {}
+      }
+
       const r = await fetch(`/api/zapper-wallet?address=${encodeURIComponent(owner)}`, { cache: 'no-store' });
       const d = await r.json();
       if (!r.ok || !d?.ok) {
@@ -376,10 +422,17 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
         setInventoryNfts([]);
         setInventoryError(String(d?.error || 'failed to load inventory'));
       } else {
-        setInventoryTokens(Array.isArray(d?.tokens) ? d.tokens : []);
+        const tokens = Array.isArray(d?.tokens) ? d.tokens : [];
         const cols = Array.isArray(d?.nftCollections) ? d.nftCollections : [];
         const rows = cols.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts : [])).slice(0, 40);
+        setInventoryTokens(tokens);
         setInventoryNfts(rows);
+
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens, nfts: rows }));
+          } catch {}
+        }
       }
     } catch {
       setInventoryTokens([]);
@@ -440,6 +493,8 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const bottomEditable = role === 'sender';
 
   const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
+
+  const visibleInventoryItems = (inventoryView === 'tokens' ? inventoryTokens : inventoryNfts).slice(0, 23);
 
   useEffect(() => {
     setApproved({ signer: false, sender: false });
@@ -533,7 +588,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
           <div className="rs-modal" style={{ width: 'min(860px, 96vw)' }}>
             <button className="rs-modal-close" onClick={() => setInventoryOpen(false)}>X</button>
             <div className="rs-panel" style={{ paddingTop: 18 }}>
-              <div className="rs-modal-titlebar">Select Token</div>
+              <div className="rs-modal-titlebar">Your inventory</div>
 
               {inventoryLoading ? (
                 <div className="rs-loading-wrap">
@@ -546,8 +601,12 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                 <div className="rs-inline-error" style={{ width: '100%', marginTop: 12 }}>{inventoryError}</div>
               ) : (
                 <>
-                  <div className="rs-panel-title" style={{ marginTop: 8 }}>Tokens</div>
-                  {customTokenOpen ? (
+                  <div className="rs-inv-toggle-row">
+                    <button className={`rs-inv-toggle ${inventoryView === 'tokens' ? 'active' : ''}`} onClick={() => setInventoryView('tokens')}>Tokens</button>
+                    <button className={`rs-inv-toggle ${inventoryView === 'nfts' ? 'active' : ''}`} onClick={() => setInventoryView('nfts')}>NFT</button>
+                  </div>
+
+                  {inventoryView === 'tokens' && customTokenOpen ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Custom token</div>
                       <input
@@ -570,69 +629,60 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                       </div>
                     </div>
                   ) : null}
-                  <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
-                    <div className="rs-token-grid">
-                      <button className="rs-token-cell rs-token-cell-plus" onClick={() => setCustomTokenOpen(true)} title="Custom token">
-                        +
-                      </button>
-                      {inventoryTokens.map((t, i) => (
-                        <button
-                          key={`tok-${String(t?.token || i)}`}
-                          className="rs-token-cell"
-                          onClick={() => pickInventoryToken({
-                            token: t?.token || t?.symbol || '',
-                            amount: t?.balance || '',
-                            imgUrl: t?.imgUrl || '',
-                            symbol: t?.symbol || '',
-                            tokenId: '',
-                            name: t?.symbol || 'TOKEN',
-                            kind: '0x20',
-                            balance: t?.balance || '',
-                          })}
-                          title={`${t?.symbol || 'TOKEN'} ${t?.balance || ''}`}
-                        >
-                          <div className="rs-token-cell-wrap rs-token-editable" style={{ position: 'relative' }}>
-                            {String(t?.imgUrl || '').trim() ? (
-                              <img className="rs-token-cell-icon" src={t.imgUrl} alt={t?.symbol || 'token'} />
-                            ) : (
-                              <div className="rs-token-cell-fallback">🪙</div>
-                            )}
-                            <span className="rs-token-cell-symbol">{String(t?.symbol || 'TOKEN')}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
 
-                  <div className="rs-panel-title" style={{ marginTop: 4 }}>NFTs</div>
                   <div className="rs-token-grid-wrap">
                     <div className="rs-token-grid">
-                      {inventoryNfts.map((n, i) => (
-                        <button
-                          key={`nft-${String(n?.token || '')}-${String(n?.tokenId || i)}`}
-                          className="rs-token-cell"
-                          onClick={() => pickInventoryToken({
-                            token: `${n?.token || ''}:${n?.tokenId || ''}`,
-                            amount: n?.balance || '1',
-                            imgUrl: n?.imgUrl || '',
-                            symbol: n?.symbol || 'NFT',
-                            tokenId: String(n?.tokenId || ''),
-                            name: n?.name || n?.symbol || 'NFT',
-                            kind: n?.kind || '',
-                            balance: n?.balance || '1',
-                          })}
-                          title={`${n?.name || n?.symbol || 'NFT'} #${n?.tokenId || ''}`}
-                        >
-                          <div className="rs-token-cell-wrap rs-token-editable" style={{ position: 'relative' }}>
-                            {String(n?.imgUrl || '').trim() ? (
-                              <img className="rs-token-cell-icon" src={n.imgUrl} alt={n?.symbol || 'nft'} />
-                            ) : (
-                              <div className="rs-token-cell-fallback">🖼️</div>
-                            )}
-                            <span className="rs-token-cell-tokenid">#{String(n?.tokenId || '')}</span>
-                          </div>
-                        </button>
-                      ))}
+                      {visibleInventoryItems.map((item, i) => {
+                        const isToken = inventoryView === 'tokens';
+                        const token = isToken ? (item?.token || item?.symbol || '') : `${item?.token || ''}:${item?.tokenId || ''}`;
+                        const amount = isToken ? (item?.balance || '') : (item?.balance || '1');
+                        const symbol = isToken ? (item?.symbol || 'TOKEN') : (item?.symbol || 'NFT');
+                        const tokenId = isToken ? '' : String(item?.tokenId || '');
+                        const imgUrl = item?.imgUrl || fallbackTokenArt(token, symbol) || '';
+                        return (
+                          <button
+                            key={`${inventoryView}-${String(token)}-${i}`}
+                            className="rs-token-cell"
+                            onClick={() => pickInventoryToken({
+                              token,
+                              amount,
+                              imgUrl,
+                              symbol,
+                              tokenId,
+                              name: item?.name || symbol,
+                              kind: item?.kind || (isToken ? '0x20' : ''),
+                              balance: amount,
+                            })}
+                            title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
+                          >
+                            <div className="rs-token-cell-wrap" style={{ position: 'relative' }}>
+                              {String(imgUrl).trim() ? (
+                                <img className="rs-token-cell-icon" src={imgUrl} alt={symbol} />
+                              ) : (
+                                <div className="rs-token-cell-fallback">{isToken ? '🪙' : '🖼️'}</div>
+                              )}
+                              {isToken ? (
+                                <>
+                                  <span className="rs-token-cell-amount">{amount}</span>
+                                  <span className="rs-token-cell-symbol">{symbol}</span>
+                                </>
+                              ) : (
+                                <span className="rs-token-cell-tokenid">#{tokenId}</span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                      <button
+                        className="rs-token-cell rs-token-cell-plus"
+                        onClick={() => {
+                          if (inventoryView === 'tokens') setCustomTokenOpen(true);
+                        }}
+                        title={inventoryView === 'tokens' ? 'Custom token' : 'Custom NFT not yet supported'}
+                        disabled={inventoryView !== 'tokens'}
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
                 </>
