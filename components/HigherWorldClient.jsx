@@ -1166,6 +1166,66 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     moveToNpcAdjacentThen(npc, () => runTrade(npc));
   };
 
+  const moveToRemoteAdjacentThen = (remote, action) => {
+    if (!remote || !playerCell) {
+      action?.();
+      return;
+    }
+
+    const rx = Number(remote?.x);
+    const ry = Number(remote?.y);
+    if (!Number.isFinite(rx) || !Number.isFinite(ry)) {
+      action?.();
+      return;
+    }
+
+    const adjacent = [
+      { x: rx + 1, y: ry },
+      { x: rx - 1, y: ry },
+      { x: rx, y: ry + 1 },
+      { x: rx, y: ry - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    if (!adjacent.length) {
+      action?.();
+      return;
+    }
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
+      return;
+    }
+
+    const targetRemoteKey = cellKey(rx, ry);
+    const blockedPreferAvoid = new Set(blockedCells);
+    for (const [k] of byCell.entries()) blockedPreferAvoid.add(k);
+    for (const p of Object.values(remotePlayers || {})) {
+      const px = Number(p?.x);
+      const py = Number(p?.y);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      blockedPreferAvoid.add(cellKey(px, py));
+    }
+    blockedPreferAvoid.delete(targetRemoteKey);
+
+    const getCandidates = (blockedSet) => adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedSet, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    let candidates = getCandidates(blockedPreferAvoid);
+    if (!candidates.length) candidates = getCandidates(blockedCells);
+
+    if (!candidates.length) {
+      action?.();
+      return;
+    }
+
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
   const onTradeRemote = () => {
     if (!menu?.remote) return;
     const remote = menu.remote;
@@ -1174,33 +1234,35 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
     if (!targetSessionId) return;
 
-    const ch = channelRef.current;
-    if (!ch) {
-      setTradeToast('multiplayer channel not ready');
-      return;
-    }
+    moveToRemoteAdjacentThen(remote, () => {
+      const ch = channelRef.current;
+      if (!ch) {
+        setTradeToast('multiplayer channel not ready');
+        return;
+      }
 
-    const expiresAt = Date.now() + 60_000;
-    const roomId = createRoomId();
-    ch.send({
-      type: 'broadcast',
-      event: 'trade_invite',
-      payload: {
-        world: worldName,
+      const expiresAt = Date.now() + 60_000;
+      const roomId = createRoomId();
+      ch.send({
+        type: 'broadcast',
+        event: 'trade_invite',
+        payload: {
+          world: worldName,
+          toSessionId: targetSessionId,
+          fromSessionId: playerIdentity.sessionId,
+          fromPlayerId: playerIdentity.playerId,
+          fromFname: localFname,
+          roomId,
+          ts: Date.now(),
+          expiresAt,
+        },
+      });
+      setOutgoingTradeInvite({
         toSessionId: targetSessionId,
-        fromSessionId: playerIdentity.sessionId,
-        fromPlayerId: playerIdentity.playerId,
-        fromFname: localFname,
+        toName: targetName,
         roomId,
-        ts: Date.now(),
         expiresAt,
-      },
-    });
-    setOutgoingTradeInvite({
-      toSessionId: targetSessionId,
-      toName: targetName,
-      roomId,
-      expiresAt,
+      });
     });
   };
 
