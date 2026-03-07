@@ -79,6 +79,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [npcs, setNpcs] = useState([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [localFname, setLocalFname] = useState('');
   const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -148,6 +149,41 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   useEffect(() => {
     let dead = false;
+    async function loadFnameFromSdk() {
+      try {
+        const mod = await import('@farcaster/miniapp-sdk');
+        const sdk = mod?.sdk || mod?.default || mod;
+
+        let ctx = null;
+        try {
+          if (typeof sdk?.context === 'function') ctx = await sdk.context();
+          else ctx = sdk?.context || null;
+        } catch {}
+
+        const name = String(
+          ctx?.user?.username
+          || ctx?.user?.fname
+          || ctx?.user?.displayName
+          || ctx?.user?.display_name
+          || ''
+        )
+          .replace(/^@/, '')
+          .trim()
+          .toLowerCase();
+
+        if (!dead) setLocalFname(name);
+      } catch {
+        if (!dead) setLocalFname('');
+      }
+    }
+    loadFnameFromSdk();
+    return () => {
+      dead = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let dead = false;
     async function load() {
       if (!dead) setLoadingCasts(true);
       try {
@@ -211,6 +247,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         [sessionId]: {
           sessionId,
           playerId: String(payload?.playerId || ''),
+          fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
           x,
           y,
           updatedAt: Number(payload?.ts || Date.now()),
@@ -246,6 +283,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             world: worldName,
             sessionId: playerIdentity.sessionId,
             playerId: playerIdentity.playerId,
+            fname: localFname,
             x: localCell.x,
             y: localCell.y,
             ts: Date.now(),
@@ -283,6 +321,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           world: worldName,
           sessionId: playerIdentity.sessionId,
           playerId: playerIdentity.playerId,
+          fname: localFname,
           x: localCell.x,
           y: localCell.y,
           ts: Date.now(),
@@ -310,7 +349,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       supabaseRef.current = null;
       setRemotePlayers({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -478,12 +517,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         world: worldName,
         sessionId: playerIdentity.sessionId,
         playerId: playerIdentity.playerId,
+        fname: localFname,
         x: playerCell.x,
         y: playerCell.y,
         ts: now,
       },
     });
-  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, playerCell]);
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, playerCell]);
 
   const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
 
@@ -777,6 +817,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
     e.preventDefault();
+
+    const remotes = nearbyRemoteByCell.get(cellKey(x, y)) || [];
+    if (remotes.length) {
+      const remote = remotes[0];
+      const displayId = String(remote?.fname || remote?.playerId || remote?.sessionId || 'player').trim();
+      setMenu({
+        x: e.clientX,
+        y: e.clientY,
+        type: 'remote',
+        remote,
+        name: displayId,
+      });
+      return;
+    }
+
     if (blockedCells.has(cellKey(x, y))) return;
     setMenu({
       x: e.clientX,
@@ -979,6 +1034,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const npc = menu.npc;
     setMenu(null);
     moveToNpcAdjacentThen(npc, () => runTrade(npc));
+  };
+
+  const onTradeRemote = () => {
+    if (!menu?.remote) return;
+    const remote = menu.remote;
+    const target = String(remote?.fname || remote?.playerId || '').replace(/^@/, '').trim();
+    setMenu(null);
+    if (!target) return;
+    router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
   };
 
   const moveToBankAdjacentThen = (action) => {
@@ -1369,6 +1433,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               title="Trade with anyone"
             >
               Trade with anyone
+            </button>
+          ) : menu.type === 'remote' ? (
+            <button
+              onClick={onTradeRemote}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                color: '#b7f0ff',
+                border: 'none',
+                padding: '9px 11px',
+                cursor: 'pointer',
+                fontSize: 17,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={`Trade with ${menu.name}`}
+            >
+              {`Trade with ${menu.name}`}
             </button>
           ) : menu.type === 'tile' ? (
             <button
