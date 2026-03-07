@@ -70,6 +70,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const center = Math.floor(size / 2);
   const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
+  const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -95,12 +96,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     let dead = false;
     async function load() {
+      if (!dead) setLoadingCasts(true);
       try {
         const join = apiPath.includes('?') ? '&' : '?';
         const r = await fetch(`${apiPath}${join}v=2`, { cache: 'no-store' });
         const d = await r.json();
         if (!dead && d?.ok && Array.isArray(d?.npcs)) setNpcs(d.npcs);
       } catch {}
+      finally {
+        if (!dead) setLoadingCasts(false);
+      }
     }
     load();
     return () => {
@@ -1033,6 +1038,28 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           </div>
         </section>
       </div>
+
+      {loadingCasts ? (
+        <div className="rs-modal-backdrop" style={{ zIndex: 80 }}>
+          <div
+            className="rs-panel"
+            style={{
+              width: 'min(560px, 92vw)',
+              border: '3px solid #2f271d',
+              background: 'linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%)',
+              boxShadow: 'inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912',
+              padding: 14,
+            }}
+          >
+            <div className="rs-loading-wrap" style={{ maxWidth: '100%' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
+                <div className="rs-loading-label">loading casts</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {menu ? (
         <div
