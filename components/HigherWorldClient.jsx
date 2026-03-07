@@ -98,6 +98,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const playerCellRef = useRef(null);
   const [remotePlayers, setRemotePlayers] = useState({});
   const [incomingTradeInvite, setIncomingTradeInvite] = useState(null);
+  const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
@@ -220,6 +221,48 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [tradeToast]);
 
   useEffect(() => {
+    if (!incomingTradeInvite) return;
+    const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
+    if (msLeft <= 0) {
+      const invite = incomingTradeInvite;
+      const ch = channelRef.current;
+      if (ch && invite?.fromSessionId) {
+        ch.send({
+          type: 'broadcast',
+          event: 'trade_invite_response',
+          payload: {
+            world: worldName,
+            toSessionId: invite.fromSessionId,
+            fromSessionId: playerIdentity.sessionId,
+            fromPlayerId: playerIdentity.playerId,
+            fromFname: localFname,
+            decision: 'decline',
+            reason: 'timeout',
+            ts: Date.now(),
+          },
+        });
+      }
+      setIncomingTradeInvite(null);
+      setTradeToast('trade request timed out');
+      return;
+    }
+    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [incomingTradeInvite, nowMs, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname]);
+
+  useEffect(() => {
+    if (!outgoingTradeInvite) return;
+    const msLeft = Number(outgoingTradeInvite?.expiresAt || 0) - Date.now();
+    if (msLeft <= 0) {
+      setOutgoingTradeInvite(null);
+      setTradeToast(`no response from ${outgoingTradeInvite.toName || 'player'}`);
+      return;
+    }
+    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [outgoingTradeInvite, nowMs]);
+
+  useEffect(() => {
     if (!multiplayerEnabled) {
       console.log('[mp] disabled', {
         enabledFlag: process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED,
@@ -293,6 +336,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         fromFname,
         world: String(payload?.world || worldName),
         at: Number(payload?.ts || Date.now()),
+        expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
       });
     });
 
@@ -301,8 +345,19 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       if (toSessionId !== playerIdentity.sessionId) return;
       const decision = String(payload?.decision || '').trim().toLowerCase();
       const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
-      if (decision === 'accept') setTradeToast(`${fromName} accepted your trade request`);
-      if (decision === 'decline') setTradeToast(`${fromName} declined your trade request`);
+      setOutgoingTradeInvite(null);
+      if (decision === 'accept') {
+        setTradeToast(`${fromName} accepted your trade request`);
+        const target = String(payload?.fromFname || payload?.fromPlayerId || '').replace(/^@/, '').trim();
+        if (target) {
+          router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
+        }
+      }
+      if (decision === 'decline') {
+        const reason = String(payload?.reason || '').trim().toLowerCase();
+        if (reason === 'timeout') setTradeToast(`${fromName} did not respond in time`);
+        else setTradeToast(`${fromName} declined your trade request`);
+      }
     });
 
     channel.subscribe((status) => {
@@ -382,7 +437,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       supabaseRef.current = null;
       setRemotePlayers({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1083,6 +1138,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
+    const expiresAt = Date.now() + 60_000;
     ch.send({
       type: 'broadcast',
       event: 'trade_invite',
@@ -1093,9 +1149,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         fromPlayerId: playerIdentity.playerId,
         fromFname: localFname,
         ts: Date.now(),
+        expiresAt,
       },
     });
-    setTradeToast(`trade request sent to ${targetName}`);
+    setOutgoingTradeInvite({
+      toSessionId: targetSessionId,
+      toName: targetName,
+      expiresAt,
+    });
   };
 
   const onRespondTradeInvite = (decision) => {
@@ -1120,7 +1181,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     if (decision === 'accept') {
-      setTradeToast(`accepted trade with ${invite.fromFname || invite.fromPlayerId || 'player'}`);
+      const target = String(invite.fromFname || invite.fromPlayerId || '').replace(/^@/, '').trim();
+      setTradeToast(`accepted trade with ${target || 'player'}`);
+      if (target) {
+        router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
+      }
     }
     if (decision === 'decline') {
       setTradeToast('trade request declined');
@@ -1523,6 +1588,30 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               <button className="rs-btn rs-btn-error" onClick={() => onRespondTradeInvite('decline')}>
                 Decline
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {outgoingTradeInvite ? (
+        <div className="rs-modal-backdrop" style={{ zIndex: 88 }}>
+          <div
+            className="rs-panel"
+            style={{
+              width: 'min(560px, 92vw)',
+              border: '3px solid #2f271d',
+              background: 'linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%)',
+              boxShadow: 'inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912',
+              padding: 14,
+            }}
+          >
+            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 10 }}>
+              {`waiting for ${outgoingTradeInvite.toName} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)..`}
+            </div>
+            <div className="rs-loading-wrap" style={{ maxWidth: '100%' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
+              </div>
             </div>
           </div>
         </div>
