@@ -169,7 +169,7 @@ async function fetchChannelCasts(headers) {
       url: u,
       headers,
       namespace: 'degen:feed:channels',
-      ttlSeconds: 300,
+      ttlSeconds: 24 * 60 * 60,
     });
     if (!ok) break;
     const list = Array.isArray(d?.casts) ? d.casts : [];
@@ -193,7 +193,7 @@ async function fetchBulkUserScores(fids, headers) {
         url: u,
         headers,
         namespace: 'degen:user:bulk',
-        ttlSeconds: 6 * 60 * 60,
+        ttlSeconds: 7 * 24 * 60 * 60,
       });
       if (!ok) continue;
       const users = Array.isArray(d?.users) ? d.users : [];
@@ -208,26 +208,41 @@ async function fetchBulkUserScores(fids, headers) {
   return scoreMap;
 }
 
+function collectRepliesDeep(cast, out = []) {
+  if (!cast || typeof cast !== 'object') return out;
+  const replies = Array.isArray(cast?.direct_replies) ? cast.direct_replies : [];
+  for (const r of replies) {
+    out.push(r);
+    collectRepliesDeep(r, out);
+  }
+  return out;
+}
+
 async function fetchChildCasts(seedCasts, headers) {
   const out = [];
   for (const c of seedCasts.slice(0, MAX_CHILD_FETCH)) {
     try {
       const hash = String(c.castHash || '').trim();
       if (!hash) continue;
-      const u = `https://api.neynar.com/v2/farcaster/cast/conversation?identifier=${encodeURIComponent(hash)}&type=hash&reply_depth=2&include_chronological_parent_casts=false&limit=50`;
+      const u = `https://api.neynar.com/v2/farcaster/cast/conversation?identifier=${encodeURIComponent(hash)}&type=hash&reply_depth=3&include_chronological_parent_casts=false&limit=50`;
       const { ok, json: d } = await neynarCachedGetJson({
         url: u,
         headers,
         namespace: 'degen:cast:conversation',
-        ttlSeconds: 30 * 60,
+        ttlSeconds: 24 * 60 * 60,
       });
       if (!ok) continue;
-      const convo = Array.isArray(d?.conversation?.cast?.direct_replies)
-        ? d.conversation.cast.direct_replies
-        : Array.isArray(d?.conversation?.direct_replies)
-        ? d.conversation.direct_replies
-        : [];
-      out.push(...convo);
+
+      const rootCast = d?.conversation?.cast;
+      if (rootCast && typeof rootCast === 'object') {
+        collectRepliesDeep(rootCast, out);
+      } else {
+        const convo = Array.isArray(d?.conversation?.direct_replies) ? d.conversation.direct_replies : [];
+        for (const r of convo) {
+          out.push(r);
+          collectRepliesDeep(r, out);
+        }
+      }
     } catch {}
   }
   return out;
