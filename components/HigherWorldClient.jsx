@@ -98,12 +98,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
 
+  const supabasePublicKey = useMemo(
+    () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    []
+  );
+
   const multiplayerEnabled = useMemo(
     () =>
       String(process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED || '').toLowerCase() === 'true' &&
       Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-      Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    []
+      Boolean(supabasePublicKey),
+    [supabasePublicKey]
   );
 
   const playerIdentity = useMemo(() => {
@@ -162,7 +167,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   useEffect(() => {
     if (!multiplayerEnabled) return;
 
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     const channel = supabase.channel(`world:${worldName}`, {
       config: { broadcast: { self: false } },
     });
@@ -273,7 +278,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       supabaseRef.current = null;
       setRemotePlayers({});
     };
-  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
