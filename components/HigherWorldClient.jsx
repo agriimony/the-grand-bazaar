@@ -33,6 +33,26 @@ function createRoomId() {
   return `room_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
+function noise2D(x, y, seed = 'world-noise') {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = x0 + 1;
+  const y1 = y0 + 1;
+
+  const sx = x - x0;
+  const sy = y - y0;
+
+  const n00 = hashToUnit(`${seed}:${x0},${y0}`);
+  const n10 = hashToUnit(`${seed}:${x1},${y0}`);
+  const n01 = hashToUnit(`${seed}:${x0},${y1}`);
+  const n11 = hashToUnit(`${seed}:${x1},${y1}`);
+
+  const smooth = (t) => t * t * (3 - 2 * t);
+  const ix0 = n00 + (n10 - n00) * smooth(sx);
+  const ix1 = n01 + (n11 - n01) * smooth(sx);
+  return ix0 + (ix1 - ix0) * smooth(sy);
+}
+
 function findPath({ size, blocked, start, goal }) {
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < size && y < size;
   const dirs = [
@@ -84,6 +104,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [localFname, setLocalFname] = useState('');
+  const [localPfp, setLocalPfp] = useState('');
   const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -177,10 +198,22 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           .replace(/^@/, '')
           .trim()
           .toLowerCase();
+        const pfp = String(
+          ctx?.user?.pfpUrl
+          || ctx?.user?.pfp_url
+          || ctx?.user?.pfp?.url
+          || ''
+        ).trim();
 
-        if (!dead) setLocalFname(name);
+        if (!dead) {
+          setLocalFname(name);
+          setLocalPfp(pfp);
+        }
       } catch {
-        if (!dead) setLocalFname('');
+        if (!dead) {
+          setLocalFname('');
+          setLocalPfp('');
+        }
       }
     }
     loadFnameFromSdk();
@@ -303,6 +336,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           sessionId,
           playerId: String(payload?.playerId || ''),
           fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+          pfp: String(payload?.pfp || '').trim(),
           x,
           y,
           updatedAt: Number(payload?.ts || Date.now()),
@@ -377,6 +411,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             sessionId: playerIdentity.sessionId,
             playerId: playerIdentity.playerId,
             fname: localFname,
+            pfp: localPfp,
             x: localCell.x,
             y: localCell.y,
             ts: Date.now(),
@@ -415,6 +450,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           sessionId: playerIdentity.sessionId,
           playerId: playerIdentity.playerId,
           fname: localFname,
+          pfp: localPfp,
           x: localCell.x,
           y: localCell.y,
           ts: Date.now(),
@@ -442,7 +478,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       supabaseRef.current = null;
       setRemotePlayers({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, router]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -611,12 +647,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         sessionId: playerIdentity.sessionId,
         playerId: playerIdentity.playerId,
         fname: localFname,
+        pfp: localPfp,
         x: playerCell.x,
         y: playerCell.y,
         ts: now,
       },
     });
-  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, playerCell]);
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell]);
 
   const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
 
@@ -1281,7 +1318,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const isBank = x === bankCell.x && y === bankCell.y;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
-      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && hashToUnit(`scatter-tree:${key}`) < 0.07;
+      const remotesAtCell = nearbyRemoteByCell.get(key) || [];
+      const primaryRemote = remotesAtCell[0] || null;
+      const noiseA = noise2D(x * 0.32, y * 0.32, `${worldName}:trees:a`);
+      const noiseB = noise2D((x + 17) * 0.58, (y + 29) * 0.58, `${worldName}:trees:b`);
+      const treePatchNoise = noiseA * 0.72 + noiseB * 0.28;
+      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treePatchNoise > 0.62;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
@@ -1363,23 +1405,32 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 />
               </button>
             </>
-          ) : null}
-          {nearbyRemoteByCell.get(key)?.length ? (
-            <span
+          ) : primaryRemote ? (
+            <button
+              onClick={(e) => openTileMenu(e, x, y)}
+              title={String(primaryRemote?.fname || primaryRemote?.playerId || 'player')}
               style={{
-                position: 'absolute',
-                top: 2,
-                right: 2,
-                zIndex: 3,
-                fontSize: `${Math.max(10, Math.min(18, 12 * zoom))}px`,
-                lineHeight: 1,
-                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
               }}
-              title={`${nearbyRemoteByCell.get(key).length} nearby player${nearbyRemoteByCell.get(key).length > 1 ? 's' : ''}`}
             >
-              🧍‍♂️
-            </span>
+              {String(primaryRemote?.pfp || '').trim() ? (
+                <img
+                  src={primaryRemote.pfp}
+                  alt={String(primaryRemote?.fname || primaryRemote?.playerId || 'player')}
+                  draggable={false}
+                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(183,240,255,0.8)', userSelect: 'none', WebkitUserDrag: 'none' }}
+                />
+              ) : (
+                <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
+              )}
+            </button>
           ) : null}
           {isPlayer ? (
             <span
