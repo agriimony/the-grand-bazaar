@@ -97,6 +97,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const nonTouchInputRef = useRef(false);
   const playerCellRef = useRef(null);
   const [remotePlayers, setRemotePlayers] = useState({});
+  const [incomingTradeInvite, setIncomingTradeInvite] = useState(null);
+  const [tradeToast, setTradeToast] = useState('');
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
@@ -212,6 +214,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, []);
 
   useEffect(() => {
+    if (!tradeToast) return;
+    const t = setTimeout(() => setTradeToast(''), 2600);
+    return () => clearTimeout(t);
+  }, [tradeToast]);
+
+  useEffect(() => {
     if (!multiplayerEnabled) {
       console.log('[mp] disabled', {
         enabledFlag: process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED,
@@ -270,6 +278,31 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         delete next[sid];
         return next;
       });
+    });
+
+    channel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const fromSessionId = String(payload?.fromSessionId || '').trim();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim();
+      const fromFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+      if (!fromSessionId) return;
+      setIncomingTradeInvite({
+        fromSessionId,
+        fromPlayerId,
+        fromFname,
+        world: String(payload?.world || worldName),
+        at: Number(payload?.ts || Date.now()),
+      });
+    });
+
+    channel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const decision = String(payload?.decision || '').trim().toLowerCase();
+      const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
+      if (decision === 'accept') setTradeToast(`${fromName} accepted your trade request`);
+      if (decision === 'decline') setTradeToast(`${fromName} declined your trade request`);
     });
 
     channel.subscribe((status) => {
@@ -1039,10 +1072,59 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const onTradeRemote = () => {
     if (!menu?.remote) return;
     const remote = menu.remote;
-    const target = String(remote?.fname || remote?.playerId || '').replace(/^@/, '').trim();
+    const targetSessionId = String(remote?.sessionId || '').trim();
+    const targetName = String(remote?.fname || remote?.playerId || 'player').replace(/^@/, '').trim();
     setMenu(null);
-    if (!target) return;
-    router.push(`/maker?counterparty=${encodeURIComponent(target)}&channel=${encodeURIComponent(worldName)}`);
+    if (!targetSessionId) return;
+
+    const ch = channelRef.current;
+    if (!ch) {
+      setTradeToast('multiplayer channel not ready');
+      return;
+    }
+
+    ch.send({
+      type: 'broadcast',
+      event: 'trade_invite',
+      payload: {
+        world: worldName,
+        toSessionId: targetSessionId,
+        fromSessionId: playerIdentity.sessionId,
+        fromPlayerId: playerIdentity.playerId,
+        fromFname: localFname,
+        ts: Date.now(),
+      },
+    });
+    setTradeToast(`trade request sent to ${targetName}`);
+  };
+
+  const onRespondTradeInvite = (decision) => {
+    const invite = incomingTradeInvite;
+    setIncomingTradeInvite(null);
+    if (!invite) return;
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    ch.send({
+      type: 'broadcast',
+      event: 'trade_invite_response',
+      payload: {
+        world: worldName,
+        toSessionId: invite.fromSessionId,
+        fromSessionId: playerIdentity.sessionId,
+        fromPlayerId: playerIdentity.playerId,
+        fromFname: localFname,
+        decision,
+        ts: Date.now(),
+      },
+    });
+
+    if (decision === 'accept') {
+      setTradeToast(`accepted trade with ${invite.fromFname || invite.fromPlayerId || 'player'}`);
+    }
+    if (decision === 'decline') {
+      setTradeToast('trade request declined');
+    }
   };
 
   const moveToBankAdjacentThen = (action) => {
@@ -1390,6 +1472,57 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 <div className="rs-loading-fill" />
                 <div className="rs-loading-label">loading casts</div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tradeToast ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 22,
+            transform: 'translateX(-50%)',
+            zIndex: 85,
+            border: '2px solid #6d5a34',
+            background: 'linear-gradient(180deg, #3c3324 0%, #2d261b 100%)',
+            color: '#f6e3ad',
+            padding: '8px 12px',
+            borderRadius: 6,
+            boxShadow: '0 8px 20px rgba(0,0,0,0.6)',
+            fontSize: 14,
+            whiteSpace: 'nowrap',
+            maxWidth: '92vw',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {tradeToast}
+        </div>
+      ) : null}
+
+      {incomingTradeInvite ? (
+        <div className="rs-modal-backdrop" style={{ zIndex: 90 }}>
+          <div
+            style={{
+              width: 'min(420px, 92vw)',
+              border: '3px solid #2f271d',
+              background: 'linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%)',
+              boxShadow: 'inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912',
+              padding: 14,
+            }}
+          >
+            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 12 }}>
+              {`${incomingTradeInvite.fromFname || incomingTradeInvite.fromPlayerId || 'A player'} wishes to trade`}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <button className="rs-btn rs-btn-positive" onClick={() => onRespondTradeInvite('accept')}>
+                Accept
+              </button>
+              <button className="rs-btn rs-btn-error" onClick={() => onRespondTradeInvite('decline')}>
+                Decline
+              </button>
             </div>
           </div>
         </div>
