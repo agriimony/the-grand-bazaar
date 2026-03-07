@@ -43,6 +43,18 @@ const KIND_ERC20 = '0x36372b07';
 const KIND_ERC721 = '0x80ac58cd';
 const KIND_ERC1155 = '0xd9b67a26';
 const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
+const BASE_SWAP_CONTRACT = '0x8a9969ed0A9bb3cDA7521DDaA614aE86e72e0A57';
+const BASE_SWAP_CONTRACT_ERC20_ERC20 = '0x95D598D839dE1B030848664960F0A20b848193F4';
+const BASE_SWAP_CONTRACT_ERC721 = '0x2aa29F096257bc6B253bfA9F6404B20Ae0ef9C4d';
+const BASE_SWAP_CONTRACT_ERC1155 = '0xD19783B48b11AFE1544b001c6d807A513e5A95cf';
+
+const ERC20_ABI = [
+  'function approve(address spender,uint256 value) returns (bool)',
+  'function decimals() view returns (uint8)',
+];
+const ERC721_ABI = ['function approve(address to,uint256 tokenId)'];
+const ERC1155_ABI = ['function setApprovalForAll(address operator,bool approved)'];
+
 const ROYALTY_ABI = [
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
   'function royaltyInfo(uint256 tokenId,uint256 salePrice) view returns (address receiver,uint256 royaltyAmount)',
@@ -54,7 +66,12 @@ function isFilled(sel) {
 }
 
 function emptySelection() {
-  return { token: '', amount: '', imgUrl: '', symbol: '', tokenId: '', name: '', kind: '', balance: '' };
+  return { token: '', amount: '', imgUrl: '', symbol: '', tokenId: '', name: '', kind: '', balance: '', decimals: '' };
+}
+
+function selectionHash(sel) {
+  const s = normalizeSelection(sel);
+  return [s.token, s.amount, s.kind, s.tokenId, s.balance].join('|');
 }
 
 function normalizeSelection(sel) {
@@ -70,7 +87,17 @@ function normalizeSelection(sel) {
     name: String(sel?.name || ''),
     kind: String(sel?.kind || ''),
     balance: String(sel?.balance || ''),
+    decimals: String(sel?.decimals || ''),
   };
+}
+
+function resolveSwapContractForSelections(signerSel, senderSel) {
+  const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
+  const senderKind = String(senderSel?.kind || KIND_ERC20).toLowerCase();
+  if (senderKind === KIND_ERC721) return BASE_SWAP_CONTRACT_ERC721;
+  if (senderKind === KIND_ERC1155) return BASE_SWAP_CONTRACT_ERC1155;
+  if (signerKind === KIND_ERC20 && senderKind === KIND_ERC20) return BASE_SWAP_CONTRACT_ERC20_ERC20;
+  return BASE_SWAP_CONTRACT;
 }
 
 function OfferPanel({ title, selection, editable, onChange, onOpenInventory, feeText = '', footer = '', footerTone = 'ok', insufficient = false }) {
@@ -163,6 +190,9 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     senderSelection: emptySelection(),
   });
   const [approved, setApproved] = useState({ signer: false, sender: false });
+  const [approvedHash, setApprovedHash] = useState({ signer: '', sender: '' });
+  const [peerSnapshotAtApprove, setPeerSnapshotAtApprove] = useState('');
+  const [approvalBusy, setApprovalBusy] = useState(false);
   const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
@@ -281,7 +311,9 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       const who = String(payload?.role || '').trim().toLowerCase();
       const decision = String(payload?.decision || '').trim().toLowerCase();
       if (who !== 'signer' && who !== 'sender') return;
+      const hash = String(payload?.selectionHash || '').trim();
       setApproved((prev) => ({ ...prev, [who]: decision === 'approve' }));
+      setApprovedHash((prev) => ({ ...prev, [who]: decision === 'approve' ? hash : '' }));
     });
 
     ch.on('broadcast', { event: 'room_start_maker' }, ({ payload }) => {
@@ -508,6 +540,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
         name: knownToken?.symbol || token,
         kind: '0x20',
         balance: String(knownToken?.balance || ''),
+        decimals: String(knownToken?.decimals || '18'),
       });
       return;
     }
@@ -531,6 +564,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       name: token,
       kind: '',
       balance: '',
+      decimals: '18',
     });
   };
 
@@ -566,6 +600,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       name: row?.name || row?.symbol || 'NFT',
       kind: row?.kind || '0x80ac58cd',
       balance: String(row?.balance || '1'),
+      decimals: '0',
     });
   };
 
@@ -590,6 +625,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       name: row?.name || row?.symbol || 'NFT',
       kind: row?.kind || '0xd9b67a26',
       balance: String(row?.balance || '1'),
+      decimals: '0',
     });
   };
 
@@ -658,8 +694,19 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const topSelection = tradeState.signerSelection;
   const bottomSelection = tradeState.senderSelection;
 
-  const topEditable = role === 'signer';
-  const bottomEditable = role === 'sender';
+  const myRole = role === 'sender' ? 'sender' : 'signer';
+  const peerRole = myRole === 'signer' ? 'sender' : 'signer';
+  const mySelection = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
+  const peerSelection = myRole === 'signer' ? tradeState.senderSelection : tradeState.signerSelection;
+  const mySelectionHash = selectionHash(mySelection);
+  const peerSelectionHash = selectionHash(peerSelection);
+
+  const localApproved = Boolean(approved[myRole]);
+  const peerApproved = Boolean(approved[peerRole]);
+  const peerChangedAfterMyApprove = Boolean(localApproved && peerSnapshotAtApprove && peerSnapshotAtApprove !== peerSelectionHash);
+
+  const topEditable = role === 'signer' && !localApproved;
+  const bottomEditable = role === 'sender' && !localApproved;
 
   const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
 
@@ -698,8 +745,10 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
 
   const topIsSignerPanel = role === 'signer';
-  const topInsufficient = topIsSignerPanel ? signerInsufficient : senderInsufficient;
-  const bottomInsufficient = topIsSignerPanel ? senderInsufficient : signerInsufficient;
+  const peerChangedTop = myRole === 'sender' ? peerChangedAfterMyApprove : false;
+  const peerChangedBottom = myRole === 'signer' ? peerChangedAfterMyApprove : false;
+  const topInsufficient = (topIsSignerPanel ? signerInsufficient : senderInsufficient) || peerChangedTop;
+  const bottomInsufficient = (topIsSignerPanel ? senderInsufficient : signerInsufficient) || peerChangedBottom;
 
   const signerFeeText = bothDone && feeInfo.feeOnSignerSide ? feeLabel : '';
   const senderFeeText = bothDone && !feeInfo.feeOnSignerSide
@@ -731,8 +780,20 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     ? (bothDone ? `You receive ${fmtNum(signerIncoming)}` : '')
     : (bothDone ? `You send ${fmtNum(senderOutgoing)}` : '');
 
-  const topFooter = topInsufficient ? 'Insufficient balance' : topFlowFooter;
-  const bottomFooter = bottomInsufficient ? 'Insufficient balance' : bottomFlowFooter;
+  const acceptedTextFor = (panelRole) => {
+    if (!bothDone) return '';
+    if (panelRole === myRole) return localApproved ? 'You have accepted' : 'You have not accepted yet';
+    return peerApproved ? `${otherDisplay} has accepted` : `${otherDisplay} has not accepted yet`;
+  };
+
+  const topPanelRole = 'signer';
+  const bottomPanelRole = 'sender';
+
+  const topAccepted = acceptedTextFor(topPanelRole);
+  const bottomAccepted = acceptedTextFor(bottomPanelRole);
+
+  const topFooter = topInsufficient ? 'Insufficient balance' : (topAccepted || topFlowFooter);
+  const bottomFooter = bottomInsufficient ? 'Insufficient balance' : (bottomAccepted || bottomFlowFooter);
 
   const visibleInventoryItems = useMemo(() => {
     if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
@@ -741,62 +802,121 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     return rows.slice(0, 23);
   }, [inventoryView, inventoryNftSubView, inventoryNftCollections, selectedNftCollection, inventoryTokens]);
 
-  useEffect(() => {
-    setApproved({ signer: false, sender: false });
-  }, [tradeState.signerSelection.token, tradeState.signerSelection.amount, tradeState.senderSelection.token, tradeState.senderSelection.amount]);
-
-  const onApprove = () => {
+  const onApprove = async () => {
     if (!bothDone) return;
     if (signerInsufficient || senderInsufficient) return;
+    if (approvalBusy) return;
+
     const ch = channelRef.current;
     if (!ch) return;
 
+    try {
+      setApprovalBusy(true);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
+      const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
+      const ownKind = String(own?.kind || KIND_ERC20).toLowerCase();
+      const tokenAddress = String(own?.token || '').split(':')[0];
+
+      if (ownKind === KIND_ERC20) {
+        const decimals = Number(own?.decimals || 18);
+        const amountRaw = ethers.parseUnits(String(own?.amount || '0'), Number.isFinite(decimals) ? decimals : 18);
+        const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+        const tx = await erc20.approve(swapContract, amountRaw);
+        await tx.wait();
+      } else if (ownKind === KIND_ERC721) {
+        const tokenId = BigInt(String(own?.tokenId || '0'));
+        const erc721 = new ethers.Contract(tokenAddress, ERC721_ABI, signer);
+        const tx = await erc721.approve(swapContract, tokenId);
+        await tx.wait();
+      } else if (ownKind === KIND_ERC1155) {
+        const erc1155 = new ethers.Contract(tokenAddress, ERC1155_ABI, signer);
+        const tx = await erc1155.setApprovalForAll(swapContract, true);
+        await tx.wait();
+      }
+
+      const localHash = mySelectionHash;
+      const nextApproved = { ...approved, [myRole]: true };
+      const nextHashes = { ...approvedHash, [myRole]: localHash };
+      setApproved(nextApproved);
+      setApprovedHash(nextHashes);
+      setPeerSnapshotAtApprove(peerSelectionHash);
+
+      ch.send({
+        type: 'broadcast',
+        event: 'room_approve',
+        payload: {
+          roomId,
+          role: myRole,
+          decision: 'approve',
+          selectionHash: localHash,
+          sessionId: identity.sessionId,
+          ts: Date.now(),
+        },
+      });
+
+      if (nextApproved.signer && nextApproved.sender) {
+        const cp = String(otherPeer?.fname || otherPeer?.playerId || '').replace(/^@/, '').trim();
+        ch.send({
+          type: 'broadcast',
+          event: 'room_start_maker',
+          payload: {
+            roomId,
+            counterparty: cp,
+            ts: Date.now(),
+          },
+        });
+        router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`);
+      }
+    } catch (e) {
+      setStatus(`approval failed: ${e?.message || 'unknown'}`);
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
+
+  const onDecline = async () => {
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    try {
+      if (localApproved) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
+        const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
+        const ownKind = String(own?.kind || KIND_ERC20).toLowerCase();
+        const tokenAddress = String(own?.token || '').split(':')[0];
+
+        if (ownKind === KIND_ERC20) {
+          const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+          const tx = await erc20.approve(swapContract, 0n);
+          await tx.wait();
+        } else if (ownKind === KIND_ERC1155) {
+          const erc1155 = new ethers.Contract(tokenAddress, ERC1155_ABI, signer);
+          const tx = await erc1155.setApprovalForAll(swapContract, false);
+          await tx.wait();
+        }
+      }
+    } catch {}
+
+    setApproved((prev) => ({ ...prev, [myRole]: false }));
+    setApprovedHash((prev) => ({ ...prev, [myRole]: '' }));
+    setPeerSnapshotAtApprove('');
     ch.send({
       type: 'broadcast',
       event: 'room_approve',
       payload: {
         roomId,
-        role,
-        decision: 'approve',
+        role: myRole,
+        decision: 'decline',
+        selectionHash: '',
         sessionId: identity.sessionId,
         ts: Date.now(),
       },
     });
-
-    const nextApproved = { ...approved, [role]: true };
-    setApproved(nextApproved);
-
-    if (nextApproved.signer && nextApproved.sender) {
-      const cp = String(otherPeer?.fname || otherPeer?.playerId || '').replace(/^@/, '').trim();
-      ch.send({
-        type: 'broadcast',
-        event: 'room_start_maker',
-        payload: {
-          roomId,
-          counterparty: cp,
-          ts: Date.now(),
-        },
-      });
-      router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`);
-    }
-  };
-
-  const onDecline = () => {
-    const ch = channelRef.current;
-    if (!ch) return;
-    ch.send({
-      type: 'broadcast',
-      event: 'room_leave',
-      payload: {
-        roomId,
-        sessionId: identity.sessionId,
-        playerId: identity.playerId,
-        fname: localFname,
-        role,
-        ts: Date.now(),
-      },
-    });
-    router.push(`/${initialChannel || 'worlds'}`);
   };
 
   return (
@@ -815,7 +935,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
           onOpenInventory={openInventory}
           feeText={topFeeText}
           footer={topFooter}
-          footerTone={topInsufficient ? 'bad' : 'ok'}
+          footerTone={topInsufficient || /not accepted/i.test(topFooter) ? 'bad' : 'ok'}
           insufficient={topInsufficient}
         />
 
@@ -844,7 +964,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
           onOpenInventory={openInventory}
           feeText={bottomFeeText}
           footer={bottomFooter}
-          footerTone={bottomInsufficient ? 'bad' : 'ok'}
+          footerTone={bottomInsufficient || /not accepted/i.test(bottomFooter) ? 'bad' : 'ok'}
           insufficient={bottomInsufficient}
         />
       </div>
@@ -987,6 +1107,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                               name: item?.name || symbol,
                               kind: item?.kind || (isToken ? '0x20' : ''),
                               balance: amount,
+                              decimals: String(item?.decimals || (isToken ? '18' : '0')),
                             })}
                             title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
                           >
