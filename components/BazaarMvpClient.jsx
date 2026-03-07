@@ -2971,7 +2971,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setSelectedNftCollection(null);
     dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicCounterpartyPanel}`);
 
-    const cacheKey = `gbz:zapper:${panel}:${normalizeAddr(wallet)}`;
+    const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
     const cacheTtlMs = 15 * 60 * 1000;
 
     try {

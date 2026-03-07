@@ -148,9 +148,14 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const [inventoryError, setInventoryError] = useState('');
   const [inventoryTokens, setInventoryTokens] = useState([]);
   const [inventoryNfts, setInventoryNfts] = useState([]);
-  const [customTokenOpen, setCustomTokenOpen] = useState(false);
+  const [inventoryNftCollections, setInventoryNftCollections] = useState([]);
+  const [inventoryNftSubView, setInventoryNftSubView] = useState('collections');
+  const [selectedNftCollection, setSelectedNftCollection] = useState(null);
+  const [customTokenStep, setCustomTokenStep] = useState('none'); // none|custom|custom-id|custom-amount
   const [customTokenValue, setCustomTokenValue] = useState('');
   const [customTokenAmount, setCustomTokenAmount] = useState('');
+  const [customTokenError, setCustomTokenError] = useState('');
+  const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [inventoryView, setInventoryView] = useState('tokens');
 
   const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -376,10 +381,14 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   };
 
   const openInventory = async () => {
-    setCustomTokenOpen(false);
+    setCustomTokenStep('none');
     setCustomTokenValue('');
     setCustomTokenAmount('');
+    setCustomTokenError('');
+    setCustomTokenPreview(null);
     setInventoryView('tokens');
+    setInventoryNftSubView('collections');
+    setSelectedNftCollection(null);
 
     const owner = String(identity.playerId || '').trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(owner)) {
@@ -392,7 +401,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     setInventoryLoading(true);
     setInventoryError('');
 
-    const cacheKey = `gbz:zapper:livemaker:${String(owner).toLowerCase()}`;
+    const cacheKey = `gbz:zapper:${String(owner).toLowerCase()}`;
     const cacheTtlMs = 15 * 60 * 1000;
 
     try {
@@ -405,8 +414,10 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
             const age = Date.now() - ts;
             if (age >= 0 && age < cacheTtlMs && Array.isArray(parsed?.tokens)) {
               const tokens = parsed.tokens;
-              const nfts = Array.isArray(parsed?.nfts) ? parsed.nfts : [];
+              const nftCollections = Array.isArray(parsed?.nftCollections) ? parsed.nftCollections : [];
+              const nfts = nftCollections.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts : [])).slice(0, 120);
               setInventoryTokens(tokens);
+              setInventoryNftCollections(nftCollections);
               setInventoryNfts(nfts);
               setInventoryLoading(false);
               return;
@@ -423,14 +434,15 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
         setInventoryError(String(d?.error || 'failed to load inventory'));
       } else {
         const tokens = Array.isArray(d?.tokens) ? d.tokens : [];
-        const cols = Array.isArray(d?.nftCollections) ? d.nftCollections : [];
-        const rows = cols.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts : [])).slice(0, 40);
+        const nftCollections = Array.isArray(d?.nftCollections) ? d.nftCollections : [];
+        const nfts = nftCollections.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts : [])).slice(0, 120);
         setInventoryTokens(tokens);
-        setInventoryNfts(rows);
+        setInventoryNftCollections(nftCollections);
+        setInventoryNfts(nfts);
 
         if (typeof window !== 'undefined') {
           try {
-            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens, nfts: rows }));
+            window.localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tokens, nftCollections }));
           } catch {}
         }
       }
@@ -459,8 +471,36 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
   const applyCustomToken = () => {
     const token = String(customTokenValue || '').trim();
-    if (!token) return;
-    const known = inventoryTokens.find((t) => String(t?.token || '').toLowerCase() === token.toLowerCase());
+    if (!token) {
+      setCustomTokenError('enter a token address');
+      return;
+    }
+
+    const knownToken = inventoryTokens.find((t) => String(t?.token || '').toLowerCase() === token.toLowerCase());
+    if (knownToken) {
+      pickInventoryToken({
+        token: knownToken?.token || token,
+        amount: String(customTokenAmount || knownToken?.balance || '').trim(),
+        imgUrl: knownToken?.imgUrl || '',
+        symbol: knownToken?.symbol || shortAddr(token),
+        tokenId: '',
+        name: knownToken?.symbol || token,
+        kind: '0x20',
+        balance: String(knownToken?.balance || ''),
+      });
+      return;
+    }
+
+    const coll = inventoryNftCollections.find((c) => String(c?.collectionAddress || '').toLowerCase() === token.toLowerCase());
+    if (coll) {
+      setInventoryView('nfts');
+      setSelectedNftCollection(coll);
+      setCustomTokenStep('custom-id');
+      setCustomTokenError('');
+      return;
+    }
+
+    // fallback ERC20-like custom token
     pickInventoryToken({
       token,
       amount: String(customTokenAmount || '').trim(),
@@ -469,7 +509,66 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       tokenId: '',
       name: token,
       kind: '',
-      balance: String(known?.balance || ''),
+      balance: '',
+    });
+  };
+
+  const applyCustomTokenId = () => {
+    const tokenId = String(customTokenValue || '').trim();
+    if (!selectedNftCollection) {
+      setCustomTokenError('select an NFT collection first');
+      return;
+    }
+    if (!tokenId) {
+      setCustomTokenError('enter token id');
+      return;
+    }
+    const row = (selectedNftCollection?.nfts || []).find((n) => String(n?.tokenId || '') === tokenId);
+    if (!row) {
+      setCustomTokenError('token id not found in your holdings');
+      return;
+    }
+    setCustomTokenPreview(row);
+    if (String(row?.kind || '').toLowerCase() === '0xd9b67a26' || Number(row?.balance || 1) > 1) {
+      setCustomTokenAmount(String(row?.balance || '1'));
+      setCustomTokenStep('custom-amount');
+      setCustomTokenError('');
+      return;
+    }
+
+    pickInventoryToken({
+      token: `${row?.token || selectedNftCollection?.collectionAddress || ''}:${row?.tokenId || tokenId}`,
+      amount: String(row?.balance || '1'),
+      imgUrl: row?.imgUrl || '',
+      symbol: row?.symbol || selectedNftCollection?.symbol || 'NFT',
+      tokenId: String(row?.tokenId || tokenId),
+      name: row?.name || row?.symbol || 'NFT',
+      kind: row?.kind || '0x80ac58cd',
+      balance: String(row?.balance || '1'),
+    });
+  };
+
+  const applyCustomTokenAmount = () => {
+    const row = customTokenPreview;
+    if (!row) return;
+    const raw = String(customTokenAmount || '').trim();
+    if (!raw || !/^\d+$/.test(raw)) {
+      setCustomTokenError('enter valid integer amount');
+      return;
+    }
+    if (Number(raw) > Number(row?.balance || 0)) {
+      setCustomTokenError('amount exceeds your balance');
+      return;
+    }
+    pickInventoryToken({
+      token: `${row?.token || selectedNftCollection?.collectionAddress || ''}:${row?.tokenId || ''}`,
+      amount: raw,
+      imgUrl: row?.imgUrl || '',
+      symbol: row?.symbol || selectedNftCollection?.symbol || 'NFT',
+      tokenId: String(row?.tokenId || ''),
+      name: row?.name || row?.symbol || 'NFT',
+      kind: row?.kind || '0xd9b67a26',
+      balance: String(row?.balance || '1'),
     });
   };
 
@@ -494,7 +593,12 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
   const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
 
-  const visibleInventoryItems = (inventoryView === 'tokens' ? inventoryTokens : inventoryNfts).slice(0, 23);
+  const visibleInventoryItems = useMemo(() => {
+    if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
+    if (inventoryNftSubView === 'collections') return inventoryNftCollections.slice(0, 23);
+    const rows = Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts : [];
+    return rows.slice(0, 23);
+  }, [inventoryView, inventoryNftSubView, inventoryNftCollections, selectedNftCollection, inventoryTokens]);
 
   useEffect(() => {
     setApproved({ signer: false, sender: false });
@@ -602,19 +706,20 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
               ) : (
                 <>
                   <div className="rs-inv-toggle-row">
-                    <button className={`rs-inv-toggle ${inventoryView === 'tokens' ? 'active' : ''}`} onClick={() => setInventoryView('tokens')}>Tokens</button>
-                    <button className={`rs-inv-toggle ${inventoryView === 'nfts' ? 'active' : ''}`} onClick={() => setInventoryView('nfts')}>NFT</button>
+                    <button className={`rs-inv-toggle ${inventoryView === 'tokens' ? 'active' : ''}`} onClick={() => { setInventoryView('tokens'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>Tokens</button>
+                    <button className={`rs-inv-toggle ${inventoryView === 'nfts' ? 'active' : ''}`} onClick={() => { setInventoryView('nfts'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>NFT</button>
                   </div>
 
-                  {inventoryView === 'tokens' && customTokenOpen ? (
+                  {inventoryView === 'tokens' && customTokenStep === 'custom' ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
+                      <button className="rs-modal-back" onClick={() => { setCustomTokenStep('none'); setCustomTokenError(''); }}>← Back</button>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Custom token</div>
                       <input
                         className="rs-amount-input"
                         style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
                         value={customTokenValue}
-                        onChange={(e) => setCustomTokenValue(e.target.value)}
-                        placeholder="Token address or symbol"
+                        onChange={(e) => { setCustomTokenValue(e.target.value); if (customTokenError) setCustomTokenError(''); }}
+                        placeholder="Token address"
                       />
                       <input
                         className="rs-amount-input"
@@ -623,17 +728,81 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                         onChange={(e) => setCustomTokenAmount(e.target.value)}
                         placeholder="Amount optional"
                       />
+                      {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
                       <div className="rs-btn-stack" style={{ marginTop: 10 }}>
-                        <button className="rs-btn rs-btn-positive" onClick={applyCustomToken}>Use token</button>
-                        <button className="rs-btn" onClick={() => setCustomTokenOpen(false)}>Cancel</button>
+                        <button className="rs-btn rs-btn-positive" onClick={applyCustomToken}>Confirm</button>
                       </div>
                     </div>
                   ) : null}
 
+                  {inventoryView === 'nfts' && customTokenStep === 'custom-id' ? (
+                    <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
+                      <button className="rs-modal-back" onClick={() => { setCustomTokenStep('custom'); setCustomTokenError(''); }}>← Back</button>
+                      <div className="rs-panel-title" style={{ marginTop: 0 }}>Select Token ID</div>
+                      <input
+                        className="rs-amount-input"
+                        style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
+                        value={customTokenValue}
+                        onChange={(e) => { setCustomTokenValue(e.target.value); if (customTokenError) setCustomTokenError(''); }}
+                        placeholder="token id"
+                      />
+                      {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
+                      <div className="rs-btn-stack" style={{ marginTop: 10 }}>
+                        <button className="rs-btn rs-btn-positive" onClick={applyCustomTokenId}>Lookup</button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {inventoryView === 'nfts' && customTokenStep === 'custom-amount' ? (
+                    <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
+                      <button className="rs-modal-back" onClick={() => { setCustomTokenStep('custom-id'); setCustomTokenError(''); }}>← Back</button>
+                      <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
+                      <input
+                        className="rs-amount-input"
+                        style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
+                        value={customTokenAmount}
+                        onChange={(e) => { setCustomTokenAmount(e.target.value); if (customTokenError) setCustomTokenError(''); }}
+                        placeholder="amount"
+                      />
+                      {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
+                      <div className="rs-btn-stack" style={{ marginTop: 10 }}>
+                        <button className="rs-btn rs-btn-positive" onClick={applyCustomTokenAmount}>Confirm</button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {inventoryView === 'nfts' && inventoryNftSubView === 'items' ? (
+                    <button className="rs-modal-back" onClick={() => { setInventoryNftSubView('collections'); setSelectedNftCollection(null); }}>← Back</button>
+                  ) : null}
                   <div className="rs-token-grid-wrap">
                     <div className="rs-token-grid">
                       {visibleInventoryItems.map((item, i) => {
                         const isToken = inventoryView === 'tokens';
+                        const isNftCollection = inventoryView === 'nfts' && inventoryNftSubView === 'collections';
+
+                        if (isNftCollection) {
+                          const collAddr = String(item?.collectionAddress || item?.token || '');
+                          const collSymbol = String(item?.symbol || 'NFT');
+                          const collImg = String(item?.nfts?.[0]?.imgUrl || '');
+                          return (
+                            <button
+                              key={`nft-coll-${collAddr}-${i}`}
+                              className="rs-token-cell"
+                              onClick={() => { setSelectedNftCollection(item); setInventoryNftSubView('items'); }}
+                              title={String(item?.collectionName || collSymbol)}
+                            >
+                              <div className="rs-token-cell-wrap" style={{ position: 'relative' }}>
+                                {collImg ? (
+                                  <img className="rs-token-cell-icon" src={collImg} alt={collSymbol} />
+                                ) : (
+                                  <div className="rs-token-cell-fallback">🖼️</div>
+                                )}
+                                <span className="rs-token-cell-symbol">{collSymbol}</span>
+                              </div>
+                            </button>
+                          );
+                        }
+
                         const token = isToken ? (item?.token || item?.symbol || '') : `${item?.token || ''}:${item?.tokenId || ''}`;
                         const amount = isToken ? (item?.balance || '') : (item?.balance || '1');
                         const symbol = isToken ? (item?.symbol || 'TOKEN') : (item?.symbol || 'NFT');
@@ -676,7 +845,12 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                       <button
                         className="rs-token-cell rs-token-cell-plus"
                         onClick={() => {
-                          if (inventoryView === 'tokens') setCustomTokenOpen(true);
+                          if (inventoryView === 'tokens') {
+                            setCustomTokenStep('custom');
+                            setCustomTokenValue('');
+                            setCustomTokenAmount('');
+                            setCustomTokenError('');
+                          }
                         }}
                         title={inventoryView === 'tokens' ? 'Custom token' : 'Custom NFT not yet supported'}
                         disabled={inventoryView !== 'tokens'}
