@@ -184,6 +184,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const [localFname, setLocalFname] = useState('');
   const [stateVersion, setStateVersion] = useState(0);
   const [status, setStatus] = useState('connecting...');
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [peers, setPeers] = useState({});
   const [tradeState, setTradeState] = useState({
     signerSelection: emptySelection(),
@@ -194,6 +195,9 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const [peerSnapshotAtApprove, setPeerSnapshotAtApprove] = useState('');
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
+  const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
+  const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
+  const [swapTxHash, setSwapTxHash] = useState('');
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState('');
@@ -235,6 +239,11 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   useEffect(() => {
     versionRef.current = stateVersion;
   }, [stateVersion]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -316,12 +325,27 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       setApprovedHash((prev) => ({ ...prev, [who]: decision === 'approve' ? hash : '' }));
     });
 
-    ch.on('broadcast', { event: 'room_start_maker' }, ({ payload }) => {
-      const toSessionId = String(payload?.toSessionId || '').trim();
-      if (toSessionId && toSessionId !== identity.sessionId) return;
-      const cp = String(payload?.counterparty || '').replace(/^@/, '').trim();
-      const nextUrl = `/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`;
-      if (!unmounted) router.push(nextUrl);
+    ch.on('broadcast', { event: 'room_signed_order' }, ({ payload }) => {
+      const expiresAt = Number(payload?.expiresAt || 0);
+      const byRole = String(payload?.byRole || '').trim();
+      const byName = String(payload?.byName || '').trim();
+      setSignedOrderState({
+        byRole,
+        byName,
+        expiresAt,
+        payload: payload?.signedOrder || null,
+      });
+      setLivePhase('await_sender');
+    });
+
+    ch.on('broadcast', { event: 'room_swapping' }, () => {
+      setLivePhase('swapping');
+    });
+
+    ch.on('broadcast', { event: 'room_swap_success' }, ({ payload }) => {
+      const txHash = String(payload?.txHash || '').trim();
+      setSwapTxHash(txHash);
+      setLivePhase('success');
     });
 
     ch.subscribe((s) => {
@@ -802,6 +826,47 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     return rows.slice(0, 23);
   }, [inventoryView, inventoryNftSubView, inventoryNftCollections, selectedNftCollection, inventoryTokens]);
 
+  const bothApproved = Boolean(approved.signer && approved.sender);
+
+  useEffect(() => {
+    if (livePhase === 'success' || livePhase === 'swapping') return;
+    if (!bothDone) {
+      setLivePhase('negotiate');
+      setSignedOrderState(null);
+      return;
+    }
+    if (bothApproved && !signedOrderState) {
+      setLivePhase('await_signer');
+      return;
+    }
+    if (!bothApproved) {
+      setLivePhase('negotiate');
+      setSignedOrderState(null);
+    }
+  }, [bothDone, bothApproved, livePhase, signedOrderState]);
+
+  useEffect(() => {
+    if (!signedOrderState?.expiresAt) return;
+    const msLeft = signedOrderState.expiresAt - Date.now();
+    if (msLeft <= 0) {
+      setSignedOrderState(null);
+      setLivePhase('await_signer');
+      setApproved((prev) => ({ ...prev, signer: false }));
+      setApprovedHash((prev) => ({ ...prev, signer: '' }));
+      const ch = channelRef.current;
+      if (ch) {
+        ch.send({
+          type: 'broadcast',
+          event: 'room_approve',
+          payload: { roomId, role: 'signer', decision: 'decline', selectionHash: '', ts: Date.now() },
+        });
+      }
+      return;
+    }
+    const t = setTimeout(() => setStatus((s) => s), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [signedOrderState, roomId]);
+
   const onApprove = async () => {
     if (!bothDone) return;
     if (signerInsufficient || senderInsufficient) return;
@@ -858,23 +923,54 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       });
 
       if (nextApproved.signer && nextApproved.sender) {
-        const cp = String(otherPeer?.fname || otherPeer?.playerId || '').replace(/^@/, '').trim();
-        ch.send({
-          type: 'broadcast',
-          event: 'room_start_maker',
-          payload: {
-            roomId,
-            counterparty: cp,
-            ts: Date.now(),
-          },
-        });
-        router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`);
+        setLivePhase('await_signer');
       }
     } catch (e) {
       setStatus(`approval failed: ${e?.message || 'unknown'}`);
     } finally {
       setApprovalBusy(false);
     }
+  };
+
+  const onSignerSign = async () => {
+    if (myRole !== 'signer') return;
+    if (!bothApproved) return;
+
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    // TODO: replace payload with exact /maker signed order object once shared signer module is extracted.
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const payload = {
+      roomId,
+      byRole: 'signer',
+      byName: localFname || identity.playerId,
+      expiresAt,
+      signedOrder: {
+        signerSelection: tradeState.signerSelection,
+        senderSelection: tradeState.senderSelection,
+      },
+    };
+
+    setSignedOrderState({ byRole: 'signer', byName: localFname || identity.playerId, expiresAt, payload: payload.signedOrder });
+    setLivePhase('await_sender');
+
+    ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
+  };
+
+  const onSenderSwap = async () => {
+    if (myRole !== 'sender') return;
+    if (!signedOrderState) return;
+
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    setLivePhase('swapping');
+    ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId, ts: Date.now() } });
+
+    // Temporary bridge: route to /maker for actual tx execution until live swap executor is extracted.
+    const cp = String(otherPeer?.fname || otherPeer?.playerId || '').replace(/^@/, '').trim();
+    router.push(`/maker?counterparty=${encodeURIComponent(cp)}&channel=${encodeURIComponent(initialChannel || '')}`);
   };
 
   const onDecline = async () => {
@@ -940,17 +1036,50 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
         />
 
         <div className="rs-center" style={{ display: 'grid', gap: 10 }}>
-          {bothDone ? (
-            <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
-              <button className="rs-btn rs-btn-positive" onClick={onApprove} disabled={signerInsufficient || senderInsufficient}>Approve</button>
-              <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+          {!bothDone || livePhase === 'negotiate' ? (
+            bothDone ? (
+              <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                <button className="rs-btn rs-btn-positive" onClick={onApprove} disabled={signerInsufficient || senderInsufficient || approvalBusy}>{approvalBusy ? 'Approving...' : 'Approve'}</button>
+                <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+              </div>
+            ) : (
+              <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+                <div className="rs-loading-track">
+                  <div className="rs-loading-fill" />
+                  <div className="rs-loading-label">{midText}</div>
+                </div>
+              </div>
+            )
+          ) : livePhase === 'await_signer' ? (
+            myRole === 'signer' ? (
+              <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                <button className="rs-btn rs-btn-positive" onClick={onSignerSign}>Sign</button>
+                <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+              </div>
+            ) : (
+              <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+                <div className="rs-loading-track"><div className="rs-loading-fill" /><div className="rs-loading-label">{`waiting for ${otherDisplay}`}</div></div>
+              </div>
+            )
+          ) : livePhase === 'await_sender' ? (
+            myRole === 'sender' ? (
+              <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                <button className="rs-btn rs-btn-positive" onClick={onSenderSwap}>{`Swap (${Math.max(0, Math.ceil(((signedOrderState?.expiresAt || 0) - nowMs) / 1000))}s)`}</button>
+                <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+              </div>
+            ) : (
+              <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+                <div className="rs-loading-track"><div className="rs-loading-fill" /><div className="rs-loading-label">{`waiting for ${otherDisplay} (${Math.max(0, Math.ceil(((signedOrderState?.expiresAt || 0) - nowMs) / 1000))}s)`}</div></div>
+              </div>
+            )
+          ) : livePhase === 'swapping' ? (
+            <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+              <div className="rs-loading-track"><div className="rs-loading-fill" /><div className="rs-loading-label">swapping...</div></div>
             </div>
           ) : (
-            <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
-              <div className="rs-loading-track">
-                <div className="rs-loading-fill" />
-                <div className="rs-loading-label">{midText}</div>
-              </div>
+            <div className="rs-btn-stack" style={{ width: 'min(420px, 92vw)' }}>
+              <div className="rs-btn rs-btn-positive" style={{ cursor: 'default' }}>Swap success</div>
+              {swapTxHash ? <a className="rs-btn" href={`https://basescan.org/tx/${swapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a> : null}
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>
