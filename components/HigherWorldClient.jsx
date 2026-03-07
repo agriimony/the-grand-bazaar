@@ -258,6 +258,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [tradeToast]);
 
   useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const toast = window.sessionStorage.getItem('gbz:world-toast');
+      if (!toast) return;
+      window.sessionStorage.removeItem('gbz:world-toast');
+      setTradeToast(toast);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (!incomingTradeInvite) return;
     const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
     if (msLeft <= 0) {

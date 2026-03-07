@@ -140,6 +140,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     const ch = supabase.channel(`maker_live:${roomId}`, { config: { broadcast: { self: false } } });
+    let unmounted = false;
 
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
       const sid = String(payload?.sessionId || '').trim();
@@ -172,6 +173,19 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       });
     });
 
+    ch.on('broadcast', { event: 'room_leave' }, ({ payload }) => {
+      const sid = String(payload?.sessionId || '').trim();
+      if (!sid || sid === identity.sessionId) return;
+      const leaver = String(payload?.fname || payload?.playerId || 'player').trim();
+      try {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('gbz:world-toast', `${leaver} declined your trade request`);
+        }
+      } catch {}
+      const nextPath = `/${initialChannel || 'worlds'}`;
+      if (!unmounted) router.push(nextPath);
+    });
+
     ch.subscribe((s) => {
       if (s === 'SUBSCRIBED') {
         setStatus('live room connected');
@@ -192,13 +206,39 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
     channelRef.current = ch;
 
+    const announceLeave = () => {
+      try {
+        ch.send({
+          type: 'broadcast',
+          event: 'room_leave',
+          payload: {
+            roomId,
+            sessionId: identity.sessionId,
+            playerId: identity.playerId,
+            fname: localFname,
+            role,
+            ts: Date.now(),
+          },
+        });
+      } catch {}
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', announceLeave);
+    }
+
     return () => {
+      unmounted = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', announceLeave);
+      }
+      announceLeave();
       try {
         supabase.removeChannel(ch);
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, roomId, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey]);
+  }, [enabled, roomId, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
