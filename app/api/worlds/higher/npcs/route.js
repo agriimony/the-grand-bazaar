@@ -288,6 +288,7 @@ function aggregateByUser(casts) {
 
 export async function GET() {
   try {
+    console.log('[npc-api][higher] request start');
     const apiKey = process.env.NEYNAR_API_KEY || '';
     if (!apiKey) return NextResponse.json({ ok: false, error: 'missing neynar key' }, { status: 500 });
 
@@ -344,6 +345,15 @@ export async function GET() {
     const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
     const ttlSeconds = Math.max(1, Math.floor((nextUtcMidnight - now.getTime()) / 1000));
 
+    console.log('[npc-api][higher] request done', {
+      rootCasts: channelCasts.length,
+      afterScoreFilter: filteredCasts.length,
+      childCasts: children.length,
+      mergedCasts: merged.length,
+      finalCasts: finalCasts.length,
+      npcs: npcs.length,
+    });
+
     return NextResponse.json(
       {
         ok: true,
@@ -365,6 +375,7 @@ export async function GET() {
       { headers: { 'Cache-Control': `s-maxage=${ttlSeconds}, stale-while-revalidate=0` } }
     );
   } catch (e) {
+    console.log('[npc-api][higher] request error', { error: e?.message || 'failed' });
     return NextResponse.json({ ok: false, error: e?.message || 'failed' }, { status: 500 });
   }
 }
