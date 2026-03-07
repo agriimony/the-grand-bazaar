@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { useAccount } from 'wagmi';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -78,6 +79,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [npcs, setNpcs] = useState([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [playerCell, setPlayerCell] = useState(null);
@@ -114,11 +116,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const playerIdentity = useMemo(() => {
     if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
 
-    let playerId = window.localStorage.getItem('gbz:player-id');
+    const walletPlayerId = String(connectedAddress || '').trim().toLowerCase();
+
+    let playerId = walletPlayerId || window.localStorage.getItem('gbz:player-id');
     if (!playerId) {
       playerId = randomId('player');
-      window.localStorage.setItem('gbz:player-id', playerId);
     }
+    window.localStorage.setItem('gbz:player-id', playerId);
 
     let sessionId = window.sessionStorage.getItem('gbz:session-id');
     if (!sessionId) {
@@ -127,13 +131,20 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
 
     return { playerId, sessionId };
-  }, []);
+  }, [connectedAddress]);
 
   const tileSize = 58;
   const boardSidePx = Math.round(size * tileSize * zoom);
   const boardSide = `${boardSidePx}px`;
   const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
   const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
+
+  useEffect(() => {
+    if (walletStatus === 'connecting') return;
+    if (!isConnected || !connectedAddress) {
+      router.replace('/');
+    }
+  }, [walletStatus, isConnected, connectedAddress, router]);
 
   useEffect(() => {
     let dead = false;
@@ -1146,7 +1157,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               }}
               title={`${nearbyRemoteByCell.get(key).length} nearby player${nearbyRemoteByCell.get(key).length > 1 ? 's' : ''}`}
             >
-              👥
+              🧍‍♂️
             </span>
           ) : null}
           {isPlayer ? (
