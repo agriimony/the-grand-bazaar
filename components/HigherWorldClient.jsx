@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -20,6 +21,11 @@ function trimText(s, max = 62) {
 
 function cellKey(x, y) {
   return `${x}-${y}`;
+}
+
+function randomId(prefix = 'id') {
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
 function findPath({ size, blocked, start, goal }) {
@@ -86,6 +92,37 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
   const nonTouchInputRef = useRef(false);
+  const playerCellRef = useRef(null);
+  const [remotePlayers, setRemotePlayers] = useState({});
+  const supabaseRef = useRef(null);
+  const channelRef = useRef(null);
+  const lastBroadcastAtRef = useRef(0);
+
+  const multiplayerEnabled = useMemo(
+    () =>
+      String(process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED || '').toLowerCase() === 'true' &&
+      Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+      Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    []
+  );
+
+  const playerIdentity = useMemo(() => {
+    if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
+
+    let playerId = window.localStorage.getItem('gbz:player-id');
+    if (!playerId) {
+      playerId = randomId('player');
+      window.localStorage.setItem('gbz:player-id', playerId);
+    }
+
+    let sessionId = window.sessionStorage.getItem('gbz:session-id');
+    if (!sessionId) {
+      sessionId = randomId('session');
+      window.sessionStorage.setItem('gbz:session-id', sessionId);
+    }
+
+    return { playerId, sessionId };
+  }, []);
 
   const tileSize = 58;
   const boardSidePx = Math.round(size * tileSize * zoom);
@@ -114,9 +151,129 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [apiPath]);
 
   useEffect(() => {
+    playerCellRef.current = playerCell;
+  }, [playerCell]);
+
+  useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!multiplayerEnabled) return;
+
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    const channel = supabase.channel(`world:${worldName}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    const upsertRemote = (payload) => {
+      const sessionId = String(payload?.sessionId || '').trim();
+      if (!sessionId || sessionId === playerIdentity.sessionId) return;
+      if (String(payload?.world || '') !== worldName) return;
+      const x = Number(payload?.x);
+      const y = Number(payload?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+      setRemotePlayers((prev) => ({
+        ...prev,
+        [sessionId]: {
+          sessionId,
+          playerId: String(payload?.playerId || ''),
+          x,
+          y,
+          updatedAt: Number(payload?.ts || Date.now()),
+        },
+      }));
+    };
+
+    channel.on('broadcast', { event: 'player_state' }, ({ payload }) => upsertRemote(payload));
+    channel.on('broadcast', { event: 'player_leave' }, ({ payload }) => {
+      const sid = String(payload?.sessionId || '').trim();
+      if (!sid) return;
+      setRemotePlayers((prev) => {
+        if (!prev[sid]) return prev;
+        const next = { ...prev };
+        delete next[sid];
+        return next;
+      });
+    });
+
+    channel.subscribe((status) => {
+      const localCell = playerCellRef.current;
+      if (status === 'SUBSCRIBED' && localCell) {
+        channel.send({
+          type: 'broadcast',
+          event: 'player_state',
+          payload: {
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            x: localCell.x,
+            y: localCell.y,
+            ts: Date.now(),
+          },
+        });
+      }
+    });
+
+    supabaseRef.current = supabase;
+    channelRef.current = channel;
+
+    const staleSweep = setInterval(() => {
+      const cutoff = Date.now() - 20_000;
+      setRemotePlayers((prev) => {
+        let dirty = false;
+        const next = { ...prev };
+        for (const [sid, p] of Object.entries(prev)) {
+          if (Number(p?.updatedAt || 0) < cutoff) {
+            delete next[sid];
+            dirty = true;
+          }
+        }
+        return dirty ? next : prev;
+      });
+    }, 10_000);
+
+    const heartbeat = setInterval(() => {
+      const ch = channelRef.current;
+      const localCell = playerCellRef.current;
+      if (!ch || !localCell) return;
+      ch.send({
+        type: 'broadcast',
+        event: 'player_state',
+        payload: {
+          world: worldName,
+          sessionId: playerIdentity.sessionId,
+          playerId: playerIdentity.playerId,
+          x: localCell.x,
+          y: localCell.y,
+          ts: Date.now(),
+        },
+      });
+    }, 8_000);
+
+    return () => {
+      clearInterval(staleSweep);
+      clearInterval(heartbeat);
+      try {
+        channel.send({
+          type: 'broadcast',
+          event: 'player_leave',
+          payload: { world: worldName, sessionId: playerIdentity.sessionId, ts: Date.now() },
+        });
+      } catch {}
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+      try {
+        supabase.removeAllChannels();
+      } catch {}
+      channelRef.current = null;
+      supabaseRef.current = null;
+      setRemotePlayers({});
+    };
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -262,6 +419,28 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setPendingAction(null);
     fn();
   }, [playerPath.length, pendingAction]);
+
+  useEffect(() => {
+    if (!multiplayerEnabled || !playerCell) return;
+    const ch = channelRef.current;
+    if (!ch) return;
+    const now = Date.now();
+    if (now - lastBroadcastAtRef.current < 250) return;
+    lastBroadcastAtRef.current = now;
+
+    ch.send({
+      type: 'broadcast',
+      event: 'player_state',
+      payload: {
+        world: worldName,
+        sessionId: playerIdentity.sessionId,
+        playerId: playerIdentity.playerId,
+        x: playerCell.x,
+        y: playerCell.y,
+        ts: now,
+      },
+    });
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, playerCell]);
 
   const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
 
@@ -505,6 +684,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     return placed;
   }, [npcsWithCurrentCast]);
+
+  const nearbyRemoteByCell = useMemo(() => {
+    const out = new Map();
+    const here = playerCell;
+    if (!here) return out;
+    const radius = 8;
+    for (const p of Object.values(remotePlayers || {})) {
+      const x = Number(p?.x);
+      const y = Number(p?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (Math.abs(x - here.x) > radius || Math.abs(y - here.y) > radius) continue;
+      const k = cellKey(x, y);
+      if (!out.has(k)) out.set(k, []);
+      out.get(k).push(p);
+    }
+    return out;
+  }, [remotePlayers, playerCell]);
 
   const openNpcMenu = (e, npc) => {
     e.preventDefault();
@@ -903,6 +1099,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 />
               </button>
             </>
+          ) : null}
+          {nearbyRemoteByCell.get(key)?.length ? (
+            <span
+              style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                zIndex: 3,
+                fontSize: `${Math.max(10, Math.min(18, 12 * zoom))}px`,
+                lineHeight: 1,
+                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                pointerEvents: 'none',
+              }}
+              title={`${nearbyRemoteByCell.get(key).length} nearby player${nearbyRemoteByCell.get(key).length > 1 ? 's' : ''}`}
+            >
+              👥
+            </span>
           ) : null}
           {isPlayer ? (
             <span
