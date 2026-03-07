@@ -165,7 +165,22 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, []);
 
   useEffect(() => {
-    if (!multiplayerEnabled) return;
+    if (!multiplayerEnabled) {
+      console.log('[mp] disabled', {
+        enabledFlag: process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED,
+        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+        hasKey: Boolean(supabasePublicKey),
+      });
+      return;
+    }
+
+    console.log('[mp] init', {
+      world: worldName,
+      sessionId: playerIdentity.sessionId,
+      playerId: playerIdentity.playerId,
+      hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      hasKey: Boolean(supabasePublicKey),
+    });
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     const channel = supabase.channel(`world:${worldName}`, {
@@ -192,8 +207,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }));
     };
 
-    channel.on('broadcast', { event: 'player_state' }, ({ payload }) => upsertRemote(payload));
+    channel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
+      console.log('[mp] recv player_state', payload);
+      upsertRemote(payload);
+    });
     channel.on('broadcast', { event: 'player_leave' }, ({ payload }) => {
+      console.log('[mp] recv player_leave', payload);
+
       const sid = String(payload?.sessionId || '').trim();
       if (!sid) return;
       setRemotePlayers((prev) => {
@@ -205,6 +225,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     channel.subscribe((status) => {
+      console.log('[mp] channel status', status);
       const localCell = playerCellRef.current;
       if (status === 'SUBSCRIBED' && localCell) {
         channel.send({
@@ -433,6 +454,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (now - lastBroadcastAtRef.current < 250) return;
     lastBroadcastAtRef.current = now;
 
+    console.log('[mp] send player_state', {
+      world: worldName,
+      sessionId: playerIdentity.sessionId,
+      x: playerCell.x,
+      y: playerCell.y,
+    });
     ch.send({
       type: 'broadcast',
       event: 'player_state',
