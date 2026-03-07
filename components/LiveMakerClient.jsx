@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { useAccount } from 'wagmi';
+import { ethers } from 'ethers';
+import TokenTile from './TokenTile';
 
 function randomId(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -37,6 +39,16 @@ function fallbackTokenArt(token = '', symbol = '') {
   return '';
 }
 
+const KIND_ERC20 = '0x36372b07';
+const KIND_ERC721 = '0x80ac58cd';
+const KIND_ERC1155 = '0xd9b67a26';
+const BASE_RPCS = ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'];
+const ROYALTY_ABI = [
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+  'function royaltyInfo(uint256 tokenId,uint256 salePrice) view returns (address receiver,uint256 royaltyAmount)',
+  'function decimals() view returns (uint8)',
+];
+
 function isFilled(sel) {
   return Boolean(String(sel?.token || '').trim() && String(sel?.amount || '').trim());
 }
@@ -61,7 +73,7 @@ function normalizeSelection(sel) {
   };
 }
 
-function OfferPanel({ title, selection, editable, onChange, onOpenInventory }) {
+function OfferPanel({ title, selection, editable, onChange, onOpenInventory, feeText = '', footer = '', footerTone = 'ok', insufficient = false }) {
   const token = String(selection?.token || '');
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
@@ -71,7 +83,7 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory }) {
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{title}</div>
-      <div className="rs-box" style={{ minHeight: 140 }}>
+      <div className={`rs-box ${insufficient ? 'rs-danger' : ''}`} style={{ minHeight: 140 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             type="button"
@@ -92,16 +104,22 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory }) {
             }}
           >
             {token ? (
-              <>
-                {imgUrl ? (
-                  <img className="rs-token-art" src={imgUrl} alt={symbol || 'token'} style={{ width: 58, height: 58 }} />
-                ) : (
-                  <span style={{ fontSize: 28 }}>🪙</span>
-                )}
-                {amount ? <span className="rs-token-cell-amount">{amount}</span> : null}
-                {symbol ? <span className="rs-token-cell-symbol">{symbol}</span> : null}
-                {tokenId ? <span className="rs-token-cell-tokenid">#{tokenId}</span> : null}
-              </>
+              <TokenTile
+                amountNode={amount || ''}
+                amountClassName="rs-token-cell-amount"
+                symbol={symbol || 'TOKEN'}
+                symbolClassName="rs-token-cell-symbol"
+                imgUrl={imgUrl}
+                tokenAddress={String(token).split(':')[0]}
+                tokenKind={selection?.kind}
+                tokenId={tokenId}
+                tokenIdClassName="rs-token-cell-tokenid"
+                wrapClassName=""
+                iconClassName="rs-token-art"
+                fallbackClassName="rs-token-art rs-token-fallback"
+                disableLink
+                insufficient={insufficient}
+              />
             ) : '+'}
           </button>
           <div style={{ flex: 1 }}>
@@ -124,6 +142,8 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory }) {
             />
           </div>
         </div>
+        {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
+        {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
       </div>
     </div>
   );
@@ -143,6 +163,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     senderSelection: emptySelection(),
   });
   const [approved, setApproved] = useState({ signer: false, sender: false });
+  const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState('');
@@ -579,6 +600,55 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const otherDone = isFilled(otherSelection);
   const bothDone = ownDone && otherDone;
 
+  useEffect(() => {
+    let dead = false;
+    async function computeFees() {
+      const signerSel = tradeState.signerSelection;
+      const senderSel = tradeState.senderSelection;
+      const both = isFilled(signerSel) && isFilled(senderSel);
+      if (!both) {
+        if (!dead) setFeeInfo({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
+        return;
+      }
+
+      const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
+      const senderKind = String(senderSel?.kind || KIND_ERC20).toLowerCase();
+      const feeOnSignerSide = signerKind === KIND_ERC20 && senderKind === KIND_ERC20;
+
+      let royaltyRaw = 0n;
+      try {
+        const signerToken = String(signerSel?.token || '').split(':')[0];
+        const signerTokenId = String(signerSel?.tokenId || '').trim();
+        const senderAmount = String(senderSel?.amount || '0').trim();
+        const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
+        if (!feeOnSignerSide && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+          const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+          const token = new ethers.Contract(signerToken, ROYALTY_ABI, provider);
+          const supports = await token.supportsInterface('0x2a55205a').catch(() => false);
+          if (supports) {
+            const erc20 = new ethers.Contract(senderTokenAddr, ROYALTY_ABI, provider);
+            const decimals = Number(await erc20.decimals().catch(() => 18));
+            const salePrice = ethers.parseUnits(senderAmount || '0', Number.isFinite(decimals) ? decimals : 18);
+            const [, r] = await token.royaltyInfo(BigInt(signerTokenId), salePrice).catch(() => [ethers.ZeroAddress, 0n]);
+            royaltyRaw = BigInt(r || 0n);
+          }
+        }
+      } catch {}
+
+      if (!dead) {
+        let royaltyHuman = '';
+        try {
+          if (royaltyRaw > 0n) royaltyHuman = ethers.formatUnits(royaltyRaw, 18);
+        } catch {}
+        setFeeInfo({ feeOnSignerSide, royaltyHuman, royaltyRaw: royaltyRaw.toString() });
+      }
+    }
+    computeFees();
+    return () => {
+      dead = true;
+    };
+  }, [tradeState.signerSelection, tradeState.senderSelection]);
+
   const otherPeer = Object.values(peers).find((p) => p?.sessionId && p.sessionId !== identity.sessionId) || null;
   const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || '').trim() || shortAddr(otherSelection?.token ? '' : '') || 'player';
 
@@ -593,6 +663,77 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
   const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
 
+  const protocolFeeBps = 50;
+  const feeLabel = `incl. ${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
+
+  const parseNum = (v) => Number(String(v || '0').trim() || 0);
+  const fmtNum = (n) => {
+    const x = Number(n || 0);
+    if (!Number.isFinite(x) || x <= 0) return '0';
+    return x.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  };
+  const signerAmountNum = parseNum(tradeState.signerSelection.amount);
+  const senderAmountNum = parseNum(tradeState.senderSelection.amount);
+  const signerBalNum = parseNum(tradeState.signerSelection.balance);
+  const senderBalNum = parseNum(tradeState.senderSelection.balance);
+
+  const protocolFeeNum = protocolFeeBps / 10000;
+  const royaltyNum = Number(feeInfo.royaltyHuman || 0) || 0;
+
+  // Live-maker UI policy: fee payer amount is shown as full outgoing amount,
+  // recipient side is shown net received after deductions.
+  const signerOutgoing = signerAmountNum;
+  const senderOutgoing = senderAmountNum;
+  const signerIncoming = feeInfo.feeOnSignerSide
+    ? senderAmountNum
+    : Math.max(0, senderAmountNum - (senderAmountNum * protocolFeeNum) - royaltyNum);
+  const senderIncoming = feeInfo.feeOnSignerSide
+    ? Math.max(0, signerAmountNum - (signerAmountNum * protocolFeeNum))
+    : signerAmountNum;
+
+  const signerRequired = signerOutgoing;
+  const senderRequired = senderOutgoing;
+
+  const signerInsufficient = bothDone && signerBalNum > 0 && signerRequired > signerBalNum;
+  const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
+
+  const topIsSignerPanel = role === 'signer';
+  const topInsufficient = topIsSignerPanel ? signerInsufficient : senderInsufficient;
+  const bottomInsufficient = topIsSignerPanel ? senderInsufficient : signerInsufficient;
+
+  const signerFeeText = bothDone && feeInfo.feeOnSignerSide ? feeLabel : '';
+  const senderFeeText = bothDone && !feeInfo.feeOnSignerSide
+    ? [feeLabel, feeInfo.royaltyHuman ? `incl. royalty ${feeInfo.royaltyHuman}` : ''].filter(Boolean).join(' • ')
+    : '';
+
+  const topFeeText = topIsSignerPanel ? signerFeeText : senderFeeText;
+  const bottomFeeText = topIsSignerPanel ? senderFeeText : signerFeeText;
+
+  const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
+  const senderPanelAmountForViewer = role === 'signer' ? signerIncoming : senderOutgoing;
+
+  const topDisplayAmount = fmtNum(signerPanelAmountForViewer);
+  const bottomDisplayAmount = fmtNum(senderPanelAmountForViewer);
+
+  const topDisplaySelection = {
+    ...topSelection,
+    amount: bothDone ? topDisplayAmount : topSelection.amount,
+  };
+  const bottomDisplaySelection = {
+    ...bottomSelection,
+    amount: bothDone ? bottomDisplayAmount : bottomSelection.amount,
+  };
+
+  const topFlowFooter = role === 'signer'
+    ? (bothDone ? `You send ${fmtNum(signerOutgoing)}` : '')
+    : (bothDone ? `You receive ${fmtNum(senderIncoming)}` : '');
+  const bottomFlowFooter = role === 'signer'
+    ? (bothDone ? `You receive ${fmtNum(signerIncoming)}` : '')
+    : (bothDone ? `You send ${fmtNum(senderOutgoing)}` : '');
+
+  const topFooter = topInsufficient ? 'Insufficient balance' : topFlowFooter;
+  const bottomFooter = bottomInsufficient ? 'Insufficient balance' : bottomFlowFooter;
+
   const visibleInventoryItems = useMemo(() => {
     if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
     if (inventoryNftSubView === 'collections') return inventoryNftCollections.slice(0, 23);
@@ -606,6 +747,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
   const onApprove = () => {
     if (!bothDone) return;
+    if (signerInsufficient || senderInsufficient) return;
     const ch = channelRef.current;
     if (!ch) return;
 
@@ -665,12 +807,22 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       </div>
 
       <div className="rs-grid" style={{ gridTemplateRows: '1fr auto 1fr', minHeight: 520 }}>
-        <OfferPanel title={topTitle} selection={topSelection} editable={topEditable} onChange={onChangeOwn} onOpenInventory={openInventory} />
+        <OfferPanel
+          title={topTitle}
+          selection={topDisplaySelection}
+          editable={topEditable}
+          onChange={onChangeOwn}
+          onOpenInventory={openInventory}
+          feeText={topFeeText}
+          footer={topFooter}
+          footerTone={topInsufficient ? 'bad' : 'ok'}
+          insufficient={topInsufficient}
+        />
 
         <div className="rs-center" style={{ display: 'grid', gap: 10 }}>
           {bothDone ? (
             <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
-              <button className="rs-btn rs-btn-positive" onClick={onApprove}>Approve</button>
+              <button className="rs-btn rs-btn-positive" onClick={onApprove} disabled={signerInsufficient || senderInsufficient}>Approve</button>
               <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
             </div>
           ) : (
@@ -684,7 +836,17 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>
         </div>
 
-        <OfferPanel title={bottomTitle} selection={bottomSelection} editable={bottomEditable} onChange={onChangeOwn} onOpenInventory={openInventory} />
+        <OfferPanel
+          title={bottomTitle}
+          selection={bottomDisplaySelection}
+          editable={bottomEditable}
+          onChange={onChangeOwn}
+          onOpenInventory={openInventory}
+          feeText={bottomFeeText}
+          footer={bottomFooter}
+          footerTone={bottomInsufficient ? 'bad' : 'ok'}
+          insufficient={bottomInsufficient}
+        />
       </div>
 
       {inventoryOpen ? (
@@ -791,14 +953,18 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                               onClick={() => { setSelectedNftCollection(item); setInventoryNftSubView('items'); }}
                               title={String(item?.collectionName || collSymbol)}
                             >
-                              <div className="rs-token-cell-wrap" style={{ position: 'relative' }}>
-                                {collImg ? (
-                                  <img className="rs-token-cell-icon" src={collImg} alt={collSymbol} />
-                                ) : (
-                                  <div className="rs-token-cell-fallback">🖼️</div>
-                                )}
-                                <span className="rs-token-cell-symbol">{collSymbol}</span>
-                              </div>
+                              <TokenTile
+                                amountNode={null}
+                                symbol={collSymbol}
+                                symbolClassName="rs-token-cell-symbol"
+                                imgUrl={collImg}
+                                tokenAddress={collAddr}
+                                tokenKind="0x80ac58cd"
+                                wrapClassName="rs-token-cell-wrap"
+                                iconClassName="rs-token-cell-icon"
+                                fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                                disableLink
+                              />
                             </button>
                           );
                         }
@@ -824,21 +990,21 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                             })}
                             title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
                           >
-                            <div className="rs-token-cell-wrap" style={{ position: 'relative' }}>
-                              {String(imgUrl).trim() ? (
-                                <img className="rs-token-cell-icon" src={imgUrl} alt={symbol} />
-                              ) : (
-                                <div className="rs-token-cell-fallback">{isToken ? '🪙' : '🖼️'}</div>
-                              )}
-                              {isToken ? (
-                                <>
-                                  <span className="rs-token-cell-amount">{amount}</span>
-                                  <span className="rs-token-cell-symbol">{symbol}</span>
-                                </>
-                              ) : (
-                                <span className="rs-token-cell-tokenid">#{tokenId}</span>
-                              )}
-                            </div>
+                            <TokenTile
+                              amountNode={isToken ? amount : null}
+                              amountClassName="rs-token-cell-amount"
+                              symbol={symbol}
+                              symbolClassName="rs-token-cell-symbol"
+                              imgUrl={imgUrl}
+                              tokenAddress={String(token).split(':')[0]}
+                              tokenKind={item?.kind || (isToken ? '0x20' : '0x80ac58cd')}
+                              tokenId={tokenId}
+                              tokenIdClassName="rs-token-cell-tokenid"
+                              wrapClassName="rs-token-cell-wrap"
+                              iconClassName="rs-token-cell-icon"
+                              fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                              disableLink
+                            />
                           </button>
                         );
                       })}
