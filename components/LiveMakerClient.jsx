@@ -1072,23 +1072,39 @@ export default function LiveMakerClient({
     }
   })();
 
-  // Live-maker UI policy: fee payer amount is shown as full outgoing amount,
-  // recipient side is shown net received after deductions.
-  const signerOutgoing = signerAmountNum;
-  const senderOutgoing = senderAmountNum;
-  const signerIncoming = feeInfo.feeOnSignerSide
-    ? senderAmountNum
-    : Math.max(0, (Math.max(0, senderAmountNum - royaltyNum)) / (1 + protocolFeeNum));
-  const senderIncoming = feeInfo.feeOnSignerSide
-    ? Math.max(0, signerAmountNum / (1 + protocolFeeNum))
-    : signerAmountNum;
+  // Onchain-consistent display policy:
+  // - order amounts are base transfer amounts
+  // - fee payer sends fee on top of base amount
+  // - counterparty receives full base amount
+  const signerKindNow = String(tradeState.signerSelection?.kind || KIND_ERC20).toLowerCase();
+  const senderKindNow = String(tradeState.senderSelection?.kind || KIND_ERC20).toLowerCase();
+  const signerIs1155 = signerKindNow === KIND_ERC1155;
+  const senderIs1155 = senderKindNow === KIND_ERC1155;
 
-  const signerRequired = feeInfo.feeOnSignerSide
-    ? signerOutgoing * (1 + protocolFeeNum)
-    : signerOutgoing;
-  const senderRequired = feeInfo.feeOnSignerSide
-    ? senderOutgoing
-    : (senderOutgoing * (1 + protocolFeeNum) + royaltyNum);
+  const signerFeeTopup = (() => {
+    if (!feeInfo.feeOnSignerSide) return 0;
+    if (signerIs1155) {
+      const a = BigInt(Math.max(0, Math.floor(signerAmountNum)));
+      return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
+    }
+    return signerAmountNum * protocolFeeNum;
+  })();
+  const senderFeeTopup = (() => {
+    if (feeInfo.feeOnSignerSide) return 0;
+    if (senderIs1155) {
+      const a = BigInt(Math.max(0, Math.floor(senderAmountNum)));
+      return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
+    }
+    return senderAmountNum * protocolFeeNum;
+  })();
+
+  const signerOutgoing = signerAmountNum + signerFeeTopup;
+  const senderOutgoing = senderAmountNum + senderFeeTopup + (feeInfo.feeOnSignerSide ? 0 : royaltyNum);
+  const signerIncoming = senderAmountNum;
+  const senderIncoming = signerAmountNum;
+
+  const signerRequired = signerOutgoing;
+  const senderRequired = senderOutgoing;
 
   const signerInsufficient = bothDone && signerBalNum > 0 && signerRequired > signerBalNum;
   const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
@@ -1105,8 +1121,17 @@ export default function LiveMakerClient({
     ? [feeLabel, feeInfo.royaltyHuman ? `incl. royalty ${feeInfo.royaltyHuman}` : ''].filter(Boolean).join(' • ')
     : '';
 
-  const topFeeText = signerFeeText;
-  const bottomFeeText = senderFeeText;
+  const protocolPctLabel = `${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}%`;
+  const receiverBreakdown = [
+    `after ${protocolPctLabel} protocol fee`,
+    feeInfo.royaltyHuman ? `+ ${feeInfo.royaltyHuman} royalty` : '',
+  ].filter(Boolean).join(' ');
+
+  const signerReceiveNote = bothDone && !feeInfo.feeOnSignerSide ? receiverBreakdown : '';
+  const senderReceiveNote = bothDone && feeInfo.feeOnSignerSide ? receiverBreakdown : '';
+
+  const topFeeText = signerFeeText || signerReceiveNote;
+  const bottomFeeText = senderFeeText || senderReceiveNote;
 
   const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
   const senderPanelAmountForViewer = role === 'signer' ? signerIncoming : senderOutgoing;
