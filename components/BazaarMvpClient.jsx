@@ -2939,12 +2939,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       && makerOverrides?.counterpartyWallet
       && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase()
     );
-    const isPublicCounterpartyPanel = panel === 'signer' && makerMode && !parsed && !hasSpecificCounterparty;
+    const isPublicTakerPanel = panel === 'signer' && makerMode && !parsed && !hasSpecificCounterparty;
     const panelWallet = panel === 'sender'
       ? (parsed?.senderWallet || address || '')
       : (parsed?.signerWallet || (hasSpecificCounterparty ? String(makerOverrides.counterpartyWallet || '') : ''));
     const wallet = panelWallet || '';
-    if (!wallet && !isPublicCounterpartyPanel) {
+    if (!wallet && !isPublicTakerPanel) {
       setStatus('Connect');
       return;
     }
@@ -2969,13 +2969,13 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     setTokenNftCollections([]);
     setTokenNftSubView('collections');
     setSelectedNftCollection(null);
-    dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicCounterpartyPanel}`);
+    dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicTakerPanel}`);
 
     const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
     const cacheTtlMs = 15 * 60 * 1000;
 
     try {
-      if (isPublicCounterpartyPanel) {
+      if (isPublicTakerPanel) {
         setTokenNftCollections([]);
         const list = TOKEN_CATALOG.map((entry) => {
           const tokenAddr = normalizeAddr(entry?.token || '');
@@ -3551,7 +3551,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       return;
     }
 
-    const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+    const isPublicTakerPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
 
     try {
       setTokenModalLoading(true);
@@ -3560,7 +3560,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         && String(customTokenResolvedOption.tokenId || '') === tokenId
         && normalizeAddr(customTokenResolvedOption.token || '') === normalizeAddr(customTokenNftContract);
 
-      if (isPublicCounterpartyPanel && alreadyResolved) {
+      if (isPublicTakerPanel && alreadyResolved) {
         const owner = String(customTokenResolvedOption.ownerWallet || '').toLowerCase();
         if (/^0x[a-f0-9]{40}$/.test(owner)) {
           try {
@@ -3587,14 +3587,14 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
             tokenModalWallet,
             tokenId,
             customTokenNftSymbol || null,
-            { skipOwnershipCheck: isPublicCounterpartyPanel }
+            { skipOwnershipCheck: isPublicTakerPanel }
           )
         : await fetchErc721Option(
             customTokenNftContract,
             tokenModalWallet,
             tokenId,
             customTokenNftSymbol || null,
-            { skipOwnershipCheck: isPublicCounterpartyPanel }
+            { skipOwnershipCheck: isPublicTakerPanel }
           );
 
       if (is1155) {
@@ -3607,7 +3607,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         return;
       }
 
-      if (isPublicCounterpartyPanel) {
+      if (isPublicTakerPanel) {
         const owner = String(option?.ownerWallet || '').toLowerCase();
         let ownerDisplay = short(owner);
         if (/^0x[a-f0-9]{40}$/.test(owner)) {
@@ -3685,7 +3685,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const appliesFee = makerMode && tokenModalPanel === 'signer';
     const required = appliesFee ? (want + ((want * feeBps) / 10000n)) : want;
     const available = BigInt(customTokenResolvedOption.balance || '0');
-    if (!isPublicCounterpartyPanel && required > available) {
+    if (!isPublicTakerPanel && required > available) {
       setCustomTokenError('Insufficient balance');
       return;
     }
@@ -4015,19 +4015,23 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   const isProtocolFeeMismatch = Boolean(checks?.protocolFeeMismatch) || /incorrect protocol fees/i.test(status || '');
   const isWrongWallet = Boolean(checks && checks.ownerMatches === false);
   const isErrorState = isExpired || isTaken || isOrderNotFound || isProtocolFeeMismatch || isWrongWallet || /error|expired|taken/i.test(status || '');
+  const isOfferMakerFlow = Boolean(makerMode && !parsed);
+  const isOfferTakerFlow = Boolean(parsed || !makerMode);
   const hasSpecificMakerCounterparty = Boolean(
-    makerMode
-    && !parsed
+    isOfferMakerFlow
     && (
       (makerOverrides?.counterpartyWallet && String(makerOverrides.counterpartyWallet).toLowerCase() !== ethers.ZeroAddress.toLowerCase())
       || String(counterpartyHandle || '').trim()
       || String(counterpartyInput || '').trim()
     )
   );
-  const publicCounterpartyLabel = hasSpecificMakerCounterparty
+  // Semantic alias: in public offers, the counterparty is the taker/sender leg.
+  const hasSpecificTaker = hasSpecificMakerCounterparty;
+  const publicCounterpartyLabel = hasSpecificTaker
     ? (counterpartyName || 'counterparty')
     : 'anybody';
   const isConnectedSignerView = !makerMode && checks?.connectedRole === 'signer';
+  const flowRoleLabel = isOfferMakerFlow ? 'Offer maker' : (isOfferTakerFlow ? 'Offer taker' : 'Unknown');
   const topbarCounterpartyLabel = isConnectedSignerView ? senderPartyName : counterpartyName;
 
   const loadingStage = /loading order/i.test(status)
@@ -4174,9 +4178,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     : tokenOptions.filter((o) => !o?.isNft);
   const pendingIsEth = isEthLikeToken(pendingToken);
   const pendingAvailableNum = Number(pendingToken?.availableAmount ?? NaN);
-  const isPublicCounterpartyPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
+  const isPublicTakerPanel = tokenModalPanel === 'signer' && makerMode && !parsed && !hasSpecificMakerCounterparty;
   const pendingInsufficient =
-    !isPublicCounterpartyPanel
+    !isPublicTakerPanel
     && Number.isFinite(pendingEffectiveNum)
     && pendingEffectiveNum > 0
     && Number.isFinite(pendingAvailableNum)
@@ -4196,7 +4200,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     ? (customBase + ((customBase * BigInt(uiProtocolFeeBps || 0)) / 10000n))
     : customBase);
   const custom1155Insufficient =
-    !isPublicCounterpartyPanel
+    !isPublicTakerPanel
     && Number.isFinite(customEffectiveNum)
     && customEffectiveNum > 0
     && Number.isFinite(customBalanceNum)
@@ -4976,6 +4980,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       <div className="meta-block">
         <p>Status: {status}</p>
+        <p>Flow role: {flowRoleLabel}</p>
         {lastSwapTxHash ? (
           <p>
             Last swap tx:{' '}

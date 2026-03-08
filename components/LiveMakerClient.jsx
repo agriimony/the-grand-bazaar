@@ -17,6 +17,29 @@ function shortAddr(v = '') {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
+function formatTileAmount(v = '') {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v || '0');
+  if (n === 0) return '0';
+  const abs = Math.abs(n);
+  if (abs >= 1000) {
+    const units = ['', 'k', 'M', 'B', 'T', 'Q'];
+    let idx = 0;
+    while (idx < units.length - 1 && abs >= 1000 ** (idx + 1)) idx += 1;
+    const scaled = n / (1000 ** idx);
+    const digits = Math.abs(scaled) >= 100 ? 1 : Math.abs(scaled) >= 10 ? 2 : 3;
+    return `${scaled.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}${units[idx]}`;
+  }
+  if (abs < 0.001) return n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function formatTileSymbol(v = '', max = 8) {
+  const s = String(v || '').trim();
+  if (!s) return 'TOKEN';
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 const CATALOG_ICON_BY_SYMBOL = {
   higher: '/higher-icon.png',
   eth: '/eth-icon.png',
@@ -148,13 +171,15 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
   const tokenId = String(selection?.tokenId || '');
+  const amountDisplay = formatTileAmount(amount);
+  const symbolDisplay = formatTileSymbol(symbol || (tokenId ? 'NFT' : 'TOKEN'));
   const imgUrl = String(selection?.imgUrl || fallbackTokenArt(token, symbol) || '');
 
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{title}</div>
       <div className={`rs-box ${insufficient ? 'rs-danger' : ''}`} style={{ minHeight: 140 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
           <button
             type="button"
             onClick={() => editable && onOpenInventory?.()}
@@ -175,9 +200,9 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
           >
             {token ? (
               <TokenTile
-                amountNode={amount || ''}
+                amountNode={amountDisplay}
                 amountClassName="rs-token-cell-amount"
-                symbol={symbol || 'TOKEN'}
+                symbol={symbolDisplay}
                 symbolClassName="rs-token-cell-symbol"
                 imgUrl={imgUrl}
                 tokenAddress={String(token).split(':')[0]}
@@ -185,32 +210,13 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
                 tokenId={tokenId}
                 tokenIdClassName="rs-token-cell-tokenid"
                 wrapClassName=""
-                iconClassName="rs-token-art"
-                fallbackClassName="rs-token-art rs-token-fallback"
+                iconClassName="rs-token-cell-icon"
+                fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
                 disableLink
                 insufficient={insufficient}
               />
             ) : '+'}
           </button>
-          <div style={{ flex: 1 }}>
-            <input
-              className="rs-amount-input"
-              style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
-              value={token}
-              onChange={() => {}}
-              placeholder={editable ? 'Select token from tile' : 'Token'}
-              disabled
-            />
-            <input
-              className="rs-amount-input"
-              style={{ width: '100%', margin: 0, fontSize: 16, textAlign: 'left' }}
-              value={amount}
-              onChange={(e) => editable && onChange('amount', e.target.value)}
-              placeholder={editable ? 'Amount' : 'Amount'}
-              disabled={!editable}
-              title={selection?.balance ? `Max: ${selection.balance}` : ''}
-            />
-          </div>
         </div>
         {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
         {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
@@ -219,7 +225,13 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
   );
 }
 
-export default function LiveMakerClient({ roomId = '', initialRole = 'signer', initialChannel = '' }) {
+export default function LiveMakerClient({
+  roomId = '',
+  initialRole = 'signer',
+  initialChannel = '',
+  initialSignerPlayerId = '',
+  initialSignerFname = '',
+}) {
   const router = useRouter();
   const { address } = useAccount();
 
@@ -249,7 +261,8 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   const [inventoryNftCollections, setInventoryNftCollections] = useState([]);
   const [inventoryNftSubView, setInventoryNftSubView] = useState('collections');
   const [selectedNftCollection, setSelectedNftCollection] = useState(null);
-  const [customTokenStep, setCustomTokenStep] = useState('none'); // none|custom|custom-id|custom-amount
+  const [customTokenStep, setCustomTokenStep] = useState('none'); // none|custom|custom-id|custom-amount|amount
+  const [amountStepBack, setAmountStepBack] = useState('grid'); // grid|custom|custom-id|items
   const [customTokenValue, setCustomTokenValue] = useState('');
   const [customTokenAmount, setCustomTokenAmount] = useState('');
   const [customTokenError, setCustomTokenError] = useState('');
@@ -598,9 +611,9 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
     const knownToken = inventoryTokens.find((t) => String(t?.token || '').toLowerCase() === token.toLowerCase());
     if (knownToken) {
-      pickInventoryToken({
+      setCustomTokenPreview({
         token: knownToken?.token || token,
-        amount: String(customTokenAmount || knownToken?.balance || '').trim(),
+        amount: String(knownToken?.balance || '').trim(),
         imgUrl: knownToken?.imgUrl || '',
         symbol: knownToken?.symbol || shortAddr(token),
         tokenId: '',
@@ -609,6 +622,10 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
         balance: String(knownToken?.balance || ''),
         decimals: String(knownToken?.decimals || '18'),
       });
+      setCustomTokenAmount('');
+      setCustomTokenError('');
+      setAmountStepBack('custom');
+      setCustomTokenStep('amount');
       return;
     }
 
@@ -621,18 +638,21 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       return;
     }
 
-    // fallback ERC20-like custom token
-    pickInventoryToken({
+    setCustomTokenPreview({
       token,
-      amount: String(customTokenAmount || '').trim(),
+      amount: '',
       imgUrl: '',
       symbol: /^0x[a-fA-F0-9]{40}$/.test(token) ? shortAddr(token) : token,
       tokenId: '',
       name: token,
-      kind: '',
+      kind: '0x20',
       balance: '',
       decimals: '18',
     });
+    setCustomTokenAmount('');
+    setCustomTokenError('');
+    setAmountStepBack('custom');
+    setCustomTokenStep('amount');
   };
 
   const applyCustomTokenId = () => {
@@ -653,6 +673,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
     setCustomTokenPreview(row);
     if (String(row?.kind || '').toLowerCase() === '0xd9b67a26' || Number(row?.balance || 1) > 1) {
       setCustomTokenAmount(String(row?.balance || '1'));
+      setAmountStepBack('custom-id');
       setCustomTokenStep('custom-amount');
       setCustomTokenError('');
       return;
@@ -683,8 +704,11 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
       setCustomTokenError('amount exceeds your balance');
       return;
     }
+    const baseToken = String(row?.token || selectedNftCollection?.collectionAddress || '');
+    const composedToken = baseToken.includes(':') ? baseToken : `${baseToken}:${row?.tokenId || ''}`;
+
     pickInventoryToken({
-      token: `${row?.token || selectedNftCollection?.collectionAddress || ''}:${row?.tokenId || ''}`,
+      token: composedToken,
       amount: raw,
       imgUrl: row?.imgUrl || '',
       symbol: row?.symbol || selectedNftCollection?.symbol || 'NFT',
@@ -753,7 +777,10 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
   }, [tradeState.signerSelection, tradeState.senderSelection]);
 
   const otherPeer = Object.values(peers).find((p) => p?.sessionId && p.sessionId !== identity.sessionId) || null;
-  const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || '').trim() || shortAddr(otherSelection?.token ? '' : '') || 'player';
+  const inviteSignerDisplay = role === 'sender'
+    ? String(initialSignerFname || initialSignerPlayerId || '').trim()
+    : '';
+  const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || inviteSignerDisplay || '').trim() || 'player';
 
   const topTitle = role === 'signer' ? 'You offer' : `${otherDisplay} offers`;
   const bottomTitle = role === 'signer' ? `${otherDisplay} offers` : 'You offer';
@@ -763,6 +790,9 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
   const myRole = role === 'sender' ? 'sender' : 'signer';
   const peerRole = myRole === 'signer' ? 'sender' : 'signer';
+  // Semantic aliases for UI clarity. Keep signer/sender for contract payload boundaries.
+  const myFlowRole = myRole === 'signer' ? 'offer maker' : 'offer taker';
+  const peerFlowRole = peerRole === 'signer' ? 'offer maker' : 'offer taker';
   const mySelection = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
   const peerSelection = myRole === 'signer' ? tradeState.senderSelection : tradeState.signerSelection;
   const mySelectionHash = selectionHash(mySelection);
@@ -1254,6 +1284,7 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>
+          <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.65 }}>{`You: ${myFlowRole} · Peer: ${peerFlowRole}`}</div>
         </div>
 
         <OfferPanel
@@ -1303,16 +1334,85 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                         onChange={(e) => { setCustomTokenValue(e.target.value); if (customTokenError) setCustomTokenError(''); }}
                         placeholder="Token address"
                       />
-                      <input
-                        className="rs-amount-input"
-                        style={{ width: '100%', margin: 0, fontSize: 16, textAlign: 'left' }}
-                        value={customTokenAmount}
-                        onChange={(e) => setCustomTokenAmount(e.target.value)}
-                        placeholder="Amount optional"
-                      />
+
                       {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
                       <div className="rs-btn-stack" style={{ marginTop: 10 }}>
                         <button className="rs-btn rs-btn-positive" onClick={applyCustomToken}>Confirm</button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {inventoryView === 'tokens' && customTokenStep === 'amount' ? (
+                    <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
+                      <button className="rs-modal-back" onClick={() => {
+                        const back = amountStepBack;
+                        if (back === 'custom') setCustomTokenStep('custom');
+                        else setCustomTokenStep('none');
+                        setCustomTokenAmount('');
+                        setCustomTokenError('');
+                        if (back !== 'custom') setCustomTokenPreview(null);
+                      }}>← Back</button>
+                      <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
+                      {customTokenPreview ? (
+                        <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
+                          <TokenTile
+                            amountNode={customTokenPreview?.balance || '0'}
+                            amountClassName="rs-selected-token-amount"
+                            symbol={customTokenPreview?.symbol || 'TOKEN'}
+                            symbolClassName="rs-selected-token-symbol"
+                            imgUrl={customTokenPreview?.imgUrl}
+                            tokenAddress={String(customTokenPreview?.token || '').split(':')[0]}
+                            tokenKind={customTokenPreview?.kind || '0x20'}
+                            tokenId={customTokenPreview?.tokenId || ''}
+                            tokenIdClassName="rs-selected-token-tokenid"
+                            wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
+                            iconClassName="rs-token-art rs-selected-token-icon"
+                            fallbackClassName="rs-selected-token-icon rs-token-fallback"
+                            disableLink
+                          />
+                        </div>
+                      ) : null}
+                      <input
+                        className="rs-amount-input"
+                        style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
+                        value={customTokenAmount}
+                        onChange={(e) => { setCustomTokenAmount(e.target.value); if (customTokenError) setCustomTokenError(''); }}
+                        placeholder="amount"
+                      />
+                      {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
+                      <div className="rs-btn-stack" style={{ marginTop: 10 }}>
+                        <button
+                          className="rs-btn rs-btn-positive"
+                          onClick={() => {
+                            const row = customTokenPreview;
+                            if (!row) {
+                              setCustomTokenError('select token first');
+                              return;
+                            }
+                            const raw = String(customTokenAmount || '').trim();
+                            if (!raw || !/^\d*\.?\d+$/.test(raw) || Number(raw) <= 0) {
+                              setCustomTokenError('enter valid amount');
+                              return;
+                            }
+                            if (Number(raw) > Number(row?.balance || 0)) {
+                              setCustomTokenError('amount exceeds your balance');
+                              return;
+                            }
+                            pickInventoryToken({
+                              token: row.token,
+                              amount: raw,
+                              imgUrl: row.imgUrl || '',
+                              symbol: row.symbol || 'TOKEN',
+                              tokenId: '',
+                              name: row.name || row.symbol || 'TOKEN',
+                              kind: row.kind || '0x20',
+                              balance: String(row.balance || ''),
+                              decimals: String(row.decimals || '18'),
+                            });
+                          }}
+                        >
+                          Confirm
+                        </button>
                       </div>
                     </div>
                   ) : null}
@@ -1337,7 +1437,11 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
 
                   {inventoryView === 'nfts' && customTokenStep === 'custom-amount' ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
-                      <button className="rs-modal-back" onClick={() => { setCustomTokenStep('custom-id'); setCustomTokenError(''); }}>← Back</button>
+                      <button className="rs-modal-back" onClick={() => {
+                        if (amountStepBack === 'items') setCustomTokenStep('none');
+                        else setCustomTokenStep('custom-id');
+                        setCustomTokenError('');
+                      }}>← Back</button>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
                       <input
                         className="rs-amount-input"
@@ -1398,17 +1502,58 @@ export default function LiveMakerClient({ roomId = '', initialRole = 'signer', i
                           <button
                             key={`${inventoryView}-${String(token)}-${i}`}
                             className="rs-token-cell"
-                            onClick={() => pickInventoryToken({
-                              token,
-                              amount,
-                              imgUrl,
-                              symbol,
-                              tokenId,
-                              name: item?.name || symbol,
-                              kind: item?.kind || (isToken ? '0x20' : ''),
-                              balance: amount,
-                              decimals: String(item?.decimals || (isToken ? '18' : '0')),
-                            })}
+                            onClick={() => {
+                              if (isToken) {
+                                setCustomTokenPreview({
+                                  token,
+                                  amount,
+                                  imgUrl,
+                                  symbol,
+                                  tokenId,
+                                  name: item?.name || symbol,
+                                  kind: item?.kind || '0x20',
+                                  balance: amount,
+                                  decimals: String(item?.decimals || '18'),
+                                });
+                                setCustomTokenAmount('');
+                                setCustomTokenError('');
+                                setAmountStepBack('grid');
+                                setCustomTokenStep('amount');
+                                return;
+                              }
+                              const nftKind = String(item?.kind || '').toLowerCase();
+                              const nftBalance = String(item?.balance || '1');
+                              if (nftKind === '0xd9b67a26' || Number(nftBalance) > 1) {
+                                setCustomTokenPreview({
+                                  token,
+                                  amount: nftBalance,
+                                  imgUrl,
+                                  symbol,
+                                  tokenId,
+                                  name: item?.name || symbol,
+                                  kind: nftKind || '0xd9b67a26',
+                                  balance: nftBalance,
+                                  decimals: '0',
+                                });
+                                setCustomTokenAmount('');
+                                setCustomTokenError('');
+                                setAmountStepBack('items');
+                                setCustomTokenStep('custom-amount');
+                                return;
+                              }
+
+                              pickInventoryToken({
+                                token,
+                                amount,
+                                imgUrl,
+                                symbol,
+                                tokenId,
+                                name: item?.name || symbol,
+                                kind: item?.kind || '',
+                                balance: amount,
+                                decimals: String(item?.decimals || '0'),
+                              });
+                            }}
                             title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
                           >
                             <TokenTile

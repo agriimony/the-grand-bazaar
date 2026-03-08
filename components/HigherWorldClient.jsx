@@ -1303,7 +1303,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setTradeToast(`accepted trade with ${target || 'player'}`);
       const roomId = String(invite.roomId || '').trim();
       if (roomId) {
-        router.push(`/maker/live/${encodeURIComponent(roomId)}?role=sender&channel=${encodeURIComponent(worldName)}`);
+        const signerPlayerId = String(invite.fromPlayerId || '').trim();
+        const signerFname = String(invite.fromFname || '').replace(/^@/, '').trim();
+        const qs = new URLSearchParams({
+          role: 'sender',
+          channel: worldName,
+          ...(signerPlayerId ? { signerPlayerId } : {}),
+          ...(signerFname ? { signerFname } : {}),
+        });
+        router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
       }
     }
     if (decision === 'decline') {
