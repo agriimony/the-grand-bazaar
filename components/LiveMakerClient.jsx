@@ -840,6 +840,7 @@ export default function LiveMakerClient({
 
   const signerInsufficient = bothDone && signerBalNum > 0 && signerRequired > signerBalNum;
   const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
+  const myInsufficient = myRole === 'signer' ? signerInsufficient : senderInsufficient;
 
   const topIsSignerPanel = role === 'signer';
   const peerChangedTop = myRole === 'sender' ? peerChangedAfterMyApprove : false;
@@ -1003,6 +1004,14 @@ export default function LiveMakerClient({
     } finally {
       setApprovalBusy(false);
     }
+  };
+
+  const onUseMax = () => {
+    const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
+    const maxAmt = String(own?.balance || '').trim();
+    if (!maxAmt) return;
+    onChangeOwn('amount', maxAmt);
+    setStatus('set amount to max balance');
   };
 
   const onSignerSign = async () => {
@@ -1240,7 +1249,13 @@ export default function LiveMakerClient({
           {!bothDone || livePhase === 'negotiate' ? (
             bothDone ? (
               <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
-                <button className="rs-btn rs-btn-positive" onClick={onApprove} disabled={signerInsufficient || senderInsufficient || approvalBusy}>{approvalBusy ? 'Approving...' : 'Approve'}</button>
+                <button
+                  className="rs-btn rs-btn-positive"
+                  onClick={myInsufficient ? onUseMax : onApprove}
+                  disabled={approvalBusy || (!myInsufficient && (signerInsufficient || senderInsufficient)) || (myInsufficient && !String(mySelection?.balance || '').trim())}
+                >
+                  {approvalBusy ? 'Approving...' : (myInsufficient ? 'Use max' : 'Approve')}
+                </button>
                 <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
               </div>
             ) : (

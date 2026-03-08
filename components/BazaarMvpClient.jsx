@@ -4213,6 +4213,15 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ? formatIntegerAmount(String(customTokenResolvedOption?.balance || '0'))
       : formatTokenAmount(String(customTokenResolvedOption?.balance || '0')));
 
+  const pendingMaxAmountInput = (() => {
+    const v = pendingToken?.balance;
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+    const n = Number(pendingToken?.availableAmount ?? NaN);
+    if (Number.isFinite(n) && n >= 0) return String(pendingIsErc1155 ? Math.floor(n) : n);
+    return '';
+  })();
+  const customMaxAmountInput = String(customTokenResolvedOption?.balance || '').trim();
+
   const senderIsErc721Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC721 && makerOverrides.senderTokenId;
   const signerIsErc721Selected = makerMode && String(makerOverrides.signerKind || '') === KIND_ERC721 && makerOverrides.signerTokenId;
   const senderIsErc1155Selected = makerMode && String(makerOverrides.senderKind || '') === KIND_ERC1155;
@@ -4857,8 +4866,11 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                   }}
                 />
                 {customTokenError ? <div className="rs-inline-error">{customTokenError}</div> : null}
-                <button className="rs-btn rs-btn-positive rs-token-confirm-btn" onClick={onConfirmCustomTokenAmount}>
-                  Confirm
+                <button
+                  className="rs-btn rs-btn-positive rs-token-confirm-btn"
+                  onClick={custom1155Insufficient ? (() => { if (customMaxAmountInput) { setCustomTokenAmountInput(customMaxAmountInput); setCustomTokenError(''); } }) : onConfirmCustomTokenAmount}
+                >
+                  {custom1155Insufficient ? 'Use max' : 'Confirm'}
                 </button>
               </>
             ) : (
@@ -4939,10 +4951,12 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 />
                 <button
                   className="rs-btn rs-btn-positive rs-token-confirm-btn"
-                  onClick={pendingIsEth ? onModalWrapEth : onConfirmTokenAmount}
-                  disabled={isWrapping}
+                  onClick={pendingInsufficient
+                    ? (() => { if (pendingMaxAmountInput) { setPendingAmount(pendingMaxAmountInput); setTokenAmountError(''); } })
+                    : (pendingIsEth ? onModalWrapEth : onConfirmTokenAmount)}
+                  disabled={isWrapping || (pendingInsufficient && !pendingMaxAmountInput)}
                 >
-                  {isWrapping ? 'Wrapping...' : (pendingIsEth && tokenModalPanel === 'sender' ? 'Wrap' : 'Confirm')}
+                  {isWrapping ? 'Wrapping...' : (pendingInsufficient ? 'Use max' : (pendingIsEth && tokenModalPanel === 'sender' ? 'Wrap' : 'Confirm'))}
                 </button>
               </>
             )}
