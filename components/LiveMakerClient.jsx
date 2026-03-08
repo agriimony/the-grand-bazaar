@@ -17,6 +17,12 @@ function shortAddr(v = '') {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
+function shortErr(v = '', max = 140) {
+  const s = String(v || '').replace(/\s+/g, ' ').trim();
+  if (!s) return 'unknown';
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 function formatTokenAmountParts(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return { number: String(value), suffix: '' };
@@ -312,7 +318,7 @@ function resolveSwapContractForSelections(signerSel, senderSel) {
   return BASE_SWAP_CONTRACT;
 }
 
-function OfferPanel({ title, selection, editable, onChange, onOpenInventory, feeText = '', footer = '', footerTone = 'ok', insufficient = false }) {
+function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onLockedTileClick, feeText = '', footer = '', footerTone = 'ok', insufficient = false }) {
   const token = String(selection?.token || '');
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
@@ -333,8 +339,17 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: 16, gap: 12 }}>
           <button
             type="button"
-            onClick={() => editable && onOpenInventory?.()}
-            disabled={!editable}
+            onClick={() => {
+              if (editable) {
+                onOpenInventory?.();
+                return;
+              }
+              const tokenAddr = String(token || '').split(':')[0].trim();
+              onLockedTileClick?.();
+              if (/^0x[a-fA-F0-9]{40}$/.test(tokenAddr) && typeof window !== 'undefined') {
+                window.open(`https://basescan.org/token/${tokenAddr}`, '_blank', 'noopener,noreferrer');
+              }
+            }}
             className={editable ? 'rs-token-editable' : ''}
             style={{
               width: 92,
@@ -347,7 +362,7 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
               fontSize: 36,
               flex: '0 0 auto',
               padding: 0,
-              cursor: editable ? 'pointer' : 'default',
+              cursor: (editable || /^0x[a-fA-F0-9]{40}$/.test(String(token || '').split(':')[0].trim())) ? 'pointer' : 'default',
             }}
           >
             {token ? (
@@ -1364,7 +1379,7 @@ export default function LiveMakerClient({
         setLivePhase('await_signer');
       }
     } catch (e) {
-      setStatus(`approval failed: ${e?.message || 'unknown'}`);
+      setStatus(`approval failed: ${shortErr(e?.message || 'unknown')}`);
     } finally {
       setApprovalBusy(false);
     }
@@ -1415,7 +1430,7 @@ export default function LiveMakerClient({
       }) : prev);
       setStatus('wrapped ETH to WETH');
     } catch (e) {
-      setCustomTokenError(`wrap failed: ${e?.message || 'unknown'}`);
+      setCustomTokenError(`wrap failed: ${shortErr(e?.message || 'unknown')}`);
     } finally {
       setIsWrapping(false);
     }
@@ -1533,7 +1548,7 @@ export default function LiveMakerClient({
       debugLog('sign:success', { nonce, expirySec, expiresAt, senderWallet, signerWallet });
       ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
     } catch (e) {
-      setStatus(`sign failed: ${e?.message || 'unknown'}`);
+      setStatus(`sign failed: ${shortErr(e?.message || 'unknown')}`);
     }
   };
 
@@ -1615,7 +1630,7 @@ export default function LiveMakerClient({
       setLivePhase('success');
       ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId, txHash, ts: Date.now() } });
     } catch (e) {
-      setStatus(`swap failed: ${e?.message || 'unknown'}`);
+      setStatus(`swap failed: ${shortErr(e?.message || 'unknown')}`);
       setLivePhase('await_sender');
     }
   };
@@ -1651,7 +1666,7 @@ export default function LiveMakerClient({
       }
     } catch (e) {
       revokeOk = false;
-      setStatus(`decline revoke failed: ${e?.message || 'unknown'}`);
+      setStatus(`decline revoke failed: ${shortErr(e?.message || 'unknown')}`);
       debugLog('decline:revoke_failed', { myRole, error: e?.message || 'unknown' });
     }
 
@@ -1688,6 +1703,9 @@ export default function LiveMakerClient({
           editable={topEditable}
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
+          onLockedTileClick={() => {
+            if (peerChangedTop) setPeerSnapshotAtApprove(peerSelectionHash);
+          }}
           feeText={topFeeText}
           footer={topFooter}
           footerTone={topInsufficient || /not accepted/i.test(topFooter) ? 'bad' : 'ok'}
@@ -1765,6 +1783,9 @@ export default function LiveMakerClient({
           editable={bottomEditable}
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
+          onLockedTileClick={() => {
+            if (peerChangedBottom) setPeerSnapshotAtApprove(peerSelectionHash);
+          }}
           feeText={bottomFeeText}
           footer={bottomFooter}
           footerTone={bottomInsufficient || /not accepted/i.test(bottomFooter) ? 'bad' : 'ok'}
