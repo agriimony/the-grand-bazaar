@@ -1340,6 +1340,50 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         return;
       }
 
+      // Safety: never finalize invite from overlapping tile.
+      // If overlap is detected, nudge initiator one tile aside before broadcasting.
+      const localCell = playerCellRef.current;
+      const rx = Number(remote?.x);
+      const ry = Number(remote?.y);
+      if (localCell && Number.isFinite(rx) && Number.isFinite(ry) && localCell.x === rx && localCell.y === ry) {
+        const occupied = new Set();
+        for (const [k] of byCell.entries()) occupied.add(k);
+        for (const p of Object.values(remotePlayers || {})) {
+          const px = Number(p?.x);
+          const py = Number(p?.y);
+          if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+          occupied.add(cellKey(px, py));
+        }
+        // allow target tile check separately; we want a different tile anyway
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (const [dx, dy] of dirs) {
+          const nx = localCell.x + dx;
+          const ny = localCell.y + dy;
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+          if (nx === rx && ny === ry) continue;
+          const k = cellKey(nx, ny);
+          if (occupied.has(k)) continue;
+          const nudged = { x: nx, y: ny };
+          setPlayerCell(nudged);
+          playerCellRef.current = nudged;
+          ch.send({
+            type: 'broadcast',
+            event: 'player_state',
+            payload: {
+              world: worldName,
+              sessionId: playerIdentity.sessionId,
+              playerId: playerIdentity.playerId,
+              fname: localFname,
+              pfp: localPfp,
+              x: nudged.x,
+              y: nudged.y,
+              ts: Date.now(),
+            },
+          });
+          break;
+        }
+      }
+
       const expiresAt = Date.now() + 60_000;
       const roomId = createRoomId();
       ch.send({
@@ -1877,7 +1921,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             }}
           >
             <div style={{ color: '#f6e3ad', fontSize: 20, fontWeight: 800, marginBottom: 12, textAlign: 'center' }}>
-              {`waiting for ${shortPlayer(outgoingTradeInvite.toName || 'player')} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)..`}
+              {`waiting for ${shortPlayer(outgoingTradeInvite.toName || 'player')} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)`}
             </div>
             <div className="rs-loading-wrap" style={{ maxWidth: '100%' }}>
               <div className="rs-loading-track">
