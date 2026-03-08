@@ -90,11 +90,52 @@ function renderAmountColored(amountText) {
   return <><span className={cls}>{m[1]}</span><span className={`amt-sfx ${cls}`}>{m[2]}</span></>;
 }
 
+function formatTokenIdLabel(v = '') {
+  const s = String(v || '');
+  return s.length > 12 ? `#${s.slice(0, 4)}…${s.slice(-4)}` : `#${s}`;
+}
+
+const BASE_ETH = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const BASE_WETH = '0x4200000000000000000000000000000000000006';
+const TOKEN_CATALOG = [
+  { token: BASE_ETH, iconArt: '/eth-icon.png' },
+  { token: BASE_USDC, iconArt: '' },
+  { token: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', iconArt: '' },
+  { token: BASE_WETH, iconArt: '/weth-icon.png' },
+  { token: '0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe', iconArt: '/higher-icon.png' },
+  { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', iconArt: '' },
+];
+
 const CATALOG_ICON_BY_SYMBOL = {
   higher: '/higher-icon.png',
   eth: '/eth-icon.png',
-  weth: '/eth-icon.png',
+  weth: '/weth-icon.png',
 };
+
+function canonAddr(addr = '') {
+  const a = String(addr || '').trim().toLowerCase();
+  if (!a) return '';
+  return a;
+}
+
+function isEthSentinelAddr(addr = '') {
+  const a = canonAddr(addr);
+  return a === canonAddr(BASE_ETH)
+    || a === '0x0000000000000000000000000000000000000000'
+    || a === '0x000000000000000000000000000000000000dead'
+    || a === 'eth';
+}
+
+function tokenKey(addr = '') {
+  return isEthSentinelAddr(addr) ? canonAddr(BASE_ETH) : canonAddr(addr);
+}
+
+function catalogIconArt(token = '') {
+  const t = tokenKey(token || '');
+  const found = TOKEN_CATALOG.find((x) => tokenKey(x?.token || '') === t);
+  return found?.iconArt || '';
+}
 
 function tokenIconUrl(token = '') {
   const t = String(token || '').trim();
@@ -103,13 +144,20 @@ function tokenIconUrl(token = '') {
 }
 
 function fallbackTokenArt(token = '', symbol = '') {
+  const addrOnly = String(token || '').split(':')[0].trim();
+  const byCatalog = catalogIconArt(addrOnly);
+  if (byCatalog) return byCatalog;
+
   const bySymbol = CATALOG_ICON_BY_SYMBOL[String(symbol || '').trim().toLowerCase()];
   if (bySymbol) return bySymbol;
 
-  const addrOnly = String(token || '').split(':')[0].trim();
   if (/^0x[a-fA-F0-9]{40}$/.test(addrOnly)) return tokenIconUrl(addrOnly);
 
   return '';
+}
+
+function isAddress(v = '') {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(v || '').trim());
 }
 
 const KIND_ERC20 = '0x36372b07';
@@ -127,6 +175,7 @@ const ERC20_ABI = [
 ];
 const ERC721_ABI = ['function approve(address to,uint256 tokenId)'];
 const ERC1155_ABI = ['function setApprovalForAll(address operator,bool approved)'];
+const WETH_ABI = ['function deposit() payable'];
 
 const SWAP_ABI = [
   'function protocolFee() view returns (uint256)',
@@ -221,8 +270,12 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
   const tokenId = String(selection?.tokenId || '');
-  const is1155 = String(selection?.kind || '').toLowerCase() === KIND_ERC1155;
-  const amountDisplay = is1155 ? formatIntegerAmount(amount || '0') : formatTokenAmount(amount || '0');
+  const kind = String(selection?.kind || '').toLowerCase();
+  const is1155 = kind === KIND_ERC1155;
+  const is721 = kind === KIND_ERC721;
+  const amountDisplay = is721
+    ? formatTokenIdLabel(tokenId || '0')
+    : (is1155 ? formatIntegerAmount(amount || '0') : formatTokenAmount(amount || '0'));
   const symbolDisplay = symbol || (tokenId ? 'NFT' : 'TOKEN');
   const imgUrl = String(selection?.imgUrl || fallbackTokenArt(token, symbol) || '');
 
@@ -253,15 +306,17 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
             {token ? (
               <TokenTile
                 amountNode={renderAmountColored(amountDisplay)}
+                amountClassName="rs-token-cell-amount"
                 symbol={symbolDisplay}
+                symbolClassName="rs-token-cell-symbol"
                 imgUrl={imgUrl}
                 tokenAddress={String(token).split(':')[0]}
                 tokenKind={selection?.kind}
                 tokenId={tokenId}
-                tokenIdClassName="rs-selected-token-tokenid"
-                wrapClassName=""
-                iconClassName="rs-token-art"
-                fallbackClassName="rs-token-art rs-token-fallback"
+                tokenIdClassName="rs-token-cell-tokenid"
+                wrapClassName="rs-token-cell-wrap"
+                iconClassName="rs-token-cell-icon"
+                fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
                 disableLink
                 insufficient={insufficient}
               />
@@ -299,6 +354,7 @@ export default function LiveMakerClient({
   const [approvedHash, setApprovedHash] = useState({ signer: '', sender: '' });
   const [peerSnapshotAtApprove, setPeerSnapshotAtApprove] = useState('');
   const [approvalBusy, setApprovalBusy] = useState(false);
+  const [isWrapping, setIsWrapping] = useState(false);
   const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
   const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
@@ -311,7 +367,7 @@ export default function LiveMakerClient({
   const [inventoryNftCollections, setInventoryNftCollections] = useState([]);
   const [inventoryNftSubView, setInventoryNftSubView] = useState('collections');
   const [selectedNftCollection, setSelectedNftCollection] = useState(null);
-  const [customTokenStep, setCustomTokenStep] = useState('none'); // none|custom|custom-id|custom-amount|amount
+  const [customTokenStep, setCustomTokenStep] = useState('none'); // none|custom|custom-id|amount
   const [amountStepBack, setAmountStepBack] = useState('grid'); // grid|custom|custom-id|items
   const [customTokenValue, setCustomTokenValue] = useState('');
   const [customTokenAmount, setCustomTokenAmount] = useState('');
@@ -658,6 +714,10 @@ export default function LiveMakerClient({
       setCustomTokenError('enter a token address');
       return;
     }
+    if (!isAddress(token)) {
+      setCustomTokenError('enter valid token address');
+      return;
+    }
 
     const knownToken = inventoryTokens.find((t) => String(t?.token || '').toLowerCase() === token.toLowerCase());
     if (knownToken) {
@@ -668,7 +728,7 @@ export default function LiveMakerClient({
         symbol: knownToken?.symbol || shortAddr(token),
         tokenId: '',
         name: knownToken?.symbol || token,
-        kind: '0x20',
+        kind: KIND_ERC20,
         balance: String(knownToken?.balance || ''),
         decimals: String(knownToken?.decimals || '18'),
       });
@@ -688,21 +748,7 @@ export default function LiveMakerClient({
       return;
     }
 
-    setCustomTokenPreview({
-      token,
-      amount: '',
-      imgUrl: '',
-      symbol: /^0x[a-fA-F0-9]{40}$/.test(token) ? shortAddr(token) : token,
-      tokenId: '',
-      name: token,
-      kind: '0x20',
-      balance: '',
-      decimals: '18',
-    });
-    setCustomTokenAmount('');
-    setCustomTokenError('');
-    setAmountStepBack('custom');
-    setCustomTokenStep('amount');
+    setCustomTokenError('token not found in your wallet inventory');
   };
 
   const applyCustomTokenId = () => {
@@ -720,54 +766,26 @@ export default function LiveMakerClient({
       setCustomTokenError('token id not found in your holdings');
       return;
     }
-    setCustomTokenPreview(row);
-    if (String(row?.kind || '').toLowerCase() === '0xd9b67a26' || Number(row?.balance || 1) > 1) {
-      setCustomTokenAmount(String(row?.balance || '1'));
-      setAmountStepBack('custom-id');
-      setCustomTokenStep('custom-amount');
-      setCustomTokenError('');
+    if (Number(row?.balance || 0) <= 0) {
+      setCustomTokenError('you do not own this token id');
       return;
     }
-
-    pickInventoryToken({
+    const kind = String(row?.kind || '0x80ac58cd').toLowerCase();
+    setCustomTokenPreview({
       token: `${row?.token || selectedNftCollection?.collectionAddress || ''}:${row?.tokenId || tokenId}`,
       amount: String(row?.balance || '1'),
       imgUrl: row?.imgUrl || '',
       symbol: row?.symbol || selectedNftCollection?.symbol || 'NFT',
       tokenId: String(row?.tokenId || tokenId),
       name: row?.name || row?.symbol || 'NFT',
-      kind: row?.kind || '0x80ac58cd',
+      kind,
       balance: String(row?.balance || '1'),
       decimals: '0',
     });
-  };
-
-  const applyCustomTokenAmount = () => {
-    const row = customTokenPreview;
-    if (!row) return;
-    const raw = String(customTokenAmount || '').trim();
-    if (!raw || !/^\d+$/.test(raw)) {
-      setCustomTokenError('enter valid integer amount');
-      return;
-    }
-    if (Number(raw) > Number(row?.balance || 0)) {
-      setCustomTokenError('amount exceeds your balance');
-      return;
-    }
-    const baseToken = String(row?.token || selectedNftCollection?.collectionAddress || '');
-    const composedToken = baseToken.includes(':') ? baseToken : `${baseToken}:${row?.tokenId || ''}`;
-
-    pickInventoryToken({
-      token: composedToken,
-      amount: raw,
-      imgUrl: row?.imgUrl || '',
-      symbol: row?.symbol || selectedNftCollection?.symbol || 'NFT',
-      tokenId: String(row?.tokenId || ''),
-      name: row?.name || row?.symbol || 'NFT',
-      kind: row?.kind || '0xd9b67a26',
-      balance: String(row?.balance || '1'),
-      decimals: '0',
-    });
+    setCustomTokenAmount(kind === KIND_ERC721 ? '1' : String(row?.balance || '1'));
+    setAmountStepBack('custom-id');
+    setCustomTokenStep('amount');
+    setCustomTokenError('');
   };
 
   const ownSelection = role === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
@@ -952,6 +970,18 @@ export default function LiveMakerClient({
     return rows.slice(0, 23);
   }, [inventoryView, inventoryNftSubView, inventoryNftCollections, selectedNftCollection, inventoryTokens]);
   const showInventoryGrid = customTokenStep === 'none';
+  const amountStepRow = customTokenPreview;
+  const amountStepKind = String(amountStepRow?.kind || KIND_ERC20).toLowerCase();
+  const amountStepOwnedBal = Number(amountStepRow?.balance || 0);
+  const amountStepRaw = amountStepKind === KIND_ERC721 ? '1' : String(customTokenAmount || '').trim();
+  const amountStepOver = Number(amountStepRaw || 0) > amountStepOwnedBal;
+  const amountStepIsEthLike = isEthSentinelAddr(String(amountStepRow?.token || '').split(':')[0]) || String(amountStepRow?.symbol || '').toUpperCase() === 'ETH';
+  const amountStepDisplay = amountStepKind === KIND_ERC721
+    ? formatTokenIdLabel(amountStepRow?.tokenId || '0')
+    : (amountStepKind === KIND_ERC1155
+      ? formatIntegerAmount((customTokenAmount || amountStepRow?.balance || '0'))
+      : formatTokenAmount((customTokenAmount || amountStepRow?.balance || '0')));
+  const amountStepInputMode = amountStepKind === KIND_ERC1155 ? 'numeric' : 'decimal';
 
   const bothApproved = Boolean(approved.signer && approved.sender);
 
@@ -1065,6 +1095,49 @@ export default function LiveMakerClient({
     if (!maxAmt) return;
     onChangeOwn('amount', maxAmt);
     setStatus('set amount to max balance');
+  };
+
+  const onModalWrapEth = async () => {
+    const row = customTokenPreview;
+    if (!row) return;
+    const tokenAddr = String(row?.token || '').split(':')[0];
+    const isEthLike = isEthSentinelAddr(tokenAddr) || String(row?.symbol || '').toUpperCase() === 'ETH';
+    if (!isEthLike) return;
+
+    const raw = String(customTokenAmount || '').trim();
+    if (!raw || !/^\d*\.?\d+$/.test(raw) || Number(raw) <= 0) {
+      setCustomTokenError('enter valid amount');
+      return;
+    }
+    if (Number(raw) > Number(row?.balance || 0)) {
+      setCustomTokenError('amount exceeds your balance');
+      return;
+    }
+
+    try {
+      setIsWrapping(true);
+      setCustomTokenError('');
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const weth = new ethers.Contract(BASE_WETH, WETH_ABI, signer);
+      const value = ethers.parseUnits(raw, 18);
+      const tx = await weth.deposit({ value });
+      await tx.wait();
+      setCustomTokenPreview((prev) => prev ? ({
+        ...prev,
+        token: BASE_WETH,
+        symbol: 'WETH',
+        imgUrl: '/weth-icon.png',
+        kind: KIND_ERC20,
+        tokenId: '',
+        decimals: '18',
+      }) : prev);
+      setStatus('wrapped ETH to WETH');
+    } catch (e) {
+      setCustomTokenError(`wrap failed: ${e?.message || 'unknown'}`);
+    } finally {
+      setIsWrapping(false);
+    }
   };
 
   const onSignerSign = async () => {
@@ -1412,34 +1485,34 @@ export default function LiveMakerClient({
                     </div>
                   ) : null}
 
-                  {inventoryView === 'tokens' && customTokenStep === 'amount' ? (
+                  {customTokenStep === 'amount' ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
                       <button className="rs-modal-back" onClick={() => {
                         const back = amountStepBack;
                         if (back === 'custom') setCustomTokenStep('custom');
+                        else if (back === 'custom-id') setCustomTokenStep('custom-id');
                         else setCustomTokenStep('none');
                         setCustomTokenAmount('');
                         setCustomTokenError('');
-                        if (back !== 'custom') setCustomTokenPreview(null);
+                        if (back !== 'custom' && back !== 'custom-id') setCustomTokenPreview(null);
                       }}>← Back</button>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
-                      {customTokenPreview ? (
+                      {amountStepRow ? (
                         <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                           <TokenTile
-                            amountNode={renderAmountColored(
-                              String(customTokenPreview?.kind || '').toLowerCase() === KIND_ERC1155
-                                ? formatIntegerAmount((customTokenAmount || customTokenPreview?.balance || '0'))
-                                : formatTokenAmount((customTokenAmount || customTokenPreview?.balance || '0'))
-                            )}
-                            symbol={customTokenPreview?.symbol || 'TOKEN'}
-                            imgUrl={customTokenPreview?.imgUrl}
-                            tokenAddress={String(customTokenPreview?.token || '').split(':')[0]}
-                            tokenKind={customTokenPreview?.kind || '0x20'}
-                            tokenId={customTokenPreview?.tokenId || ''}
-                            tokenIdClassName="rs-selected-token-tokenid"
-                            wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
-                            iconClassName="rs-token-art"
-                            fallbackClassName="rs-token-art rs-token-fallback"
+                            amountNode={renderAmountColored(amountStepDisplay)}
+                            amountClassName="rs-token-cell-amount"
+                            symbol={amountStepRow?.symbol || 'TOKEN'}
+                            symbolClassName="rs-token-cell-symbol"
+                            imgUrl={amountStepRow?.imgUrl}
+                            tokenAddress={String(amountStepRow?.token || '').split(':')[0]}
+                            tokenKind={amountStepRow?.kind || '0x20'}
+                            tokenId={amountStepRow?.tokenId || ''}
+                            tokenIdClassName="rs-token-cell-tokenid"
+                            wrapClassName="rs-token-cell-wrap"
+                            iconClassName="rs-token-cell-icon"
+                            fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                            insufficient={amountStepOver}
                             disableLink
                           />
                         </div>
@@ -1448,34 +1521,64 @@ export default function LiveMakerClient({
                         className="rs-amount-input"
                         style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
                         value={customTokenAmount}
-                        onChange={(e) => { setCustomTokenAmount(e.target.value); if (customTokenError) setCustomTokenError(''); }}
+                        inputMode={amountStepInputMode}
+                        onChange={(e) => {
+                          const v = e.target.value.trim();
+                          if (amountStepKind === KIND_ERC1155) {
+                            if (v === '' || /^\d+$/.test(v)) setCustomTokenAmount(v);
+                          } else if (amountStepKind !== KIND_ERC721) {
+                            if (v === '' || /^\d*\.?\d*$/.test(v)) setCustomTokenAmount(v);
+                          }
+                          if (customTokenError) setCustomTokenError('');
+                        }}
                         placeholder="amount"
+                        disabled={amountStepKind === KIND_ERC721}
                       />
                       {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
+                      {amountStepOver ? <p className="rs-footer-bad">Insufficient balance</p> : null}
                       <div className="rs-btn-stack" style={{ marginTop: 10 }}>
                         <button
                           className="rs-btn rs-btn-positive"
-                          onClick={() => {
-                            const row = customTokenPreview;
+                          disabled={isWrapping}
+                          onClick={async () => {
+                            const row = amountStepRow;
                             if (!row) {
                               setCustomTokenError('select token first');
                               return;
                             }
-                            const raw = String(customTokenAmount || '').trim();
-                            if (!raw || !/^\d*\.?\d+$/.test(raw) || Number(raw) <= 0) {
-                              setCustomTokenError('enter valid amount');
+                            if (!(amountStepOwnedBal > 0)) {
+                              setCustomTokenError('balance unavailable for selected token');
                               return;
                             }
-                            if (Number(raw) > Number(row?.balance || 0)) {
-                              setCustomTokenError('amount exceeds your balance');
+                            if (amountStepOver) {
+                              setCustomTokenAmount(String(row?.balance || ''));
+                              setCustomTokenError('');
                               return;
                             }
+                            const raw = amountStepRaw;
+                            if (amountStepKind === KIND_ERC1155) {
+                              if (!raw || !/^\d+$/.test(raw) || Number(raw) <= 0) {
+                                setCustomTokenError('enter valid integer amount');
+                                return;
+                              }
+                            } else if (amountStepKind !== KIND_ERC721) {
+                              if (!raw || !/^\d*\.?\d+$/.test(raw) || Number(raw) <= 0) {
+                                setCustomTokenError('enter valid amount');
+                                return;
+                              }
+                            }
+
+                            if (amountStepIsEthLike) {
+                              await onModalWrapEth();
+                              return;
+                            }
+
                             pickInventoryToken({
                               token: row.token,
                               amount: raw,
                               imgUrl: row.imgUrl || '',
                               symbol: row.symbol || 'TOKEN',
-                              tokenId: '',
+                              tokenId: String(row.tokenId || ''),
                               name: row.name || row.symbol || 'TOKEN',
                               kind: row.kind || '0x20',
                               balance: String(row.balance || ''),
@@ -1483,7 +1586,9 @@ export default function LiveMakerClient({
                             });
                           }}
                         >
-                          Confirm
+                          {amountStepOver
+                            ? 'Use max'
+                            : (amountStepIsEthLike ? (isWrapping ? 'Wrapping...' : 'Wrap') : 'Confirm')}
                         </button>
                       </div>
                     </div>
@@ -1507,45 +1612,6 @@ export default function LiveMakerClient({
                     </div>
                   ) : null}
 
-                  {inventoryView === 'nfts' && customTokenStep === 'custom-amount' ? (
-                    <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
-                      <button className="rs-modal-back" onClick={() => {
-                        if (amountStepBack === 'items') setCustomTokenStep('none');
-                        else setCustomTokenStep('custom-id');
-                        setCustomTokenError('');
-                      }}>← Back</button>
-                      <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
-                      {customTokenPreview ? (
-                        <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
-                          <TokenTile
-                            amountNode={renderAmountColored(formatIntegerAmount(customTokenAmount || customTokenPreview?.balance || '0'))}
-                            symbol={customTokenPreview?.symbol || 'NFT'}
-                            imgUrl={customTokenPreview?.imgUrl}
-                            tokenAddress={String(customTokenPreview?.token || '').split(':')[0]}
-                            tokenKind={customTokenPreview?.kind || KIND_ERC1155}
-                            tokenId={customTokenPreview?.tokenId || ''}
-                            tokenIdClassName="rs-selected-token-tokenid"
-                            wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
-                            iconClassName="rs-token-art"
-                            fallbackClassName="rs-token-art rs-token-fallback"
-                            insufficient={Number(customTokenAmount || 0) > Number(customTokenPreview?.balance || 0)}
-                            disableLink
-                          />
-                        </div>
-                      ) : null}
-                      <input
-                        className="rs-amount-input"
-                        style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
-                        value={customTokenAmount}
-                        onChange={(e) => { setCustomTokenAmount(e.target.value); if (customTokenError) setCustomTokenError(''); }}
-                        placeholder="amount"
-                      />
-                      {customTokenError ? <div className="rs-inline-error" style={{ marginTop: 8 }}>{customTokenError}</div> : null}
-                      <div className="rs-btn-stack" style={{ marginTop: 10 }}>
-                        <button className="rs-btn rs-btn-positive" onClick={applyCustomTokenAmount}>Confirm</button>
-                      </div>
-                    </div>
-                  ) : null}
 
                   {showInventoryGrid && inventoryView === 'nfts' && inventoryNftSubView === 'items' ? (
                     <button className="rs-modal-back" onClick={() => { setInventoryNftSubView('collections'); setSelectedNftCollection(null); }}>← Back</button>
@@ -1612,43 +1678,35 @@ export default function LiveMakerClient({
                                 setCustomTokenStep('amount');
                                 return;
                               }
-                              const nftKind = String(item?.kind || '').toLowerCase();
+                              const nftKind = String(item?.kind || KIND_ERC721).toLowerCase();
                               const nftBalance = String(item?.balance || '1');
-                              if (nftKind === '0xd9b67a26' || Number(nftBalance) > 1) {
-                                setCustomTokenPreview({
-                                  token,
-                                  amount: nftBalance,
-                                  imgUrl,
-                                  symbol,
-                                  tokenId,
-                                  name: item?.name || symbol,
-                                  kind: nftKind || '0xd9b67a26',
-                                  balance: nftBalance,
-                                  decimals: '0',
-                                });
-                                setCustomTokenAmount('');
-                                setCustomTokenError('');
-                                setAmountStepBack('items');
-                                setCustomTokenStep('custom-amount');
-                                return;
-                              }
-
-                              pickInventoryToken({
+                              setCustomTokenPreview({
                                 token,
-                                amount,
+                                amount: nftBalance,
                                 imgUrl,
                                 symbol,
                                 tokenId,
                                 name: item?.name || symbol,
-                                kind: item?.kind || '',
-                                balance: amount,
-                                decimals: String(item?.decimals || '0'),
+                                kind: nftKind,
+                                balance: nftBalance,
+                                decimals: '0',
                               });
+                              setCustomTokenAmount(nftKind === KIND_ERC721 ? '1' : '');
+                              setCustomTokenError('');
+                              setAmountStepBack('items');
+                              setCustomTokenStep('amount');
+                              return;
                             }}
                             title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
                           >
                             <TokenTile
-                              amountNode={isToken ? renderAmountColored(formatTokenAmount(amount || '0')) : null}
+                              amountNode={isToken
+                                ? renderAmountColored(formatTokenAmount(amount || '0'))
+                                : (String(item?.kind || '').toLowerCase() === KIND_ERC721
+                                  ? formatTokenIdLabel(tokenId || '0')
+                                  : (String(item?.kind || '').toLowerCase() === KIND_ERC1155
+                                    ? renderAmountColored(formatIntegerAmount(amount || '0'))
+                                    : null))}
                               amountClassName="rs-token-cell-amount"
                               symbol={symbol}
                               symbolClassName="rs-token-cell-symbol"

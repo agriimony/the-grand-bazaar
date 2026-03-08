@@ -14,7 +14,7 @@ function formatTokenIdLabel(v = '') {
 
 function shouldShowTokenId(kind, tokenId) {
   const k = String(kind || '').toLowerCase();
-  if (k !== '0xd9b67a26' && k !== '0x80ac58cd') return false;
+  if (k !== '0xd9b67a26') return false;
   return tokenId !== undefined && tokenId !== null && String(tokenId) !== '';
 }
 
