@@ -1042,7 +1042,9 @@ export default function LiveMakerClient({
     ? String(initialSignerFname || initialSignerPlayerId || '').trim()
     : '';
   const initialPeerDisplay = String(initialPeerFname || initialPeerPlayerId || initialPeerSessionId || inviteSignerDisplay || '').trim();
-  const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || otherPeer?.sessionId || initialPeerDisplay || '').trim() || 'player';
+  const peerWalletFallback = String(otherPeer?.playerId || initialPeerPlayerId || '').trim();
+  const rawOtherDisplay = String(otherPeer?.fname || otherPeer?.playerId || otherPeer?.sessionId || initialPeerDisplay || '').trim();
+  const otherDisplay = shortAddr(rawOtherDisplay || '') || 'player';
 
   const topTitle = role === 'signer' ? 'You offer' : `${otherDisplay} offers`;
   const bottomTitle = role === 'signer' ? `${otherDisplay} offers` : 'You offer';
@@ -1193,8 +1195,12 @@ export default function LiveMakerClient({
   const topAccepted = acceptedTextFor(topPanelRole);
   const bottomAccepted = acceptedTextFor(bottomPanelRole);
 
-  const topFooter = topInsufficient ? 'Insufficient balance' : (topAccepted || topFlowFooter);
-  const bottomFooter = bottomInsufficient ? 'Insufficient balance' : (bottomAccepted || bottomFlowFooter);
+  const topFooter = peerChangedTop
+    ? 'This offer has been changed'
+    : (topInsufficient ? 'Insufficient balance' : (topAccepted || topFlowFooter));
+  const bottomFooter = peerChangedBottom
+    ? 'This offer has been changed'
+    : (bottomInsufficient ? 'Insufficient balance' : (bottomAccepted || bottomFlowFooter));
 
   const visibleInventoryItems = useMemo(() => {
     if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
@@ -1426,8 +1432,9 @@ export default function LiveMakerClient({
 
     try {
       const signerWallet = String(identity.playerId || '').trim();
-      const senderWallet = String(otherPeer?.playerId || '').trim();
+      const senderWallet = String(otherPeer?.playerId || peerWalletFallback || '').trim();
       if (!/^0x[a-fA-F0-9]{40}$/.test(signerWallet) || !/^0x[a-fA-F0-9]{40}$/.test(senderWallet)) {
+        debugLog('sign:wallet_missing', { signerWallet, senderWallet, peerWalletFallback, otherPeer });
         setStatus('wallet identities missing for live sign');
         return;
       }
@@ -1687,7 +1694,7 @@ export default function LiveMakerClient({
           insufficient={topInsufficient}
         />
 
-        <div className="rs-center" style={{ display: 'grid', gap: 10 }}>
+        <div className="rs-center" style={{ display: 'grid', gap: 10, justifyItems: 'center' }}>
           {!bothDone || livePhase === 'negotiate' ? (
             bothDone ? (
               <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
@@ -1740,7 +1747,7 @@ export default function LiveMakerClient({
               {swapTxHash ? <a href={`https://basescan.org/tx/${swapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a> : null}
             </div>
           )}
-          <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>
+          <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75, maxWidth: 'min(520px, 92vw)', overflowWrap: 'anywhere' }}>{status}</div>
           {feeLoading ? (
             <div className="rs-loading-wrap" style={{ width: 'min(320px, 86vw)' }}>
               <div className="rs-loading-track">
