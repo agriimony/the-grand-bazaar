@@ -1127,11 +1127,15 @@ export default function LiveMakerClient({
     feeInfo.royaltyHuman ? `+ ${feeInfo.royaltyHuman} royalty` : '',
   ].filter(Boolean).join(' ');
 
-  const signerReceiveNote = bothDone && !feeInfo.feeOnSignerSide ? receiverBreakdown : '';
-  const senderReceiveNote = bothDone && feeInfo.feeOnSignerSide ? receiverBreakdown : '';
+  const signerReceiveNote = bothDone && feeInfo.feeOnSignerSide ? receiverBreakdown : '';
+  const senderReceiveNote = bothDone && !feeInfo.feeOnSignerSide ? receiverBreakdown : '';
 
-  const topFeeText = signerFeeText || signerReceiveNote;
-  const bottomFeeText = senderFeeText || senderReceiveNote;
+  const topFeeText = role === 'signer'
+    ? signerFeeText
+    : signerReceiveNote;
+  const bottomFeeText = role === 'signer'
+    ? senderReceiveNote
+    : senderFeeText;
 
   const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
   const senderPanelAmountForViewer = role === 'signer' ? signerIncoming : senderOutgoing;
