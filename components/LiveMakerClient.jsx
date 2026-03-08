@@ -397,7 +397,7 @@ export default function LiveMakerClient({
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
   const [feeLoading, setFeeLoading] = useState(false);
-  const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', protocolFeeBps: 100 });
+  const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', royaltyDecimals: 18, protocolFeeBps: 100 });
   const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
@@ -960,7 +960,7 @@ export default function LiveMakerClient({
       if (!both) {
         if (!dead) {
           setFeeLoading(false);
-          setFeeInfo({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', protocolFeeBps: 100 });
+          setFeeInfo({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', royaltyDecimals: 18, protocolFeeBps: 100 });
         }
         return;
       }
@@ -973,6 +973,7 @@ export default function LiveMakerClient({
 
       let protocolFeeBps = 100;
       let royaltyRaw = 0n;
+      let royaltyDecimals = 18;
       try {
         const swapContract = resolveSwapContractForSelections(signerSel, senderSel);
         const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
@@ -991,7 +992,8 @@ export default function LiveMakerClient({
           if (supports) {
             const erc20 = new ethers.Contract(senderTokenAddr, ROYALTY_ABI, provider);
             const decimals = Number(await erc20.decimals().catch(() => 18));
-            const salePrice = ethers.parseUnits(senderAmount || '0', Number.isFinite(decimals) ? decimals : 18);
+            royaltyDecimals = Number.isFinite(decimals) ? decimals : 18;
+            const salePrice = ethers.parseUnits(senderAmount || '0', royaltyDecimals);
             const [, r] = await token.royaltyInfo(BigInt(signerTokenId), salePrice).catch(() => [ethers.ZeroAddress, 0n]);
             royaltyRaw = BigInt(r || 0n);
           }
@@ -1001,9 +1003,9 @@ export default function LiveMakerClient({
       if (!dead) {
         let royaltyHuman = '';
         try {
-          if (royaltyRaw > 0n) royaltyHuman = ethers.formatUnits(royaltyRaw, 18);
+          if (royaltyRaw > 0n) royaltyHuman = ethers.formatUnits(royaltyRaw, royaltyDecimals);
         } catch {}
-        setFeeInfo({ feeOnSignerSide, royaltyHuman, royaltyRaw: royaltyRaw.toString(), protocolFeeBps });
+        setFeeInfo({ feeOnSignerSide, royaltyHuman, royaltyRaw: royaltyRaw.toString(), royaltyDecimals, protocolFeeBps });
         setFeeLoading(false);
       }
     }
@@ -1062,7 +1064,13 @@ export default function LiveMakerClient({
   const senderBalNum = parseNum(tradeState.senderSelection.balance);
 
   const protocolFeeNum = protocolFeeBps / 10000;
-  const royaltyNum = Number(feeInfo.royaltyHuman || 0) || 0;
+  const royaltyNum = (() => {
+    try {
+      return Number(ethers.formatUnits(BigInt(String(feeInfo.royaltyRaw || '0')), Number(feeInfo.royaltyDecimals || 18))) || 0;
+    } catch {
+      return Number(feeInfo.royaltyHuman || 0) || 0;
+    }
+  })();
 
   // Live-maker UI policy: fee payer amount is shown as full outgoing amount,
   // recipient side is shown net received after deductions.
@@ -1070,13 +1078,17 @@ export default function LiveMakerClient({
   const senderOutgoing = senderAmountNum;
   const signerIncoming = feeInfo.feeOnSignerSide
     ? senderAmountNum
-    : Math.max(0, senderAmountNum - (senderAmountNum * protocolFeeNum) - royaltyNum);
+    : Math.max(0, (Math.max(0, senderAmountNum - royaltyNum)) / (1 + protocolFeeNum));
   const senderIncoming = feeInfo.feeOnSignerSide
-    ? Math.max(0, signerAmountNum - (signerAmountNum * protocolFeeNum))
+    ? Math.max(0, signerAmountNum / (1 + protocolFeeNum))
     : signerAmountNum;
 
-  const signerRequired = signerOutgoing;
-  const senderRequired = senderOutgoing;
+  const signerRequired = feeInfo.feeOnSignerSide
+    ? signerOutgoing * (1 + protocolFeeNum)
+    : signerOutgoing;
+  const senderRequired = feeInfo.feeOnSignerSide
+    ? senderOutgoing
+    : (senderOutgoing * (1 + protocolFeeNum) + royaltyNum);
 
   const signerInsufficient = bothDone && signerBalNum > 0 && signerRequired > signerBalNum;
   const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
@@ -1221,8 +1233,19 @@ export default function LiveMakerClient({
       if (ownKind === KIND_ERC20) {
         const decimals = Number(own?.decimals || 18);
         const amountRaw = ethers.parseUnits(String(own?.amount || '0'), Number.isFinite(decimals) ? decimals : 18);
+        const feeBps = BigInt(Math.max(0, Number(feeInfo.protocolFeeBps || 0)));
+        let requiredRaw = amountRaw;
+        if (feeInfo.feeOnSignerSide && myRole === 'signer') {
+          requiredRaw = amountRaw + ((amountRaw * feeBps) / 10000n);
+        } else if (!feeInfo.feeOnSignerSide && myRole === 'sender') {
+          requiredRaw = amountRaw + ((amountRaw * feeBps) / 10000n);
+          try {
+            const royaltyRaw = BigInt(String(feeInfo.royaltyRaw || '0'));
+            if (royaltyRaw > 0n) requiredRaw += royaltyRaw;
+          } catch {}
+        }
         const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-        const tx = await erc20.approve(swapContract, amountRaw);
+        const tx = await erc20.approve(swapContract, requiredRaw);
         await tx.wait();
       } else if (ownKind === KIND_ERC721) {
         const tokenId = BigInt(String(own?.tokenId || '0'));
@@ -1471,7 +1494,26 @@ export default function LiveMakerClient({
           r: o.r,
           s: o.s,
         };
-        tx = await swap.swap(identity.playerId, 0n, orderForCall);
+
+        let maxRoyaltyForCall = 0n;
+        try {
+          const signerKindNow = String(o.signerKind || KIND_ERC20).toLowerCase();
+          const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
+          if (signerIsNft) {
+            const royaltyToken = new ethers.Contract(o.signerToken, ROYALTY_ABI, provider);
+            const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
+            if (supports) {
+              const [, royaltyAmount] = await royaltyToken
+                .royaltyInfo(BigInt(o.signerId || 0), BigInt(o.senderAmount || 0))
+                .catch(() => [ethers.ZeroAddress, 0n]);
+              maxRoyaltyForCall = BigInt(royaltyAmount || 0n);
+            }
+          }
+        } catch {
+          maxRoyaltyForCall = 0n;
+        }
+
+        tx = await swap.swap(identity.playerId, maxRoyaltyForCall, orderForCall);
       }
 
       const rec = await tx.wait();
