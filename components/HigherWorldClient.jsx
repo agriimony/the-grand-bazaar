@@ -1876,8 +1876,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               padding: 14,
             }}
           >
-            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 10 }}>
-              {`waiting for ${outgoingTradeInvite.toName} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)..`}
+            <div style={{ color: '#f6e3ad', fontSize: 20, fontWeight: 800, marginBottom: 12, textAlign: 'center' }}>
+              {`waiting for ${shortPlayer(outgoingTradeInvite.toName || 'player')} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)..`}
             </div>
             <div className="rs-loading-wrap" style={{ maxWidth: '100%' }}>
               <div className="rs-loading-track">
