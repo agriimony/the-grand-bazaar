@@ -275,6 +275,15 @@ function selectionHash(sel) {
   return [s.token, s.amount, s.kind, s.tokenId, s.balance].join('|');
 }
 
+function normalizeKind(kind = '') {
+  const k = String(kind || '').trim().toLowerCase();
+  if (!k) return '';
+  if (k === KIND_ERC20 || k === '0x20' || k === 'erc20') return KIND_ERC20;
+  if (k === KIND_ERC721 || k === '0x721' || k === 'erc721') return KIND_ERC721;
+  if (k === KIND_ERC1155 || k === '0x1155' || k === 'erc1155') return KIND_ERC1155;
+  return k;
+}
+
 function normalizeSelection(sel) {
   const base = emptySelection();
   return {
@@ -286,7 +295,7 @@ function normalizeSelection(sel) {
     symbol: String(sel?.symbol || ''),
     tokenId: String(sel?.tokenId || ''),
     name: String(sel?.name || ''),
-    kind: String(sel?.kind || ''),
+    kind: normalizeKind(sel?.kind || ''),
     balance: String(sel?.balance || ''),
     decimals: String(sel?.decimals || ''),
   };
@@ -939,7 +948,7 @@ export default function LiveMakerClient({
       setCustomTokenError('you do not own this token id');
       return;
     }
-    const kind = String(row?.kind || '0x80ac58cd').toLowerCase();
+    const kind = normalizeKind(row?.kind || KIND_ERC721);
     setCustomTokenPreview({
       token: `${row?.token || selectedNftCollection?.collectionAddress || ''}:${row?.tokenId || tokenId}`,
       amount: String(row?.balance || '1'),
@@ -1270,7 +1279,7 @@ export default function LiveMakerClient({
 
       const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
       const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
-      const ownKind = String(own?.kind || KIND_ERC20).toLowerCase();
+      const ownKind = normalizeKind(own?.kind || KIND_ERC20);
       const tokenAddress = String(own?.token || '').split(':')[0];
       debugLog('approve:context', { myRole, ownKind, tokenAddress, swapContract, amount: own?.amount, balance: own?.balance, protocolFeeBps: feeInfo.protocolFeeBps, royaltyRaw: feeInfo.royaltyRaw });
 
@@ -1611,7 +1620,7 @@ export default function LiveMakerClient({
         const signer = await provider.getSigner();
         const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
         const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
-        const ownKind = String(own?.kind || KIND_ERC20).toLowerCase();
+        const ownKind = normalizeKind(own?.kind || KIND_ERC20);
         const tokenAddress = String(own?.token || '').split(':')[0];
 
         if (ownKind === KIND_ERC20) {
@@ -1807,7 +1816,7 @@ export default function LiveMakerClient({
                               symbolClassName="rs-token-cell-symbol"
                               imgUrl={amountStepRow?.imgUrl}
                               tokenAddress={String(amountStepRow?.token || '').split(':')[0]}
-                              tokenKind={amountStepRow?.kind || '0x20'}
+                              tokenKind={normalizeKind(amountStepRow?.kind || KIND_ERC20)}
                               tokenId={amountStepRow?.tokenId || ''}
                               tokenIdClassName="rs-token-cell-tokenid"
                               wrapClassName="rs-token-cell-wrap"
@@ -1904,7 +1913,7 @@ export default function LiveMakerClient({
                               symbol: row.symbol || 'TOKEN',
                               tokenId: String(row.tokenId || ''),
                               name: row.name || row.symbol || 'TOKEN',
-                              kind: row.kind || '0x20',
+                              kind: normalizeKind(row.kind || KIND_ERC20),
                               balance: String(row.balance || ''),
                               decimals: String(row.decimals || '18'),
                             });
@@ -1992,7 +2001,7 @@ export default function LiveMakerClient({
                                   symbol,
                                   tokenId,
                                   name: item?.name || symbol,
-                                  kind: item?.kind || '0x20',
+                                  kind: normalizeKind(item?.kind || KIND_ERC20),
                                   balance: amount,
                                   decimals: String(item?.decimals || '18'),
                                 });
@@ -2036,7 +2045,7 @@ export default function LiveMakerClient({
                               symbolClassName="rs-token-cell-symbol"
                               imgUrl={imgUrl}
                               tokenAddress={String(token).split(':')[0]}
-                              tokenKind={item?.kind || (isToken ? '0x20' : '0x80ac58cd')}
+                              tokenKind={normalizeKind(item?.kind || (isToken ? KIND_ERC20 : KIND_ERC721))}
                               tokenId={tokenId}
                               tokenIdClassName="rs-token-cell-tokenid"
                               wrapClassName="rs-token-cell-wrap"
