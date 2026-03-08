@@ -401,6 +401,13 @@ export default function LiveMakerClient({
   const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
+
+  const debugLog = (...args) => {
+    try {
+      // eslint-disable-next-line no-console
+      console.log('[live-maker]', ...args);
+    } catch {}
+  };
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState('');
@@ -525,6 +532,7 @@ export default function LiveMakerClient({
       const decision = String(payload?.decision || '').trim().toLowerCase();
       if (who !== 'signer' && who !== 'sender') return;
       const hash = String(payload?.selectionHash || '').trim();
+      debugLog('event:room_approve', { who, decision, hash, fromSessionId: payload?.sessionId || '' });
       setApproved((prev) => ({ ...prev, [who]: decision === 'approve' }));
       setApprovedHash((prev) => ({ ...prev, [who]: decision === 'approve' ? hash : '' }));
     });
@@ -533,6 +541,7 @@ export default function LiveMakerClient({
       const expiresAt = Number(payload?.expiresAt || 0);
       const byRole = String(payload?.byRole || '').trim();
       const byName = String(payload?.byName || '').trim();
+      debugLog('event:room_signed_order', { byRole, byName, expiresAt, hasPayload: Boolean(payload?.signedOrder) });
       setSignedOrderState({
         byRole,
         byName,
@@ -543,18 +552,22 @@ export default function LiveMakerClient({
     });
 
     ch.on('broadcast', { event: 'room_swapping' }, () => {
+      debugLog('event:room_swapping');
       setLivePhase('swapping');
     });
 
     ch.on('broadcast', { event: 'room_swap_success' }, ({ payload }) => {
       const txHash = String(payload?.txHash || '').trim();
+      debugLog('event:room_swap_success', { txHash });
       setSwapTxHash(txHash);
       setLivePhase('success');
     });
 
     ch.subscribe((s) => {
+      debugLog('channel_state', s);
       if (s === 'SUBSCRIBED') {
         setStatus('live room connected');
+        debugLog('event:room_join:send', { roomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFname });
         ch.send({
           type: 'broadcast',
           event: 'room_join',
@@ -1242,6 +1255,7 @@ export default function LiveMakerClient({
   }, [signedOrderState, roomId]);
 
   const onApprove = async () => {
+    debugLog('approve:start', { bothDone, signerInsufficient, senderInsufficient, approvalBusy, myRole });
     if (!bothDone) return;
     if (signerInsufficient || senderInsufficient) return;
     if (approvalBusy) return;
@@ -1258,8 +1272,14 @@ export default function LiveMakerClient({
       const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
       const ownKind = String(own?.kind || KIND_ERC20).toLowerCase();
       const tokenAddress = String(own?.token || '').split(':')[0];
+      debugLog('approve:context', { myRole, ownKind, tokenAddress, swapContract, amount: own?.amount, balance: own?.balance, protocolFeeBps: feeInfo.protocolFeeBps, royaltyRaw: feeInfo.royaltyRaw });
 
+      let didSubmitApproval = false;
       if (ownKind === KIND_ERC20) {
+        if (isEthSentinelAddr(tokenAddress)) {
+          setStatus('ETH does not need approve; wrap to WETH first');
+          return;
+        }
         const decimals = Number(own?.decimals || 18);
         const amountRaw = ethers.parseUnits(String(own?.amount || '0'), Number.isFinite(decimals) ? decimals : 18);
         const feeBps = BigInt(Math.max(0, Number(feeInfo.protocolFeeBps || 0)));
@@ -1275,16 +1295,33 @@ export default function LiveMakerClient({
         }
         const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
         const tx = await erc20.approve(swapContract, requiredRaw);
+        debugLog('approve:erc20:submitted', { txHash: tx?.hash || '', requiredRaw: requiredRaw.toString() });
         await tx.wait();
+        debugLog('approve:erc20:mined', { txHash: tx?.hash || '' });
+        didSubmitApproval = true;
       } else if (ownKind === KIND_ERC721) {
         const tokenId = BigInt(String(own?.tokenId || '0'));
         const erc721 = new ethers.Contract(tokenAddress, ERC721_ABI, signer);
         const tx = await erc721.approve(swapContract, tokenId);
+        debugLog('approve:erc721:submitted', { txHash: tx?.hash || '', tokenId: tokenId.toString() });
         await tx.wait();
+        debugLog('approve:erc721:mined', { txHash: tx?.hash || '' });
+        didSubmitApproval = true;
       } else if (ownKind === KIND_ERC1155) {
         const erc1155 = new ethers.Contract(tokenAddress, ERC1155_ABI, signer);
         const tx = await erc1155.setApprovalForAll(swapContract, true);
+        debugLog('approve:erc1155:submitted', { txHash: tx?.hash || '' });
         await tx.wait();
+        debugLog('approve:erc1155:mined', { txHash: tx?.hash || '' });
+        didSubmitApproval = true;
+      } else {
+        setStatus('unsupported token kind for approval');
+        return;
+      }
+
+      if (!didSubmitApproval) {
+        setStatus('approval not submitted');
+        return;
       }
 
       const localHash = mySelectionHash;
@@ -1369,6 +1406,7 @@ export default function LiveMakerClient({
   };
 
   const onSignerSign = async () => {
+    debugLog('sign:start', { myRole, bothApproved });
     if (myRole !== 'signer') return;
     if (!bothApproved) return;
 
@@ -1388,6 +1426,7 @@ export default function LiveMakerClient({
       const readProvider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
       const swap = new ethers.Contract(swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, readProvider);
       const protocolFee = await swap.protocolFee();
+      debugLog('sign:context', { swapContract, protocolFee: protocolFee.toString(), isSwapErc20 });
 
       const signerDecimals = Number(tradeState.signerSelection?.decimals || 18);
       const senderDecimals = Number(tradeState.senderSelection?.decimals || 18);
@@ -1473,6 +1512,7 @@ export default function LiveMakerClient({
 
       setSignedOrderState({ byRole: 'signer', byName: localFname || identity.playerId, expiresAt, payload: signedOrder });
       setLivePhase('await_sender');
+      debugLog('sign:success', { nonce, expirySec, expiresAt, senderWallet, signerWallet });
       ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
     } catch (e) {
       setStatus(`sign failed: ${e?.message || 'unknown'}`);
@@ -1480,6 +1520,7 @@ export default function LiveMakerClient({
   };
 
   const onSenderSwap = async () => {
+    debugLog('swap:start', { myRole, hasSignedOrder: Boolean(signedOrderState?.payload) });
     if (myRole !== 'sender') return;
     if (!signedOrderState?.payload) return;
 
@@ -1497,6 +1538,7 @@ export default function LiveMakerClient({
       const swap = new ethers.Contract(o.swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, ws);
 
       let tx;
+      debugLog('swap:context', { isSwapErc20, swapContract: o.swapContract, nonce: o.nonce, expiry: o.expiry });
       if (isSwapErc20) {
         tx = await swap.swap(
           identity.playerId,
@@ -1511,6 +1553,7 @@ export default function LiveMakerClient({
           o.r,
           o.s
         );
+        debugLog('swap:submitted:erc20', { txHash: tx?.hash || '' });
       } else {
         const orderForCall = {
           nonce: BigInt(o.nonce),
@@ -1543,9 +1586,11 @@ export default function LiveMakerClient({
         }
 
         tx = await swap.swap(identity.playerId, maxRoyaltyForCall, orderForCall);
+        debugLog('swap:submitted:generic', { txHash: tx?.hash || '', maxRoyaltyForCall: maxRoyaltyForCall.toString() });
       }
 
       const rec = await tx.wait();
+      debugLog('swap:mined', { txHash: String(rec?.hash || tx?.hash || '') });
       const txHash = String(rec?.hash || tx?.hash || '');
       setSwapTxHash(txHash);
       setLivePhase('success');
