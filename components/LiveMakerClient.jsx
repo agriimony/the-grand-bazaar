@@ -374,6 +374,9 @@ export default function LiveMakerClient({
   initialChannel = '',
   initialSignerPlayerId = '',
   initialSignerFname = '',
+  initialPeerPlayerId = '',
+  initialPeerFname = '',
+  initialPeerSessionId = '',
 }) {
   const router = useRouter();
   const { address } = useAccount();
@@ -393,7 +396,8 @@ export default function LiveMakerClient({
   const [peerSnapshotAtApprove, setPeerSnapshotAtApprove] = useState('');
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [isWrapping, setIsWrapping] = useState(false);
-  const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [feeInfo, setFeeInfo] = useState({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', protocolFeeBps: 100 });
   const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
@@ -954,22 +958,34 @@ export default function LiveMakerClient({
       const senderSel = tradeState.senderSelection;
       const both = isFilled(signerSel) && isFilled(senderSel);
       if (!both) {
-        if (!dead) setFeeInfo({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0' });
+        if (!dead) {
+          setFeeLoading(false);
+          setFeeInfo({ feeOnSignerSide: false, royaltyHuman: '', royaltyRaw: '0', protocolFeeBps: 100 });
+        }
         return;
       }
+
+      if (!dead) setFeeLoading(true);
 
       const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
       const senderKind = String(senderSel?.kind || KIND_ERC20).toLowerCase();
       const feeOnSignerSide = signerKind === KIND_ERC20 && senderKind === KIND_ERC20;
 
+      let protocolFeeBps = 100;
       let royaltyRaw = 0n;
       try {
+        const swapContract = resolveSwapContractForSelections(signerSel, senderSel);
+        const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+        const swap = new ethers.Contract(swapContract, IS_SWAP_ERC20(swapContract) ? SWAP_ERC20_ABI : SWAP_ABI, provider);
+        const pf = await swap.protocolFee().catch(() => 100n);
+        const pfNum = Number(pf || 100n);
+        if (Number.isFinite(pfNum) && pfNum >= 0) protocolFeeBps = pfNum;
+
         const signerToken = String(signerSel?.token || '').split(':')[0];
         const signerTokenId = String(signerSel?.tokenId || '').trim();
         const senderAmount = String(senderSel?.amount || '0').trim();
         const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
         if (!feeOnSignerSide && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
-          const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
           const token = new ethers.Contract(signerToken, ROYALTY_ABI, provider);
           const supports = await token.supportsInterface('0x2a55205a').catch(() => false);
           if (supports) {
@@ -987,7 +1003,8 @@ export default function LiveMakerClient({
         try {
           if (royaltyRaw > 0n) royaltyHuman = ethers.formatUnits(royaltyRaw, 18);
         } catch {}
-        setFeeInfo({ feeOnSignerSide, royaltyHuman, royaltyRaw: royaltyRaw.toString() });
+        setFeeInfo({ feeOnSignerSide, royaltyHuman, royaltyRaw: royaltyRaw.toString(), protocolFeeBps });
+        setFeeLoading(false);
       }
     }
     computeFees();
@@ -1000,7 +1017,8 @@ export default function LiveMakerClient({
   const inviteSignerDisplay = role === 'sender'
     ? String(initialSignerFname || initialSignerPlayerId || '').trim()
     : '';
-  const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || inviteSignerDisplay || '').trim() || 'player';
+  const initialPeerDisplay = String(initialPeerFname || initialPeerPlayerId || initialPeerSessionId || inviteSignerDisplay || '').trim();
+  const otherDisplay = String(otherPeer?.fname || otherPeer?.playerId || otherPeer?.sessionId || initialPeerDisplay || '').trim() || 'player';
 
   const topTitle = role === 'signer' ? 'You offer' : `${otherDisplay} offers`;
   const bottomTitle = role === 'signer' ? `${otherDisplay} offers` : 'You offer';
@@ -1027,7 +1045,7 @@ export default function LiveMakerClient({
 
   const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
 
-  const protocolFeeBps = 50;
+  const protocolFeeBps = Number(feeInfo.protocolFeeBps || 100);
   const feeLabel = `incl. ${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
 
   const parseNum = (v) => Number(String(v || '0').trim() || 0);
@@ -1064,7 +1082,7 @@ export default function LiveMakerClient({
   const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
   const myInsufficient = myRole === 'signer' ? signerInsufficient : senderInsufficient;
 
-  const topIsSignerPanel = role === 'signer';
+  const topIsSignerPanel = true; // top panel always renders signerSelection
   const peerChangedTop = myRole === 'sender' ? peerChangedAfterMyApprove : false;
   const peerChangedBottom = myRole === 'signer' ? peerChangedAfterMyApprove : false;
   const topInsufficient = (topIsSignerPanel ? signerInsufficient : senderInsufficient) || peerChangedTop;
@@ -1075,8 +1093,8 @@ export default function LiveMakerClient({
     ? [feeLabel, feeInfo.royaltyHuman ? `incl. royalty ${feeInfo.royaltyHuman}` : ''].filter(Boolean).join(' • ')
     : '';
 
-  const topFeeText = topIsSignerPanel ? signerFeeText : senderFeeText;
-  const bottomFeeText = topIsSignerPanel ? senderFeeText : signerFeeText;
+  const topFeeText = signerFeeText;
+  const bottomFeeText = senderFeeText;
 
   const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
   const senderPanelAmountForViewer = role === 'signer' ? signerIncoming : senderOutgoing;
@@ -1127,37 +1145,18 @@ export default function LiveMakerClient({
   const amountStepOwnedBal = Number(amountStepRow?.balance || 0);
   const amountStepRaw = amountStepKind === KIND_ERC721 ? '1' : String(customTokenAmount || '').trim();
   const amountStepBaseNum = Number(amountStepRaw || 0);
-  const amountStepFeeApplies = bothDone
-    && ((feeInfo.feeOnSignerSide && myRole === 'signer') || (!feeInfo.feeOnSignerSide && myRole === 'sender'));
-  const amountStepEffectiveNum = (() => {
-    if (!(Number.isFinite(amountStepBaseNum) && amountStepBaseNum > 0)) return 0;
-    if (!amountStepFeeApplies) return amountStepBaseNum;
-    if (amountStepKind === KIND_ERC1155) {
-      const base = BigInt(Math.max(0, Math.floor(amountStepBaseNum)));
-      return Number(base + ((base * BigInt(protocolFeeBps || 0)) / 10000n));
-    }
-    return amountStepBaseNum * (1 + Number(protocolFeeBps || 0) / 10000);
-  })();
-  const amountStepOver = amountStepEffectiveNum > amountStepOwnedBal;
+  const amountStepOver = amountStepBaseNum > amountStepOwnedBal;
   const amountStepIsEthLike = isEthSentinelAddr(String(amountStepRow?.token || '').split(':')[0]) || String(amountStepRow?.symbol || '').toUpperCase() === 'ETH';
   const amountStepDisplay = amountStepKind === KIND_ERC721
     ? formatTokenIdLabel(amountStepRow?.tokenId || '0')
     : (amountStepKind === KIND_ERC1155
-      ? formatIntegerAmount((customTokenAmount ? String(amountStepEffectiveNum) : (amountStepRow?.balance || '0')))
-      : formatTokenAmount((customTokenAmount ? String(amountStepEffectiveNum) : (amountStepRow?.balance || '0'))));
+      ? formatIntegerAmount((customTokenAmount || amountStepRow?.balance || '0'))
+      : formatTokenAmount((customTokenAmount || amountStepRow?.balance || '0')));
   const amountStepInputMode = amountStepKind === KIND_ERC1155 ? 'numeric' : 'decimal';
   const amountStepMaxInput = (() => {
     if (!(Number.isFinite(amountStepOwnedBal) && amountStepOwnedBal > 0)) return '';
     if (amountStepKind === KIND_ERC721) return '1';
-    if (!amountStepFeeApplies) return String(amountStepOwnedBal);
-    const bps = Number(protocolFeeBps || 0);
-    if (amountStepKind === KIND_ERC1155) {
-      const denom = BigInt(10000 + bps);
-      const bal = BigInt(Math.max(0, Math.floor(amountStepOwnedBal)));
-      return String((bal * 10000n) / denom);
-    }
-    const v = amountStepOwnedBal / (1 + (bps / 10000));
-    return String(v);
+    return String(amountStepOwnedBal);
   })();
 
   const bothApproved = Boolean(approved.signer && approved.sender);
@@ -1602,6 +1601,14 @@ export default function LiveMakerClient({
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>
+          {feeLoading ? (
+            <div className="rs-loading-wrap" style={{ width: 'min(320px, 86vw)' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
+                <div className="rs-loading-label">checking protocol fee</div>
+              </div>
+            </div>
+          ) : null}
           <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.65 }}>{`You: ${myFlowRole} · Peer: ${peerFlowRole}`}</div>
         </div>
 
@@ -1717,7 +1724,7 @@ export default function LiveMakerClient({
                           </div>
                         </div>
                       ) : null}
-                      {amountStepFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
+                      <div style={{ color: '#fff', fontSize: 12, textAlign: 'center', opacity: 0.85 }}>fees calculated after selection</div>
                       <input
                         className="rs-amount-input"
                         style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}

@@ -399,7 +399,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         setTradeToast(`${fromName} accepted your trade request`);
         const roomId = String(payload?.roomId || '').trim();
         if (roomId) {
-          router.push(`/maker/live/${encodeURIComponent(roomId)}?role=signer&channel=${encodeURIComponent(worldName)}`);
+          const senderPlayerId = String(payload?.fromPlayerId || '').trim();
+          const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+          const senderSessionId = String(payload?.fromSessionId || '').trim();
+          const qs = new URLSearchParams({
+            role: 'signer',
+            channel: worldName,
+            ...(senderPlayerId ? { senderPlayerId } : {}),
+            ...(senderFname ? { senderFname } : {}),
+            ...(senderSessionId ? { senderSessionId } : {}),
+          });
+          router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
         }
       }
       if (decision === 'decline') {
@@ -1305,11 +1315,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       if (roomId) {
         const signerPlayerId = String(invite.fromPlayerId || '').trim();
         const signerFname = String(invite.fromFname || '').replace(/^@/, '').trim();
+        const signerSessionId = String(invite.fromSessionId || '').trim();
         const qs = new URLSearchParams({
           role: 'sender',
           channel: worldName,
           ...(signerPlayerId ? { signerPlayerId } : {}),
           ...(signerFname ? { signerFname } : {}),
+          ...(signerSessionId ? { signerSessionId } : {}),
         });
         router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
       }
@@ -1719,8 +1731,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               padding: 14,
             }}
           >
-            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 12 }}>
+            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 6 }}>
               {`${incomingTradeInvite.fromFname || incomingTradeInvite.fromPlayerId || 'A player'} wishes to trade`}
+            </div>
+            <div style={{ color: '#f6e3ad', opacity: 0.85, fontSize: 13, marginBottom: 12 }}>
+              {`auto-declines in ${Math.max(0, Math.ceil((Number(incomingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s`}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <button className="rs-btn rs-btn-positive" onClick={() => onRespondTradeInvite('accept')}>
