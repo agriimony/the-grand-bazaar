@@ -425,6 +425,7 @@ export default function LiveMakerClient({
   const [livePhase, setLivePhase] = useState('negotiate'); // negotiate|await_signer|await_sender|swapping|success
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
+  const [successCloseAt, setSuccessCloseAt] = useState(0);
 
   const debugLog = (...args) => {
     try {
@@ -479,6 +480,19 @@ export default function LiveMakerClient({
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (livePhase !== 'success') {
+      setSuccessCloseAt(0);
+      return;
+    }
+    const closeAt = Date.now() + 8000;
+    setSuccessCloseAt(closeAt);
+    const t = setTimeout(() => {
+      router.push(`/${initialChannel || 'worlds'}`);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [livePhase, router, initialChannel]);
 
   useEffect(() => {
     let dead = false;
@@ -1762,6 +1776,7 @@ export default function LiveMakerClient({
           ) : (
             <div className="rs-order-success" style={{ width: 'min(420px, 92vw)', margin: '0 auto' }}>
               <div>Swap success</div>
+              <div style={{ fontSize: 14 }}>{`Returning to world in ${Math.max(0, Math.ceil((successCloseAt - nowMs) / 1000))}s`}</div>
               {swapTxHash ? <a href={`https://basescan.org/tx/${swapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a> : null}
             </div>
           )}

@@ -122,6 +122,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const nonTouchInputRef = useRef(false);
   const playerCellRef = useRef(null);
   const [remotePlayers, setRemotePlayers] = useState({});
+  const [tradePlaceholders, setTradePlaceholders] = useState({});
   const [incomingTradeInvite, setIncomingTradeInvite] = useState(null);
   const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
@@ -352,6 +353,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           updatedAt: Number(payload?.ts || Date.now()),
         },
       }));
+      setTradePlaceholders((prev) => {
+        if (!prev[sessionId]) return prev;
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
     };
 
     channel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
@@ -389,6 +396,29 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       });
     });
 
+    channel.on('broadcast', { event: 'trade_placeholder' }, ({ payload }) => {
+      const sessionId = String(payload?.sessionId || '').trim();
+      if (!sessionId || sessionId === playerIdentity.sessionId) return;
+      if (String(payload?.world || '') !== worldName) return;
+      const x = Number(payload?.x);
+      const y = Number(payload?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      setTradePlaceholders((prev) => ({
+        ...prev,
+        [sessionId]: {
+          sessionId,
+          playerId: String(payload?.playerId || ''),
+          fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+          pfp: String(payload?.pfp || '').trim(),
+          x,
+          y,
+          updatedAt: Number(payload?.ts || Date.now()),
+          expiresAt: Number(payload?.expiresAt || (Date.now() + 10 * 60 * 1000)),
+          trading: true,
+        },
+      }));
+    });
+
     channel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
       const toSessionId = String(payload?.toSessionId || '').trim();
       if (toSessionId !== playerIdentity.sessionId) return;
@@ -399,6 +429,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         setTradeToast(`${fromName} accepted your trade request`);
         const roomId = String(payload?.roomId || '').trim();
         if (roomId) {
+          const localCell = playerCellRef.current;
+          if (localCell) {
+            channel.send({
+              type: 'broadcast',
+              event: 'trade_placeholder',
+              payload: {
+                world: worldName,
+                roomId,
+                sessionId: playerIdentity.sessionId,
+                playerId: playerIdentity.playerId,
+                fname: localFname,
+                pfp: localPfp,
+                x: localCell.x,
+                y: localCell.y,
+                ts: Date.now(),
+                expiresAt: Date.now() + 10 * 60 * 1000,
+              },
+            });
+          }
           const senderPlayerId = String(payload?.fromPlayerId || '').trim();
           const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
           const senderSessionId = String(payload?.fromSessionId || '').trim();
@@ -456,6 +505,19 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }
         return dirty ? next : prev;
       });
+      setTradePlaceholders((prev) => {
+        let dirty = false;
+        const now = Date.now();
+        const next = { ...prev };
+        for (const [sid, p] of Object.entries(prev)) {
+          const exp = Number(p?.expiresAt || 0);
+          if ((exp && now > exp) || Number(p?.updatedAt || 0) < now - (15 * 60 * 1000)) {
+            delete next[sid];
+            dirty = true;
+          }
+        }
+        return dirty ? next : prev;
+      });
     }, 10_000);
 
     const heartbeat = setInterval(() => {
@@ -497,6 +559,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       channelRef.current = null;
       supabaseRef.current = null;
       setRemotePlayers({});
+      setTradePlaceholders({});
     };
   }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router]);
 
@@ -923,7 +986,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const here = playerCell;
     if (!here) return out;
     const radius = 8;
-    for (const p of Object.values(remotePlayers || {})) {
+    const all = [
+      ...Object.values(remotePlayers || {}),
+      ...Object.values(tradePlaceholders || {}),
+    ];
+    for (const p of all) {
       const x = Number(p?.x);
       const y = Number(p?.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
@@ -933,7 +1000,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       out.get(k).push(p);
     }
     return out;
-  }, [remotePlayers, playerCell]);
+  }, [remotePlayers, tradePlaceholders, playerCell]);
 
   const openNpcMenu = (e, npc) => {
     e.preventDefault();
@@ -1313,6 +1380,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setTradeToast(`accepted trade with ${target || 'player'}`);
       const roomId = String(invite.roomId || '').trim();
       if (roomId) {
+        const localCell = playerCellRef.current;
+        if (localCell) {
+          ch.send({
+            type: 'broadcast',
+            event: 'trade_placeholder',
+            payload: {
+              world: worldName,
+              roomId,
+              sessionId: playerIdentity.sessionId,
+              playerId: playerIdentity.playerId,
+              fname: localFname,
+              pfp: localPfp,
+              x: localCell.x,
+              y: localCell.y,
+              ts: Date.now(),
+              expiresAt: Date.now() + 10 * 60 * 1000,
+            },
+          });
+        }
         const signerPlayerId = String(invite.fromPlayerId || '').trim();
         const signerFname = String(invite.fromFname || '').replace(/^@/, '').trim();
         const signerSessionId = String(invite.fromSessionId || '').trim();
@@ -1510,6 +1596,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 border: 'none',
                 padding: 0,
                 cursor: 'pointer',
+                position: 'relative',
               }}
             >
               {String(primaryRemote?.pfp || '').trim() ? (
@@ -1522,6 +1609,22 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               ) : (
                 <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
               )}
+              {primaryRemote?.trading ? (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontSize: 16,
+                    filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.9))',
+                    pointerEvents: 'none',
+                  }}
+                  title="Trading"
+                >
+                  💰
+                </span>
+              ) : null}
             </button>
           ) : null}
           {isPlayer ? (
