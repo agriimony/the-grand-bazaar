@@ -2972,7 +2972,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     dbg(`maker selector open panel=${panel} wallet=${wallet || 'none'} publicCounterparty=${isPublicTakerPanel}`);
 
     const cacheKey = `gbz:zapper:${normalizeAddr(wallet)}`;
-    const cacheTtlMs = 15 * 60 * 1000;
+    const cacheTtlMs = 24 * 60 * 60 * 1000;
 
     try {
       if (isPublicTakerPanel) {

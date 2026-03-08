@@ -705,7 +705,7 @@ export default function LiveMakerClient({
     setInventoryError('');
 
     const cacheKey = `gbz:zapper:${String(owner).toLowerCase()}`;
-    const cacheTtlMs = 15 * 60 * 1000;
+    const cacheTtlMs = 24 * 60 * 60 * 1000;
 
     try {
       if (typeof window !== 'undefined') {
@@ -1264,6 +1264,7 @@ export default function LiveMakerClient({
   }, [signedOrderState, roomId]);
 
   const onApprove = async () => {
+    setStatus('');
     debugLog('approve:start', { bothDone, signerInsufficient, senderInsufficient, approvalBusy, myRole });
     if (!bothDone) return;
     if (signerInsufficient || senderInsufficient) return;
@@ -1415,6 +1416,7 @@ export default function LiveMakerClient({
   };
 
   const onSignerSign = async () => {
+    setStatus('');
     debugLog('sign:start', { myRole, bothApproved });
     if (myRole !== 'signer') return;
     if (!bothApproved) return;
@@ -1529,6 +1531,7 @@ export default function LiveMakerClient({
   };
 
   const onSenderSwap = async () => {
+    setStatus('');
     debugLog('swap:start', { myRole, hasSignedOrder: Boolean(signedOrderState?.payload) });
     if (myRole !== 'sender') return;
     if (!signedOrderState?.payload) return;
@@ -1611,9 +1614,11 @@ export default function LiveMakerClient({
   };
 
   const onDecline = async () => {
+    setStatus('');
     const ch = channelRef.current;
     if (!ch) return;
 
+    let revokeOk = true;
     try {
       if (localApproved) {
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -1624,16 +1629,26 @@ export default function LiveMakerClient({
         const tokenAddress = String(own?.token || '').split(':')[0];
 
         if (ownKind === KIND_ERC20) {
-          const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-          const tx = await erc20.approve(swapContract, 0n);
-          await tx.wait();
+          if (isEthSentinelAddr(tokenAddress)) {
+            revokeOk = true;
+          } else {
+            const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+            const tx = await erc20.approve(swapContract, 0n);
+            await tx.wait();
+          }
         } else if (ownKind === KIND_ERC1155) {
           const erc1155 = new ethers.Contract(tokenAddress, ERC1155_ABI, signer);
           const tx = await erc1155.setApprovalForAll(swapContract, false);
           await tx.wait();
         }
       }
-    } catch {}
+    } catch (e) {
+      revokeOk = false;
+      setStatus(`decline revoke failed: ${e?.message || 'unknown'}`);
+      debugLog('decline:revoke_failed', { myRole, error: e?.message || 'unknown' });
+    }
+
+    if (!revokeOk) return;
 
     setApproved((prev) => ({ ...prev, [myRole]: false }));
     setApprovedHash((prev) => ({ ...prev, [myRole]: '' }));
@@ -1720,9 +1735,9 @@ export default function LiveMakerClient({
               <div className="rs-loading-track"><div className="rs-loading-fill" /><div className="rs-loading-label">swapping...</div></div>
             </div>
           ) : (
-            <div className="rs-btn-stack" style={{ width: 'min(420px, 92vw)' }}>
-              <div className="rs-btn rs-btn-positive" style={{ cursor: 'default' }}>Swap success</div>
-              {swapTxHash ? <a className="rs-btn" href={`https://basescan.org/tx/${swapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a> : null}
+            <div className="rs-order-success" style={{ width: 'min(420px, 92vw)', margin: '0 auto' }}>
+              <div>Swap success</div>
+              {swapTxHash ? <a href={`https://basescan.org/tx/${swapTxHash}`} target="_blank" rel="noreferrer">View on BaseScan</a> : null}
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75 }}>{status}</div>

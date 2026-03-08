@@ -447,6 +447,22 @@ html, body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  align-items: center;
+  justify-items: center;
+}
+
+.rs-btn-stack > .rs-btn,
+.rs-btn-stack > a.rs-btn,
+.rs-btn-stack > div.rs-btn {
+  width: 100%;
+}
+
+.rs-btn-stack > .rs-btn:only-child,
+.rs-btn-stack > a.rs-btn:only-child,
+.rs-btn-stack > div.rs-btn:only-child {
+  grid-column: 1 / -1;
+  width: min(260px, 100%);
+  justify-self: center;
 }
 
 .rs-loading-wrap {
