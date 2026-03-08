@@ -33,6 +33,12 @@ function createRoomId() {
   return `room_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
+function shortAddr(v = '') {
+  const s = String(v || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(s)) return s;
+  return `${s.slice(0, 6)}...${s.slice(-4)}`;
+}
+
 function noise2D(x, y, seed = 'world-noise') {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
@@ -1835,7 +1841,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             }}
           >
             <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 6 }}>
-              {`${incomingTradeInvite.fromFname || incomingTradeInvite.fromPlayerId || 'A player'} wishes to trade`}
+              {`${incomingTradeInvite.fromFname || shortAddr(incomingTradeInvite.fromPlayerId) || 'A player'} wishes to trade`}
             </div>
             <div style={{ color: '#f6e3ad', opacity: 0.85, fontSize: 13, marginBottom: 12 }}>
               {`auto-declines in ${Math.max(0, Math.ceil((Number(incomingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s`}

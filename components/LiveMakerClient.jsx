@@ -1649,6 +1649,11 @@ export default function LiveMakerClient({
     }
   };
 
+  const onAcknowledgeChangedOffer = () => {
+    setStatus('');
+    setPeerSnapshotAtApprove(peerSelectionHash);
+  };
+
   const onDecline = async () => {
     setStatus('');
     const ch = channelRef.current;
@@ -1717,9 +1722,7 @@ export default function LiveMakerClient({
           editable={topEditable}
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
-          onLockedTileClick={() => {
-            if (peerChangedTop) setPeerSnapshotAtApprove(peerSelectionHash);
-          }}
+          onLockedTileClick={() => {}}
           feeText={topFeeText}
           footer={topFooter}
           footerTone={topInsufficient || /not accepted/i.test(topFooter) ? 'bad' : 'ok'}
@@ -1729,16 +1732,30 @@ export default function LiveMakerClient({
         <div className="rs-center" style={{ display: 'grid', gap: 10, justifyItems: 'center' }}>
           {!bothDone || livePhase === 'negotiate' ? (
             bothDone ? (
-              <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
-                <button
-                  className="rs-btn rs-btn-positive"
-                  onClick={myInsufficient ? onUseMax : onApprove}
-                  disabled={approvalBusy || (!myInsufficient && (signerInsufficient || senderInsufficient)) || (myInsufficient && !String(mySelection?.balance || '').trim())}
-                >
-                  {approvalBusy ? 'Approving...' : (myInsufficient ? 'Use max' : 'Approve')}
-                </button>
-                <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
-              </div>
+              (localApproved && peerChangedAfterMyApprove) ? (
+                <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                  <button className="rs-btn rs-btn-positive" onClick={onAcknowledgeChangedOffer}>Approve</button>
+                  <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+                </div>
+              ) : (myRole === 'signer' && localApproved && !bothApproved) ? (
+                <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+                  <div className="rs-loading-track">
+                    <div className="rs-loading-fill" />
+                    <div className="rs-loading-label">{`waiting for ${otherDisplay}`}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                  <button
+                    className="rs-btn rs-btn-positive"
+                    onClick={myInsufficient ? onUseMax : onApprove}
+                    disabled={approvalBusy || (!myInsufficient && (signerInsufficient || senderInsufficient)) || (myInsufficient && !String(mySelection?.balance || '').trim())}
+                  >
+                    {approvalBusy ? 'Approving...' : (myInsufficient ? 'Use max' : 'Approve')}
+                  </button>
+                  <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+                </div>
+              )
             ) : (
               <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
                 <div className="rs-loading-track">
@@ -1798,9 +1815,7 @@ export default function LiveMakerClient({
           editable={bottomEditable}
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
-          onLockedTileClick={() => {
-            if (peerChangedBottom) setPeerSnapshotAtApprove(peerSelectionHash);
-          }}
+          onLockedTileClick={() => {}}
           feeText={bottomFeeText}
           footer={bottomFooter}
           footerTone={bottomInsufficient || /not accepted/i.test(bottomFooter) ? 'bad' : 'ok'}
