@@ -235,34 +235,33 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
             type="button"
             onClick={() => editable && onOpenInventory?.()}
             disabled={!editable}
-            className={`rs-token-wrap ${editable ? 'rs-token-editable' : ''}`}
+            className={editable ? 'rs-token-editable' : ''}
             style={{
-              width: 76,
-              height: 76,
-              border: '2px solid #3b3227',
-              background: 'rgba(0,0,0,0.2)',
+              width: 92,
+              height: 92,
+              border: 0,
+              background: 'transparent',
               display: 'grid',
               placeItems: 'center',
               color: '#f4d77c',
               fontSize: 36,
               flex: '0 0 auto',
+              padding: 0,
               cursor: editable ? 'pointer' : 'default',
             }}
           >
             {token ? (
               <TokenTile
                 amountNode={renderAmountColored(amountDisplay)}
-                amountClassName="rs-selected-token-amount"
                 symbol={symbolDisplay}
-                symbolClassName="rs-selected-token-symbol"
                 imgUrl={imgUrl}
                 tokenAddress={String(token).split(':')[0]}
                 tokenKind={selection?.kind}
                 tokenId={tokenId}
                 tokenIdClassName="rs-selected-token-tokenid"
                 wrapClassName=""
-                iconClassName="rs-token-art rs-selected-token-icon"
-                fallbackClassName="rs-token-art rs-token-fallback rs-selected-token-icon"
+                iconClassName="rs-token-art"
+                fallbackClassName="rs-token-art rs-token-fallback"
                 disableLink
                 insufficient={insufficient}
               />
@@ -862,10 +861,12 @@ export default function LiveMakerClient({
   const feeLabel = `incl. ${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
 
   const parseNum = (v) => Number(String(v || '0').trim() || 0);
-  const fmtNum = (n) => {
+  const fmtNum = (n, kind = KIND_ERC20) => {
     const x = Number(n || 0);
     if (!Number.isFinite(x) || x <= 0) return '0';
-    return x.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    return String(kind || '').toLowerCase() === KIND_ERC1155
+      ? formatIntegerAmount(String(x))
+      : formatTokenAmount(String(x));
   };
   const signerAmountNum = parseNum(tradeState.signerSelection.amount);
   const senderAmountNum = parseNum(tradeState.senderSelection.amount);
@@ -910,8 +911,8 @@ export default function LiveMakerClient({
   const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
   const senderPanelAmountForViewer = role === 'signer' ? signerIncoming : senderOutgoing;
 
-  const topDisplayAmount = fmtNum(signerPanelAmountForViewer);
-  const bottomDisplayAmount = fmtNum(senderPanelAmountForViewer);
+  const topDisplayAmount = fmtNum(signerPanelAmountForViewer, topSelection?.kind || KIND_ERC20);
+  const bottomDisplayAmount = fmtNum(senderPanelAmountForViewer, bottomSelection?.kind || KIND_ERC20);
 
   const topDisplaySelection = {
     ...topSelection,
@@ -923,11 +924,11 @@ export default function LiveMakerClient({
   };
 
   const topFlowFooter = role === 'signer'
-    ? (bothDone ? `You send ${fmtNum(signerOutgoing)}` : '')
-    : (bothDone ? `You receive ${fmtNum(senderIncoming)}` : '');
+    ? (bothDone ? `You send ${fmtNum(signerOutgoing, tradeState.signerSelection?.kind || KIND_ERC20)}` : '')
+    : (bothDone ? `You receive ${fmtNum(senderIncoming, tradeState.senderSelection?.kind || KIND_ERC20)}` : '');
   const bottomFlowFooter = role === 'signer'
-    ? (bothDone ? `You receive ${fmtNum(signerIncoming)}` : '')
-    : (bothDone ? `You send ${fmtNum(senderOutgoing)}` : '');
+    ? (bothDone ? `You receive ${fmtNum(signerIncoming, tradeState.signerSelection?.kind || KIND_ERC20)}` : '')
+    : (bothDone ? `You send ${fmtNum(senderOutgoing, tradeState.senderSelection?.kind || KIND_ERC20)}` : '');
 
   const acceptedTextFor = (panelRole) => {
     if (!bothDone) return '';
@@ -1425,18 +1426,20 @@ export default function LiveMakerClient({
                       {customTokenPreview ? (
                         <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                           <TokenTile
-                            amountNode={renderAmountColored(formatTokenAmount(customTokenPreview?.balance || '0'))}
-                            amountClassName="rs-selected-token-amount"
+                            amountNode={renderAmountColored(
+                              String(customTokenPreview?.kind || '').toLowerCase() === KIND_ERC1155
+                                ? formatIntegerAmount((customTokenAmount || customTokenPreview?.balance || '0'))
+                                : formatTokenAmount((customTokenAmount || customTokenPreview?.balance || '0'))
+                            )}
                             symbol={customTokenPreview?.symbol || 'TOKEN'}
-                            symbolClassName="rs-selected-token-symbol"
                             imgUrl={customTokenPreview?.imgUrl}
                             tokenAddress={String(customTokenPreview?.token || '').split(':')[0]}
                             tokenKind={customTokenPreview?.kind || '0x20'}
                             tokenId={customTokenPreview?.tokenId || ''}
                             tokenIdClassName="rs-selected-token-tokenid"
                             wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
-                            iconClassName="rs-token-art rs-selected-token-icon"
-                            fallbackClassName="rs-selected-token-icon rs-token-fallback"
+                            iconClassName="rs-token-art"
+                            fallbackClassName="rs-token-art rs-token-fallback"
                             disableLink
                           />
                         </div>
@@ -1512,6 +1515,24 @@ export default function LiveMakerClient({
                         setCustomTokenError('');
                       }}>← Back</button>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
+                      {customTokenPreview ? (
+                        <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
+                          <TokenTile
+                            amountNode={renderAmountColored(formatIntegerAmount(customTokenAmount || customTokenPreview?.balance || '0'))}
+                            symbol={customTokenPreview?.symbol || 'NFT'}
+                            imgUrl={customTokenPreview?.imgUrl}
+                            tokenAddress={String(customTokenPreview?.token || '').split(':')[0]}
+                            tokenKind={customTokenPreview?.kind || KIND_ERC1155}
+                            tokenId={customTokenPreview?.tokenId || ''}
+                            tokenIdClassName="rs-selected-token-tokenid"
+                            wrapClassName="rs-token-cell-wrap rs-token-center-wrap"
+                            iconClassName="rs-token-art"
+                            fallbackClassName="rs-token-art rs-token-fallback"
+                            insufficient={Number(customTokenAmount || 0) > Number(customTokenPreview?.balance || 0)}
+                            disableLink
+                          />
+                        </div>
+                      ) : null}
                       <input
                         className="rs-amount-input"
                         style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
