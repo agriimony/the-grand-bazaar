@@ -174,7 +174,24 @@ const ERC20_ABI = [
   'function decimals() view returns (uint8)',
 ];
 const ERC721_ABI = ['function approve(address to,uint256 tokenId)'];
+const ERC721_READ_ABI = [
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function symbol() view returns (string)',
+  'function name() view returns (string)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+];
 const ERC1155_ABI = ['function setApprovalForAll(address operator,bool approved)'];
+const ERC1155_READ_ABI = [
+  'function balanceOf(address account,uint256 id) view returns (uint256)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+];
+const ERC20_READ_ABI = [
+  'function balanceOf(address account) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function name() view returns (string)',
+];
+const ERC165_ABI = ['function supportsInterface(bytes4 interfaceId) view returns (bool)'];
 const WETH_ABI = ['function deposit() payable'];
 
 const SWAP_ABI = [
@@ -708,7 +725,18 @@ export default function LiveMakerClient({
     setInventoryOpen(false);
   };
 
-  const applyCustomToken = () => {
+  const detectCustomKind = async (token, provider) => {
+    try {
+      const c = new ethers.Contract(token, ERC165_ABI, provider);
+      const is1155 = await c.supportsInterface(KIND_ERC1155).catch(() => false);
+      if (is1155) return KIND_ERC1155;
+      const is721 = await c.supportsInterface(KIND_ERC721).catch(() => false);
+      if (is721) return KIND_ERC721;
+    } catch {}
+    return KIND_ERC20;
+  };
+
+  const applyCustomToken = async () => {
     const token = String(customTokenValue || '').trim();
     if (!token) {
       setCustomTokenError('enter a token address');
@@ -742,16 +770,70 @@ export default function LiveMakerClient({
     const coll = inventoryNftCollections.find((c) => String(c?.collectionAddress || '').toLowerCase() === token.toLowerCase());
     if (coll) {
       setInventoryView('nfts');
-      setSelectedNftCollection(coll);
+      setSelectedNftCollection({ ...coll, kind: String(coll?.kind || coll?.nfts?.[0]?.kind || KIND_ERC721).toLowerCase() });
       setCustomTokenStep('custom-id');
       setCustomTokenError('');
       return;
     }
 
-    setCustomTokenError('token not found in your wallet inventory');
+    const owner = String(identity.playerId || '').trim();
+    if (!isAddress(owner)) {
+      setCustomTokenError('wallet identity unavailable');
+      return;
+    }
+
+    try {
+      const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+      const kind = await detectCustomKind(token, provider);
+
+      if (kind === KIND_ERC20) {
+        const c = new ethers.Contract(token, ERC20_READ_ABI, provider);
+        const [balRaw, decimalsRaw, symbolRaw, nameRaw] = await Promise.all([
+          c.balanceOf(owner).catch(() => 0n),
+          c.decimals().catch(() => 18),
+          c.symbol().catch(() => shortAddr(token)),
+          c.name().catch(() => ''),
+        ]);
+        const decimals = Number(decimalsRaw || 18);
+        const balance = ethers.formatUnits(BigInt(balRaw || 0n), Number.isFinite(decimals) ? decimals : 18);
+        if (!(Number(balance || 0) > 0)) {
+          setCustomTokenError('no balance for this token in your wallet');
+          return;
+        }
+        setCustomTokenPreview({
+          token,
+          amount: balance,
+          imgUrl: fallbackTokenArt(token, symbolRaw),
+          symbol: String(symbolRaw || shortAddr(token)),
+          tokenId: '',
+          name: String(nameRaw || symbolRaw || token),
+          kind: KIND_ERC20,
+          balance,
+          decimals: String(decimals),
+        });
+        setCustomTokenAmount('');
+        setCustomTokenError('');
+        setAmountStepBack('custom');
+        setCustomTokenStep('amount');
+        return;
+      }
+
+      setInventoryView('nfts');
+      setSelectedNftCollection({
+        collectionAddress: token,
+        collectionName: shortAddr(token),
+        symbol: 'NFT',
+        kind,
+        nfts: [],
+      });
+      setCustomTokenStep('custom-id');
+      setCustomTokenError('');
+    } catch {
+      setCustomTokenError('failed to resolve token contract');
+    }
   };
 
-  const applyCustomTokenId = () => {
+  const applyCustomTokenId = async () => {
     const tokenId = String(customTokenValue || '').trim();
     if (!selectedNftCollection) {
       setCustomTokenError('select an NFT collection first');
@@ -761,11 +843,60 @@ export default function LiveMakerClient({
       setCustomTokenError('enter token id');
       return;
     }
-    const row = (selectedNftCollection?.nfts || []).find((n) => String(n?.tokenId || '') === tokenId);
+    const collectionAddr = String(selectedNftCollection?.collectionAddress || '').trim();
+    const localRow = (selectedNftCollection?.nfts || []).find((n) => String(n?.tokenId || '') === tokenId) || null;
+    let row = localRow;
+
+    if (!row && isAddress(collectionAddr) && isAddress(String(identity.playerId || '').trim())) {
+      try {
+        const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+        const owner = String(identity.playerId || '').trim();
+        const kind = String(selectedNftCollection?.kind || await detectCustomKind(collectionAddr, provider)).toLowerCase();
+        if (kind === KIND_ERC721) {
+          const c721 = new ethers.Contract(collectionAddr, ERC721_READ_ABI, provider);
+          const ownerOf = String(await c721.ownerOf(BigInt(tokenId))).toLowerCase();
+          if (ownerOf !== owner.toLowerCase()) {
+            setCustomTokenError('you do not own this token id');
+            return;
+          }
+          const sym = await c721.symbol().catch(() => selectedNftCollection?.symbol || 'NFT');
+          row = {
+            token: collectionAddr,
+            tokenId,
+            balance: '1',
+            kind: KIND_ERC721,
+            symbol: String(sym || 'NFT'),
+            name: String(sym || 'NFT'),
+            imgUrl: '',
+          };
+        } else {
+          const c1155 = new ethers.Contract(collectionAddr, ERC1155_READ_ABI, provider);
+          const bal = await c1155.balanceOf(owner, BigInt(tokenId)).catch(() => 0n);
+          if (!(BigInt(bal || 0n) > 0n)) {
+            setCustomTokenError('you do not own this token id');
+            return;
+          }
+          row = {
+            token: collectionAddr,
+            tokenId,
+            balance: String(bal),
+            kind: KIND_ERC1155,
+            symbol: String(selectedNftCollection?.symbol || 'NFT'),
+            name: String(selectedNftCollection?.symbol || 'NFT'),
+            imgUrl: '',
+          };
+        }
+      } catch {
+        setCustomTokenError('token id not found in your holdings');
+        return;
+      }
+    }
+
     if (!row) {
       setCustomTokenError('token id not found in your holdings');
       return;
     }
+
     if (Number(row?.balance || 0) <= 0) {
       setCustomTokenError('you do not own this token id');
       return;
@@ -974,14 +1105,39 @@ export default function LiveMakerClient({
   const amountStepKind = String(amountStepRow?.kind || KIND_ERC20).toLowerCase();
   const amountStepOwnedBal = Number(amountStepRow?.balance || 0);
   const amountStepRaw = amountStepKind === KIND_ERC721 ? '1' : String(customTokenAmount || '').trim();
-  const amountStepOver = Number(amountStepRaw || 0) > amountStepOwnedBal;
+  const amountStepBaseNum = Number(amountStepRaw || 0);
+  const amountStepFeeApplies = bothDone
+    && ((feeInfo.feeOnSignerSide && myRole === 'signer') || (!feeInfo.feeOnSignerSide && myRole === 'sender'));
+  const amountStepEffectiveNum = (() => {
+    if (!(Number.isFinite(amountStepBaseNum) && amountStepBaseNum > 0)) return 0;
+    if (!amountStepFeeApplies) return amountStepBaseNum;
+    if (amountStepKind === KIND_ERC1155) {
+      const base = BigInt(Math.max(0, Math.floor(amountStepBaseNum)));
+      return Number(base + ((base * BigInt(protocolFeeBps || 0)) / 10000n));
+    }
+    return amountStepBaseNum * (1 + Number(protocolFeeBps || 0) / 10000);
+  })();
+  const amountStepOver = amountStepEffectiveNum > amountStepOwnedBal;
   const amountStepIsEthLike = isEthSentinelAddr(String(amountStepRow?.token || '').split(':')[0]) || String(amountStepRow?.symbol || '').toUpperCase() === 'ETH';
   const amountStepDisplay = amountStepKind === KIND_ERC721
     ? formatTokenIdLabel(amountStepRow?.tokenId || '0')
     : (amountStepKind === KIND_ERC1155
-      ? formatIntegerAmount((customTokenAmount || amountStepRow?.balance || '0'))
-      : formatTokenAmount((customTokenAmount || amountStepRow?.balance || '0')));
+      ? formatIntegerAmount((customTokenAmount ? String(amountStepEffectiveNum) : (amountStepRow?.balance || '0')))
+      : formatTokenAmount((customTokenAmount ? String(amountStepEffectiveNum) : (amountStepRow?.balance || '0'))));
   const amountStepInputMode = amountStepKind === KIND_ERC1155 ? 'numeric' : 'decimal';
+  const amountStepMaxInput = (() => {
+    if (!(Number.isFinite(amountStepOwnedBal) && amountStepOwnedBal > 0)) return '';
+    if (amountStepKind === KIND_ERC721) return '1';
+    if (!amountStepFeeApplies) return String(amountStepOwnedBal);
+    const bps = Number(protocolFeeBps || 0);
+    if (amountStepKind === KIND_ERC1155) {
+      const denom = BigInt(10000 + bps);
+      const bal = BigInt(Math.max(0, Math.floor(amountStepOwnedBal)));
+      return String((bal * 10000n) / denom);
+    }
+    const v = amountStepOwnedBal / (1 + (bps / 10000));
+    return String(v);
+  })();
 
   const bothApproved = Boolean(approved.signer && approved.sender);
 
@@ -1517,6 +1673,7 @@ export default function LiveMakerClient({
                           />
                         </div>
                       ) : null}
+                      {amountStepFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
                       <input
                         className="rs-amount-input"
                         style={{ width: '100%', margin: '0 0 8px 0', fontSize: 16, textAlign: 'left' }}
@@ -1551,7 +1708,7 @@ export default function LiveMakerClient({
                               return;
                             }
                             if (amountStepOver) {
-                              setCustomTokenAmount(String(row?.balance || ''));
+                              setCustomTokenAmount(String(amountStepMaxInput || row?.balance || ''));
                               setCustomTokenError('');
                               return;
                             }
