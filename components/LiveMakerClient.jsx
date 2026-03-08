@@ -23,6 +23,12 @@ function shortErr(v = '', max = 140) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
+function shortPlayer(v = '', max = 14) {
+  const s = shortAddr(String(v || '').trim());
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
 function formatTokenAmountParts(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return { number: String(value), suffix: '' };
@@ -601,6 +607,14 @@ export default function LiveMakerClient({
       setLivePhase('success');
     });
 
+    ch.on('broadcast', { event: 'room_close' }, ({ payload }) => {
+      const reason = String(payload?.reason || '').trim().toLowerCase();
+      debugLog('event:room_close', { reason, byRole: payload?.byRole || '' });
+      if (reason === 'decline') {
+        router.push(`/${initialChannel || 'worlds'}`);
+      }
+    });
+
     ch.subscribe((s) => {
       debugLog('channel_state', s);
       if (s === 'SUBSCRIBED') {
@@ -1073,7 +1087,7 @@ export default function LiveMakerClient({
   const initialPeerDisplay = String(initialPeerFname || initialPeerPlayerId || initialPeerSessionId || inviteSignerDisplay || '').trim();
   const peerWalletFallback = String(otherPeer?.playerId || initialPeerPlayerId || '').trim();
   const rawOtherDisplay = String(otherPeer?.fname || otherPeer?.playerId || otherPeer?.sessionId || initialPeerDisplay || '').trim();
-  const otherDisplay = shortAddr(rawOtherDisplay || '') || 'player';
+  const otherDisplay = shortPlayer(rawOtherDisplay || '') || 'player';
 
   const topTitle = role === 'signer' ? 'You offer' : `${otherDisplay} offers`;
   const bottomTitle = role === 'signer' ? `${otherDisplay} offers` : 'You offer';
@@ -1690,6 +1704,22 @@ export default function LiveMakerClient({
     }
 
     if (!revokeOk) return;
+
+    if (!localApproved) {
+      ch.send({
+        type: 'broadcast',
+        event: 'room_close',
+        payload: {
+          roomId,
+          byRole: myRole,
+          reason: 'decline',
+          sessionId: identity.sessionId,
+          ts: Date.now(),
+        },
+      });
+      router.push(`/${initialChannel || 'worlds'}`);
+      return;
+    }
 
     setApproved((prev) => ({ ...prev, [myRole]: false }));
     setApprovedHash((prev) => ({ ...prev, [myRole]: '' }));

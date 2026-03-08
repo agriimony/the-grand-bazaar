@@ -39,6 +39,12 @@ function shortAddr(v = '') {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
+function shortPlayer(v = '', max = 14) {
+  const s = shortAddr(String(v || '').trim());
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
 function noise2D(x, y, seed = 'world-noise') {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
@@ -1840,10 +1846,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               padding: 14,
             }}
           >
-            <div style={{ color: '#f6e3ad', fontSize: 16, marginBottom: 6 }}>
-              {`${incomingTradeInvite.fromFname || shortAddr(incomingTradeInvite.fromPlayerId) || 'A player'} wishes to trade`}
+            <div style={{ color: '#f6e3ad', fontSize: 20, marginBottom: 8, fontWeight: 800, textAlign: 'center' }}>
+              {`${shortPlayer(incomingTradeInvite.fromFname || incomingTradeInvite.fromPlayerId || 'A player')} wishes to trade`}
             </div>
-            <div style={{ color: '#f6e3ad', opacity: 0.85, fontSize: 13, marginBottom: 12 }}>
+            <div style={{ color: '#f6e3ad', opacity: 0.9, fontSize: 16, marginBottom: 14, textAlign: 'center' }}>
               {`auto-declines in ${Math.max(0, Math.ceil((Number(incomingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s`}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
