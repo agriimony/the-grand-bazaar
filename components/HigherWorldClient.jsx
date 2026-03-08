@@ -138,9 +138,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [incomingTradeInvite, setIncomingTradeInvite] = useState(null);
   const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
+  const [worldLogs, setWorldLogs] = useState([]);
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
+
+  const pushWorldLog = (text) => {
+    const label = String(text || '').trim();
+    if (!label) return;
+    const entry = { id: randomId('wlog'), text: label, ts: Date.now() };
+    setWorldLogs((prev) => [...prev.slice(-4), entry]);
+  };
 
   const supabasePublicKey = useMemo(
     () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
@@ -271,6 +279,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [tradeToast]);
 
   useEffect(() => {
+    if (!worldLogs.length) return;
+    const t = setTimeout(() => {
+      const now = Date.now();
+      setWorldLogs((prev) => prev.filter((item) => now - Number(item?.ts || 0) < 5000));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [worldLogs]);
+
+  useEffect(() => {
     try {
       if (typeof window === 'undefined') return;
       const toast = window.sessionStorage.getItem('gbz:world-toast');
@@ -353,18 +370,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const y = Number(payload?.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
 
-      setRemotePlayers((prev) => ({
-        ...prev,
-        [sessionId]: {
-          sessionId,
-          playerId: String(payload?.playerId || ''),
-          fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
-          pfp: String(payload?.pfp || '').trim(),
-          x,
-          y,
-          updatedAt: Number(payload?.ts || Date.now()),
-        },
-      }));
+      setRemotePlayers((prev) => {
+        const hadPlayer = Boolean(prev[sessionId]);
+        if (!hadPlayer) {
+          const enteredName = shortPlayer(String(payload?.fname || payload?.playerId || 'player').replace(/^@/, '').trim() || 'player');
+          pushWorldLog(`${enteredName} entered the world`);
+        }
+
+        return {
+          ...prev,
+          [sessionId]: {
+            sessionId,
+            playerId: String(payload?.playerId || ''),
+            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+            pfp: String(payload?.pfp || '').trim(),
+            x,
+            y,
+            updatedAt: Number(payload?.ts || Date.now()),
+          },
+        };
+      });
       setTradePlaceholders((prev) => {
         if (!prev[sessionId]) return prev;
         const next = { ...prev };
@@ -383,7 +408,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const sid = String(payload?.sessionId || '').trim();
       if (!sid) return;
       setRemotePlayers((prev) => {
-        if (!prev[sid]) return prev;
+        const player = prev[sid];
+        if (!player) return prev;
+        const leaveName = shortPlayer(player.fname || player.playerId || payload?.fname || payload?.playerId || 'player');
+        pushWorldLog(`${leaveName} left the world`);
         const next = { ...prev };
         delete next[sid];
         return next;
@@ -1828,6 +1856,39 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 </div>
               ))}
             </div>
+            {worldLogs.length ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  left: 8,
+                  zIndex: 7,
+                  pointerEvents: 'none',
+                  width: 'min(340px, 70%)',
+                  display: 'grid',
+                  gap: 6,
+                }}
+              >
+                {worldLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      background: 'rgba(13, 11, 8, 0.46)',
+                      border: '1px solid rgba(236,200,120,0.28)',
+                      color: '#f6e3ad',
+                      borderRadius: 6,
+                      padding: '5px 7px',
+                      fontSize: 12,
+                      lineHeight: 1.2,
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                      backdropFilter: 'blur(1px)',
+                    }}
+                  >
+                    {log.text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
       </div>
