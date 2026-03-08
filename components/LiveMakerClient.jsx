@@ -44,7 +44,28 @@ function formatTokenAmountParts(value) {
   return { number, suffix: suffixes[tier] };
 }
 
+function toSubscriptDigits(v = '') {
+  const map = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
+  return String(v).split('').map((c) => map[c] || c).join('');
+}
+
+function formatSmallWithSubscript(n) {
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  const s = abs.toFixed(12).replace(/0+$/, '');
+  const [, frac = ''] = s.split('.');
+  const m = frac.match(/^(0+)(\d+)/);
+  if (!m) return `${sign}${s}`;
+  const zeroCount = m[1].length;
+  const sig = ((m[2] || '').slice(0, 2) || '00').padEnd(2, '0');
+  return `${sign}0.0${toSubscriptDigits(String(zeroCount))}${sig}`;
+}
+
 function formatTokenAmount(value) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n !== 0 && Math.abs(n) < 0.001) {
+    return formatSmallWithSubscript(n);
+  }
   const p = formatTokenAmountParts(value);
   return `${p.number}${p.suffix}`;
 }
@@ -1655,22 +1676,45 @@ export default function LiveMakerClient({
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Enter Amount</div>
                       {amountStepRow ? (
                         <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
-                          <TokenTile
-                            amountNode={renderAmountColored(amountStepDisplay)}
-                            amountClassName="rs-token-cell-amount"
-                            symbol={amountStepRow?.symbol || 'TOKEN'}
-                            symbolClassName="rs-token-cell-symbol"
-                            imgUrl={amountStepRow?.imgUrl}
-                            tokenAddress={String(amountStepRow?.token || '').split(':')[0]}
-                            tokenKind={amountStepRow?.kind || '0x20'}
-                            tokenId={amountStepRow?.tokenId || ''}
-                            tokenIdClassName="rs-token-cell-tokenid"
-                            wrapClassName="rs-token-cell-wrap"
-                            iconClassName="rs-token-cell-icon"
-                            fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
-                            insufficient={amountStepOver}
-                            disableLink
-                          />
+                          <div className="rs-modal-wrap-row">
+                            <TokenTile
+                              amountNode={renderAmountColored(amountStepDisplay)}
+                              amountClassName="rs-token-cell-amount"
+                              symbol={amountStepRow?.symbol || 'TOKEN'}
+                              symbolClassName="rs-token-cell-symbol"
+                              imgUrl={amountStepRow?.imgUrl}
+                              tokenAddress={String(amountStepRow?.token || '').split(':')[0]}
+                              tokenKind={amountStepRow?.kind || '0x20'}
+                              tokenId={amountStepRow?.tokenId || ''}
+                              tokenIdClassName="rs-token-cell-tokenid"
+                              wrapClassName="rs-token-cell-wrap"
+                              iconClassName="rs-token-cell-icon"
+                              fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                              insufficient={amountStepOver}
+                              disableLink
+                            />
+
+                            {amountStepIsEthLike ? (
+                              <>
+                                <button type="button" className="rs-wrap-arrow" onClick={onModalWrapEth} disabled={isWrapping}>➡️</button>
+                                <div className="rs-token-wrap rs-token-cell-wrap">
+                                  <div className="rs-amount-overlay rs-token-cell-amount">{renderAmountColored(amountStepDisplay)}</div>
+                                  <img
+                                    src="/weth-icon.png"
+                                    alt="WETH"
+                                    className="rs-token-cell-icon"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const fb = e.currentTarget.nextElementSibling;
+                                      if (fb) fb.style.display = 'flex';
+                                    }}
+                                  />
+                                  <div className="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback" style={{ display: 'none' }}>WE</div>
+                                  <div className="rs-symbol-overlay rs-token-cell-symbol">WETH</div>
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
                       {amountStepFeeApplies ? <div style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>Total includes protocol fee</div> : null}
