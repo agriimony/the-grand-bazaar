@@ -17,27 +17,77 @@ function shortAddr(v = '') {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
-function formatTileAmount(v = '') {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return String(v || '0');
-  if (n === 0) return '0';
+function formatTokenAmountParts(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return { number: String(value), suffix: '' };
   const abs = Math.abs(n);
-  if (abs >= 1000) {
-    const units = ['', 'k', 'M', 'B', 'T', 'Q'];
-    let idx = 0;
-    while (idx < units.length - 1 && abs >= 1000 ** (idx + 1)) idx += 1;
-    const scaled = n / (1000 ** idx);
-    const digits = Math.abs(scaled) >= 100 ? 1 : Math.abs(scaled) >= 10 ? 2 : 3;
-    return `${scaled.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}${units[idx]}`;
+  const suffixes = ['', 'k', 'M', 'B', 'T', 'Q'];
+  let tier = 0;
+  while (tier < suffixes.length - 1 && abs >= Math.pow(1000, tier + 1)) tier += 1;
+
+  let scaled = n / Math.pow(1000, tier);
+  if (Math.abs(scaled) < 1000 && tier > 0) {
+    const downScaled = n / Math.pow(1000, tier - 1);
+    if (Math.abs(downScaled) < 10000) {
+      tier -= 1;
+      scaled = downScaled;
+    }
   }
-  if (abs < 0.001) return n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
-  return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+
+  const absScaled = Math.abs(scaled);
+  let number;
+  if (absScaled >= 1000) number = scaled.toFixed(0);
+  else if (absScaled >= 100) number = scaled.toFixed(1);
+  else if (absScaled >= 10) number = scaled.toFixed(2);
+  else number = scaled.toFixed(3);
+
+  return { number, suffix: suffixes[tier] };
 }
 
-function formatTileSymbol(v = '', max = 8) {
-  const s = String(v || '').trim();
-  if (!s) return 'TOKEN';
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+function formatTokenAmount(value) {
+  const p = formatTokenAmountParts(value);
+  return `${p.number}${p.suffix}`;
+}
+
+function formatIntegerAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value || '0');
+  const v = Math.max(0, Math.floor(n));
+  if (v < 1000) return String(v);
+  const suffixes = ['', 'k', 'M', 'B', 'T', 'Q'];
+  let tier = 0;
+  while (tier < suffixes.length - 1 && v >= Math.pow(1000, tier + 1)) tier += 1;
+  let scaled = v / Math.pow(1000, tier);
+  if (scaled < 1000 && tier > 0) {
+    const downScaled = v / Math.pow(1000, tier - 1);
+    if (downScaled < 10000) {
+      tier -= 1;
+      scaled = downScaled;
+    }
+  }
+  let decimals = 0;
+  if (scaled < 10) decimals = 3;
+  else if (scaled < 100) decimals = 2;
+  else if (scaled < 1000) decimals = 1;
+  const s = scaled.toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  return `${s}${suffixes[tier]}`;
+}
+
+function suffixClass(suffix = '') {
+  const s = (suffix || '').toLowerCase();
+  if (s === 'k') return 'amt-k';
+  if (s === 'm') return 'amt-m';
+  if (s === 'b') return 'amt-b';
+  if (s === 't') return 'amt-t';
+  if (s === 'q') return 'amt-q';
+  return 'amt-n';
+}
+
+function renderAmountColored(amountText) {
+  const m = String(amountText || '').match(/^(-?\d+(?:\.\d+)?)([kMBTQ]?)$/);
+  if (!m) return <>{amountText}</>;
+  const cls = suffixClass(m[2]);
+  return <><span className={cls}>{m[1]}</span><span className={`amt-sfx ${cls}`}>{m[2]}</span></>;
 }
 
 const CATALOG_ICON_BY_SYMBOL = {
@@ -171,15 +221,16 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
   const tokenId = String(selection?.tokenId || '');
-  const amountDisplay = formatTileAmount(amount);
-  const symbolDisplay = formatTileSymbol(symbol || (tokenId ? 'NFT' : 'TOKEN'));
+  const is1155 = String(selection?.kind || '').toLowerCase() === KIND_ERC1155;
+  const amountDisplay = is1155 ? formatIntegerAmount(amount || '0') : formatTokenAmount(amount || '0');
+  const symbolDisplay = symbol || (tokenId ? 'NFT' : 'TOKEN');
   const imgUrl = String(selection?.imgUrl || fallbackTokenArt(token, symbol) || '');
 
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{title}</div>
       <div className={`rs-box ${insufficient ? 'rs-danger' : ''}`} style={{ minHeight: 140 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: 16, gap: 12 }}>
           <button
             type="button"
             onClick={() => editable && onOpenInventory?.()}
@@ -200,18 +251,18 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, fee
           >
             {token ? (
               <TokenTile
-                amountNode={amountDisplay}
-                amountClassName="rs-token-cell-amount"
+                amountNode={renderAmountColored(amountDisplay)}
+                amountClassName="rs-selected-token-amount"
                 symbol={symbolDisplay}
-                symbolClassName="rs-token-cell-symbol"
+                symbolClassName="rs-selected-token-symbol"
                 imgUrl={imgUrl}
                 tokenAddress={String(token).split(':')[0]}
                 tokenKind={selection?.kind}
                 tokenId={tokenId}
-                tokenIdClassName="rs-token-cell-tokenid"
+                tokenIdClassName="rs-selected-token-tokenid"
                 wrapClassName=""
-                iconClassName="rs-token-cell-icon"
-                fallbackClassName="rs-token-cell-icon rs-token-fallback rs-token-cell-fallback"
+                iconClassName="rs-token-art rs-selected-token-icon"
+                fallbackClassName="rs-token-art rs-token-fallback rs-selected-token-icon"
                 disableLink
                 insufficient={insufficient}
               />
@@ -899,6 +950,7 @@ export default function LiveMakerClient({
     const rows = Array.isArray(selectedNftCollection?.nfts) ? selectedNftCollection.nfts : [];
     return rows.slice(0, 23);
   }, [inventoryView, inventoryNftSubView, inventoryNftCollections, selectedNftCollection, inventoryTokens]);
+  const showInventoryGrid = customTokenStep === 'none';
 
   const bothApproved = Boolean(approved.signer && approved.sender);
 
@@ -1333,10 +1385,12 @@ export default function LiveMakerClient({
                 <div className="rs-inline-error" style={{ width: '100%', marginTop: 12 }}>{inventoryError}</div>
               ) : (
                 <>
-                  <div className="rs-inv-toggle-row">
-                    <button className={`rs-inv-toggle ${inventoryView === 'tokens' ? 'active' : ''}`} onClick={() => { setInventoryView('tokens'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>Tokens</button>
-                    <button className={`rs-inv-toggle ${inventoryView === 'nfts' ? 'active' : ''}`} onClick={() => { setInventoryView('nfts'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>NFT</button>
-                  </div>
+                  {showInventoryGrid ? (
+                    <div className="rs-inv-toggle-row">
+                      <button className={`rs-inv-toggle ${inventoryView === 'tokens' ? 'active' : ''}`} onClick={() => { setInventoryView('tokens'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>Tokens</button>
+                      <button className={`rs-inv-toggle ${inventoryView === 'nfts' ? 'active' : ''}`} onClick={() => { setInventoryView('nfts'); setInventoryNftSubView('collections'); setSelectedNftCollection(null); setCustomTokenStep('none'); }}>NFT</button>
+                    </div>
+                  ) : null}
 
                   {inventoryView === 'tokens' && customTokenStep === 'custom' ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
@@ -1371,7 +1425,7 @@ export default function LiveMakerClient({
                       {customTokenPreview ? (
                         <div className="rs-token-center" style={{ marginTop: 6, marginBottom: 6 }}>
                           <TokenTile
-                            amountNode={customTokenPreview?.balance || '0'}
+                            amountNode={renderAmountColored(formatTokenAmount(customTokenPreview?.balance || '0'))}
                             amountClassName="rs-selected-token-amount"
                             symbol={customTokenPreview?.symbol || 'TOKEN'}
                             symbolClassName="rs-selected-token-symbol"
@@ -1472,12 +1526,13 @@ export default function LiveMakerClient({
                     </div>
                   ) : null}
 
-                  {inventoryView === 'nfts' && inventoryNftSubView === 'items' ? (
+                  {showInventoryGrid && inventoryView === 'nfts' && inventoryNftSubView === 'items' ? (
                     <button className="rs-modal-back" onClick={() => { setInventoryNftSubView('collections'); setSelectedNftCollection(null); }}>← Back</button>
                   ) : null}
-                  <div className="rs-token-grid-wrap">
-                    <div className="rs-token-grid">
-                      {visibleInventoryItems.map((item, i) => {
+                  {showInventoryGrid ? (
+                    <div className="rs-token-grid-wrap">
+                      <div className="rs-token-grid">
+                        {visibleInventoryItems.map((item, i) => {
                         const isToken = inventoryView === 'tokens';
                         const isNftCollection = inventoryView === 'nfts' && inventoryNftSubView === 'collections';
 
@@ -1572,7 +1627,7 @@ export default function LiveMakerClient({
                             title={isToken ? `${symbol} ${amount}` : `${item?.name || symbol} #${tokenId}`}
                           >
                             <TokenTile
-                              amountNode={isToken ? amount : null}
+                              amountNode={isToken ? renderAmountColored(formatTokenAmount(amount || '0')) : null}
                               amountClassName="rs-token-cell-amount"
                               symbol={symbol}
                               symbolClassName="rs-token-cell-symbol"
@@ -1604,8 +1659,9 @@ export default function LiveMakerClient({
                       >
                         +
                       </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </>
               )}
             </div>
