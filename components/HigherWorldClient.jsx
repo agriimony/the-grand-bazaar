@@ -1805,6 +1805,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
             touchAction: 'pan-x pan-y',
+            position: 'relative',
           }}
         >
           <div
@@ -1856,40 +1857,40 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 </div>
               ))}
             </div>
-            {worldLogs.length ? (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  left: 8,
-                  zIndex: 7,
-                  pointerEvents: 'none',
-                  width: 'min(340px, 70%)',
-                  display: 'grid',
-                  gap: 6,
-                }}
-              >
-                {worldLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    style={{
-                      background: 'rgba(13, 11, 8, 0.46)',
-                      border: '1px solid rgba(236,200,120,0.28)',
-                      color: '#f6e3ad',
-                      borderRadius: 6,
-                      padding: '5px 7px',
-                      fontSize: 12,
-                      lineHeight: 1.2,
-                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                      backdropFilter: 'blur(1px)',
-                    }}
-                  >
-                    {log.text}
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
+          {worldLogs.length ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: 14,
+                left: 14,
+                zIndex: 20,
+                pointerEvents: 'none',
+                width: 'min(340px, calc(100% - 28px))',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              {worldLogs.map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    background: 'rgba(13, 11, 8, 0.46)',
+                    border: '1px solid rgba(236,200,120,0.28)',
+                    color: '#f6e3ad',
+                    borderRadius: 6,
+                    padding: '5px 7px',
+                    fontSize: 12,
+                    lineHeight: 1.2,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                    backdropFilter: 'blur(1px)',
+                  }}
+                >
+                  {log.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
       </div>
 
