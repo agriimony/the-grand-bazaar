@@ -942,7 +942,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       .sort((a, b) => b.score - a.score);
 
     const targets = [];
-    let seededFirstNearFountain = false;
     for (let ci = 0; ci < compSorted.length; ci += 1) {
       const comp = compSorted[ci];
       const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
@@ -968,24 +967,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         if (!u) continue;
         const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
         const scoreNorm = Math.min(1, u._score / maxScore);
-
-        // Seed the very first NPC near the fountain, nudged 1-2 cells.
-        if (!seededFirstNearFountain) {
-          const r = 1 + Math.round(hashToUnit(`${k}:first-around-fountain-r`)); // 1 or 2
-          const cardinals = [
-            { dx: 1, dy: 0 },
-            { dx: -1, dy: 0 },
-            { dx: 0, dy: 1 },
-            { dx: 0, dy: -1 },
-          ];
-          const ci = Math.floor(hashToUnit(`${k}:first-around-fountain-cardinal`) * cardinals.length) % cardinals.length;
-          const c = cardinals[ci];
-          const tx = center + c.dx * r;
-          const ty = center + c.dy * r;
-          targets.push({ u, tx, ty, scoreNorm: 1.1 });
-          seededFirstNearFountain = true;
-          continue;
-        }
 
         const localR = Math.max(1.4, 3.8 - Math.min(2.3, linkedWeight * 0.22) - scoreNorm * 1.1);
         const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.7;
@@ -1584,10 +1565,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
       const primaryRemote = remotesAtCell[0] || null;
-      const noiseA = noise2D(x * 0.32, y * 0.32, `${worldName}:trees:a`);
-      const noiseB = noise2D((x + 17) * 0.58, (y + 29) * 0.58, `${worldName}:trees:b`);
-      const treePatchNoise = noiseA * 0.72 + noiseB * 0.28;
-      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treePatchNoise > 0.62;
+      const treeField = noise2D(x * 0.1, y * 0.1, `${worldName}:trees:field`);
+      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treeField > 0.8;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
