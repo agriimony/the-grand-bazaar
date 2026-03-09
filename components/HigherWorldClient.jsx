@@ -1567,12 +1567,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const primaryRemote = remotesAtCell[0] || null;
       const warpBaseX = x * 0.12;
       const warpBaseY = y * 0.12;
-      const warpX = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:x`) - 0.5) * 6;
-      const warpY = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:y`) - 0.5) * 3;
+      const warpX = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:x`) - 0.5) * 10;
+      const warpY = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:y`) - 0.5) * 2.2;
       const wx = x + warpX;
       const wy = y + warpY;
-      const n1 = noise2D(wx * 0.45, wy * 0.45, `${worldName}:trees:a`);
-      const n2 = noise2D(wx * 1.2, wy * 1.2, `${worldName}:trees:b`);
+      const n1 = noise2D(wx * 0.32, wy * 0.58, `${worldName}:trees:a`);
+      const n2 = noise2D(wx * 0.95, wy * 1.45, `${worldName}:trees:b`);
       const treeField = n1 * 0.75 + n2 * 0.25;
       const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treeField > 0.72;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
