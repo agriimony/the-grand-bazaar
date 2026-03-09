@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { createNoise2D as createSimplexNoise2D } from 'simplex-noise';
 import { useAccount } from 'wagmi';
 
 function hashToUnit(str) {
@@ -45,24 +46,12 @@ function shortPlayer(v = '', max = 14) {
   return `${s.slice(0, max - 1)}…`;
 }
 
-function noise2D(x, y, seed = 'world-noise') {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const x1 = x0 + 1;
-  const y1 = y0 + 1;
-
-  const sx = x - x0;
-  const sy = y - y0;
-
-  const n00 = hashToUnit(`${seed}:${x0},${y0}`);
-  const n10 = hashToUnit(`${seed}:${x1},${y0}`);
-  const n01 = hashToUnit(`${seed}:${x0},${y1}`);
-  const n11 = hashToUnit(`${seed}:${x1},${y1}`);
-
-  const smooth = (t) => t * t * (3 - 2 * t);
-  const ix0 = n00 + (n10 - n00) * smooth(sx);
-  const ix1 = n01 + (n11 - n01) * smooth(sx);
-  return ix0 + (ix1 - ix0) * smooth(sy);
+function createSeededRng(seed) {
+  let state = (Math.floor(hashToUnit(String(seed || 'seed')) * 4294967295) ^ 0x9e3779b9) >>> 0;
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
 }
 
 function findPath({ size, blocked, start, goal }) {
@@ -162,6 +151,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       Boolean(supabasePublicKey),
     [supabasePublicKey]
   );
+
+  const treeNoise = useMemo(() => {
+    const rng = createSeededRng(`${worldName}:trees`);
+    return createSimplexNoise2D(rng);
+  }, [worldName]);
 
   const playerIdentity = useMemo(() => {
     if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
@@ -1567,12 +1561,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const primaryRemote = remotesAtCell[0] || null;
       const warpBaseX = x * 0.12;
       const warpBaseY = y * 0.12;
-      const warpX = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:x`) - 0.5) * 10;
-      const warpY = (noise2D(warpBaseX, warpBaseY, `${worldName}:trees:warp:y`) - 0.5) * 2.2;
+      const warpX = treeNoise(warpBaseX + 101.3, warpBaseY - 37.1) * 10;
+      const warpY = treeNoise(warpBaseX - 57.7, warpBaseY + 83.9) * 2.2;
       const wx = x + warpX;
       const wy = y + warpY;
-      const n1 = noise2D(wx * 0.32, wy * 0.58, `${worldName}:trees:a`);
-      const n2 = noise2D(wx * 0.95, wy * 1.45, `${worldName}:trees:b`);
+      const n1 = treeNoise(wx * 0.32 + 19.3, wy * 0.58 - 7.4) * 0.5 + 0.5;
+      const n2 = treeNoise(wx * 0.95 - 41.8, wy * 1.45 + 23.6) * 0.5 + 0.5;
       const treeField = n1 * 0.75 + n2 * 0.25;
       const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treeField > 0.72;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
