@@ -1779,35 +1779,36 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           <div style={{ width: 82 }} aria-hidden />
         </div>
 
-        <section
-          ref={worldScrollRef}
-          className="rs-hide-scrollbar"
-          onMouseDown={onWorldMouseDown}
-          onMouseMove={onWorldMouseMove}
-          onMouseUp={onWorldMouseUp}
-          onMouseLeave={onWorldMouseUp}
-          onDragStart={onWorldDragStart}
-          onPointerDown={onWorldPointerDown}
-          onPointerMove={onWorldPointerMove}
-          onPointerUp={onWorldPointerUp}
-          onPointerCancel={onWorldPointerUp}
-          onWheel={onWorldWheel}
-          style={{
-            border: '2px solid #7f6a3b',
-            boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
-            background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
-            borderRadius: 12,
-            padding: 10,
-            overflow: 'auto',
-            height: frameHeight,
-            boxSizing: 'border-box',
-            cursor: 'grab',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            touchAction: 'pan-x pan-y',
-            position: 'relative',
-          }}
-        >
+        <div style={{ position: 'relative' }}>
+          <section
+            ref={worldScrollRef}
+            className="rs-hide-scrollbar"
+            onMouseDown={onWorldMouseDown}
+            onMouseMove={onWorldMouseMove}
+            onMouseUp={onWorldMouseUp}
+            onMouseLeave={onWorldMouseUp}
+            onDragStart={onWorldDragStart}
+            onPointerDown={onWorldPointerDown}
+            onPointerMove={onWorldPointerMove}
+            onPointerUp={onWorldPointerUp}
+            onPointerCancel={onWorldPointerUp}
+            onWheel={onWorldWheel}
+            style={{
+              border: '2px solid #7f6a3b',
+              boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
+              background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
+              borderRadius: 12,
+              padding: 10,
+              overflow: 'auto',
+              height: frameHeight,
+              boxSizing: 'border-box',
+              cursor: 'grab',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              touchAction: 'pan-x pan-y',
+              position: 'relative',
+            }}
+          >
           <div
             style={{
               width: boardSide,
@@ -1858,6 +1859,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               ))}
             </div>
           </div>
+        </section>
           {worldLogs.length ? (
             <div
               style={{
@@ -1891,7 +1893,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               ))}
             </div>
           ) : null}
-        </section>
+        </div>
       </div>
 
       {loadingCasts ? (
