@@ -539,6 +539,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         const next = { ...prev };
         for (const [sid, p] of Object.entries(prev)) {
           if (Number(p?.updatedAt || 0) < cutoff) {
+            const leaveName = shortPlayer(p?.fname || p?.playerId || 'player');
+            pushWorldLog(`${leaveName} left the world`);
             delete next[sid];
             dirty = true;
           }
