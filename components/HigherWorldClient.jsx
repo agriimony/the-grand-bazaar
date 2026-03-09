@@ -1565,7 +1565,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
       const primaryRemote = remotesAtCell[0] || null;
-      const treeField = noise2D(x * 0.1, y * 0.1, `${worldName}:trees:field`);
+      const treeField = noise2D(x * 10, y * 10, `${worldName}:trees:field`);
       const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treeField > 0.8;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
