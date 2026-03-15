@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { createNoise2D as createSimplexNoise2D } from 'simplex-noise';
 import { useAccount } from 'wagmi';
 
 function hashToUnit(str) {
@@ -44,14 +43,6 @@ function shortPlayer(v = '', max = 14) {
   const s = shortAddr(String(v || '').trim());
   if (s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
-}
-
-function createSeededRng(seed) {
-  let state = (Math.floor(hashToUnit(String(seed || 'seed')) * 4294967295) ^ 0x9e3779b9) >>> 0;
-  return () => {
-    state = (1664525 * state + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
 }
 
 function findPath({ size, blocked, start, goal }) {
@@ -151,11 +142,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       Boolean(supabasePublicKey),
     [supabasePublicKey]
   );
-
-  const treeNoise = useMemo(() => {
-    const rng = createSeededRng(`${worldName}:trees`);
-    return createSimplexNoise2D(rng);
-  }, [worldName]);
 
   const playerIdentity = useMemo(() => {
     if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
@@ -1559,16 +1545,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
       const primaryRemote = remotesAtCell[0] || null;
-      const warpBaseX = x * 0.12;
-      const warpBaseY = y * 0.12;
-      const warpX = treeNoise(warpBaseX + 101.3, warpBaseY - 37.1) * 10;
-      const warpY = treeNoise(warpBaseX - 57.7, warpBaseY + 83.9) * 2.2;
-      const wx = x + warpX;
-      const wy = y + warpY;
-      const n1 = treeNoise(wx * 0.32 + 19.3, wy * 0.58 - 7.4) * 0.5 + 0.5;
-      const n2 = treeNoise(wx * 0.95 - 41.8, wy * 1.45 + 23.6) * 0.5 + 0.5;
-      const treeField = n1 * 0.75 + n2 * 0.25;
-      const isScatteredTree = !isCenter && !isBorder && !isBank && !npc && !primaryRemote && treeField > 0.72;
+      const isScatteredTree = false;
       if (!isCenter && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
