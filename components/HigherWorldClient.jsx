@@ -625,9 +625,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       try {
         supabase.removeChannel(channel);
       } catch {}
-      try {
-        supabase.removeAllChannels();
-      } catch {}
       channelRef.current = null;
       supabaseRef.current = null;
       setRemotePlayers({});
