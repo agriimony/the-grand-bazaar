@@ -350,6 +350,7 @@ const ERC1155_READ_ABI = [
 ];
 const ERC20_READ_ABI = [
   'function balanceOf(address account) view returns (uint256)',
+  'function allowance(address owner,address spender) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
   'function name() view returns (string)',
@@ -1975,10 +1976,51 @@ export default function LiveMakerClient({
       const isSwapErc20 = IS_SWAP_ERC20(o.swapContract);
       const { signer: ws } = await getPreferredSigner(identity.playerId);
       const swap = new ethers.Contract(o.swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, ws);
+      const senderKindNow = String(o.senderKind || KIND_ERC20).toLowerCase();
 
       let tx;
       debugLog('swap:context', { isSwapErc20, swapContract: o.swapContract, nonce: o.nonce, expiry: o.expiry });
+
+      if (senderKindNow === KIND_ERC20 && String(o.senderToken || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase()) {
+        try {
+          const erc20 = new ethers.Contract(o.senderToken, ERC20_READ_ABI, ws);
+          const [bal, allowance] = await Promise.all([
+            erc20.balanceOf(identity.playerId).catch(() => 0n),
+            erc20.allowance(identity.playerId, o.swapContract).catch(() => 0n),
+          ]);
+          const needed = BigInt(o.senderAmount || '0');
+          if (BigInt(bal || 0n) < needed) {
+            throw new Error(`insufficient sender balance: have ${String(bal)} need ${needed.toString()}`);
+          }
+          if (BigInt(allowance || 0n) < needed) {
+            throw new Error(`insufficient allowance: have ${String(allowance)} need ${needed.toString()}`);
+          }
+        } catch (pre) {
+          setStatus(`swap precheck failed: ${shortErr(pre?.message || 'token balance/allowance')}`);
+          setLivePhase('await_sender');
+          return;
+        }
+      }
       if (isSwapErc20) {
+        try {
+          await swap.swap.staticCall(
+            identity.playerId,
+            BigInt(o.nonce),
+            BigInt(o.expiry),
+            o.signerWallet,
+            o.signerToken,
+            BigInt(o.signerAmount),
+            o.senderToken,
+            BigInt(o.senderAmount),
+            Number(o.v),
+            o.r,
+            o.s
+          );
+        } catch (pre) {
+          setStatus(`swap simulation failed: ${shortErr(pre?.message || 'reverted')}`);
+          setLivePhase('await_sender');
+          return;
+        }
         tx = await swap.swap(
           identity.playerId,
           BigInt(o.nonce),
@@ -2011,7 +2053,7 @@ export default function LiveMakerClient({
           const signerKindNow = String(o.signerKind || KIND_ERC20).toLowerCase();
           const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
           if (signerIsNft) {
-            const royaltyToken = new ethers.Contract(o.signerToken, ROYALTY_ABI, provider);
+            const royaltyToken = new ethers.Contract(o.signerToken, ROYALTY_ABI, ws.provider);
             const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
             if (supports) {
               const [, royaltyAmount] = await royaltyToken
@@ -2024,6 +2066,13 @@ export default function LiveMakerClient({
           maxRoyaltyForCall = 0n;
         }
 
+        try {
+          await swap.swap.staticCall(identity.playerId, maxRoyaltyForCall, orderForCall);
+        } catch (pre) {
+          setStatus(`swap simulation failed: ${shortErr(pre?.message || 'reverted')}`);
+          setLivePhase('await_sender');
+          return;
+        }
         tx = await swap.swap(identity.playerId, maxRoyaltyForCall, orderForCall);
         debugLog('swap:submitted:generic', { txHash: tx?.hash || '', maxRoyaltyForCall: maxRoyaltyForCall.toString() });
       }
