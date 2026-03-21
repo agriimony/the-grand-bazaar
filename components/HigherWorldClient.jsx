@@ -129,6 +129,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
 
   const pushWorldLog = (text) => {
     const label = String(text || '').trim();
@@ -375,6 +377,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
+    let reconnectTimer = null;
     const channel = supabase.channel(`world:${worldName}`, {
       config: { broadcast: { self: false } },
     });
@@ -539,9 +542,20 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           sessionId: playerIdentity.sessionId,
           playerId: playerIdentity.playerId,
         });
+        const attempt = reconnectAttemptRef.current + 1;
+        reconnectAttemptRef.current = attempt;
+        const delay = Math.min(8000, 800 * attempt);
+        setTradeToast(`realtime reconnecting... (${attempt})`);
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            setRealtimeRetryTick((v) => v + 1);
+          }, delay);
+        }
       }
       const localCell = playerCellRef.current;
       if (status === 'SUBSCRIBED' && localCell) {
+        reconnectAttemptRef.current = 0;
         channel.send({
           type: 'broadcast',
           event: 'player_state',
@@ -615,6 +629,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return () => {
       clearInterval(staleSweep);
       clearInterval(heartbeat);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
         channel.send({
           type: 'broadcast',
@@ -630,7 +645,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setRemotePlayers({});
       setTradePlaceholders({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

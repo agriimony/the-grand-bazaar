@@ -464,6 +464,7 @@ export default function LiveMakerClient({
   const [localFname, setLocalFname] = useState('');
   const [stateVersion, setStateVersion] = useState(0);
   const [status, setStatus] = useState('connecting...');
+  const [channelSubscribed, setChannelSubscribed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [peers, setPeers] = useState({});
   const [tradeState, setTradeState] = useState({
@@ -504,6 +505,8 @@ export default function LiveMakerClient({
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [inventoryView, setInventoryView] = useState('tokens');
   const [authedPlayerId, setAuthedPlayerId] = useState('');
+  const reconnectAttemptRef = useRef(0);
+  const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
 
   const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   const liveRoomId = useMemo(() => {
@@ -626,6 +629,8 @@ export default function LiveMakerClient({
 
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
+    setChannelSubscribed(false);
+    let reconnectTimer = null;
     const ch = supabase.channel(liveTopic, { config: { broadcast: { self: false } } });
     let unmounted = false;
 
@@ -746,8 +751,21 @@ export default function LiveMakerClient({
           playerId: identity.playerId,
           sessionId: identity.sessionId,
         });
+        setChannelSubscribed(false);
+        const attempt = reconnectAttemptRef.current + 1;
+        reconnectAttemptRef.current = attempt;
+        const delay = Math.min(8000, 800 * attempt);
+        setStatus(`reconnecting live room... (${attempt})`);
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            setRealtimeRetryTick((v) => v + 1);
+          }, delay);
+        }
       }
       if (s === 'SUBSCRIBED') {
+        reconnectAttemptRef.current = 0;
+        setChannelSubscribed(true);
         if (!identity.playerId) {
           setStatus('auth pending');
           return;
@@ -800,6 +818,7 @@ export default function LiveMakerClient({
 
     return () => {
       unmounted = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', announceLeave);
       }
@@ -809,7 +828,7 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding]);
+  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
@@ -1919,7 +1938,14 @@ export default function LiveMakerClient({
         />
 
         <div className="rs-center" style={{ display: 'grid', gap: 10, justifyItems: 'center' }}>
-          {!bothDone || livePhase === 'negotiate' ? (
+          {!channelSubscribed ? (
+            <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
+                <div className="rs-loading-label">connecting live room...</div>
+              </div>
+            </div>
+          ) : (!bothDone || livePhase === 'negotiate') ? (
             bothDone ? (
               (localApproved && peerChangedAfterMyApprove) ? (
                 <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
