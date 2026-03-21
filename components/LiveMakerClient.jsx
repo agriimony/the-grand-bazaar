@@ -244,7 +244,7 @@ async function getPreferredEip1193Provider() {
     try {
       window.addEventListener('eip6963:announceProvider', onAnnounce);
       window.dispatchEvent(new Event('eip6963:requestProvider'));
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 350));
     } catch {}
     try {
       window.removeEventListener('eip6963:announceProvider', onAnnounce);
@@ -252,6 +252,10 @@ async function getPreferredEip1193Provider() {
 
     const exact = announced.find((a) => a.uuid === uuid)?.provider;
     if (exact) return exact;
+
+    // strict mode: if we explicitly selected an EIP-6963 wallet at connect,
+    // do not silently fall back to another injected provider.
+    if (id.startsWith('eip6963:')) return null;
   }
 
   const pickByHint = providers.find((p) => {
@@ -289,7 +293,7 @@ async function ensureBaseNetwork(eip1193, provider) {
 
 async function getPreferredSigner(expectedAddress = '') {
   const eip1193 = await getPreferredEip1193Provider();
-  if (!eip1193) throw new Error('wallet provider not found');
+  if (!eip1193) throw new Error('selected wallet provider unavailable. reconnect using your intended wallet');
   const provider = new ethers.BrowserProvider(eip1193);
   await ensureBaseNetwork(eip1193, provider);
   const signer = await provider.getSigner();
@@ -617,10 +621,21 @@ export default function LiveMakerClient({
 
   const channelRef = useRef(null);
   const versionRef = useRef(0);
+  const tradeStateRef = useRef(tradeState);
+  const approvedRef = useRef(approved);
+  const approvedHashRef = useRef(approvedHash);
+  const livePhaseRef = useRef(livePhase);
+  const signedOrderRef = useRef(signedOrderState);
 
   useEffect(() => {
     versionRef.current = stateVersion;
   }, [stateVersion]);
+
+  useEffect(() => { tradeStateRef.current = tradeState; }, [tradeState]);
+  useEffect(() => { approvedRef.current = approved; }, [approved]);
+  useEffect(() => { approvedHashRef.current = approvedHash; }, [approvedHash]);
+  useEffect(() => { livePhaseRef.current = livePhase; }, [livePhase]);
+  useEffect(() => { signedOrderRef.current = signedOrderState; }, [signedOrderState]);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -694,6 +709,29 @@ export default function LiveMakerClient({
     const ch = supabase.channel(liveTopic, { config: { broadcast: { self: false } } });
     let unmounted = false;
 
+    const sendRoomSnapshot = (toSessionId = '') => {
+      try {
+        ch.send({
+          type: 'broadcast',
+          event: 'room_snapshot',
+          payload: {
+            roomId: liveRoomId,
+            toSessionId,
+            fromSessionId: identity.sessionId,
+            fromRole: role,
+            fromPlayerId: identity.playerId,
+            stateVersion: versionRef.current,
+            tradeState: tradeStateRef.current,
+            approved: approvedRef.current,
+            approvedHash: approvedHashRef.current,
+            livePhase: livePhaseRef.current,
+            signedOrderState: signedOrderRef.current,
+            ts: Date.now(),
+          },
+        });
+      } catch {}
+    };
+
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
       const sid = String(payload?.sessionId || '').trim();
       if (!sid) return;
@@ -710,6 +748,46 @@ export default function LiveMakerClient({
           role: joinRole,
         },
       }));
+      if (sid !== identity.sessionId) sendRoomSnapshot(sid);
+    });
+
+    ch.on('broadcast', { event: 'room_sync_request' }, ({ payload }) => {
+      const fromSessionId = String(payload?.fromSessionId || '').trim();
+      const fromRole = String(payload?.fromRole || '').trim().toLowerCase();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim().toLowerCase();
+      const expected = fromRole === 'signer' ? roomBinding?.signer : (fromRole === 'sender' ? roomBinding?.sender : '');
+      if (!fromSessionId || !expected || fromPlayerId !== expected) return;
+      if (fromSessionId === identity.sessionId) return;
+      sendRoomSnapshot(fromSessionId);
+    });
+
+    ch.on('broadcast', { event: 'room_snapshot' }, ({ payload }) => {
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId && toSessionId !== identity.sessionId) return;
+      const fromRole = String(payload?.fromRole || '').trim().toLowerCase();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim().toLowerCase();
+      const expected = fromRole === 'signer' ? roomBinding?.signer : (fromRole === 'sender' ? roomBinding?.sender : '');
+      if (!expected || expected !== fromPlayerId) return;
+      const nextV = Number(payload?.stateVersion || 0);
+      if (nextV < versionRef.current) return;
+
+      setStateVersion(nextV);
+      const nextTrade = payload?.tradeState || {};
+      setTradeState({
+        signerSelection: normalizeSelection(nextTrade?.signerSelection),
+        senderSelection: normalizeSelection(nextTrade?.senderSelection),
+      });
+      setApproved({
+        signer: Boolean(payload?.approved?.signer),
+        sender: Boolean(payload?.approved?.sender),
+      });
+      setApprovedHash({
+        signer: String(payload?.approvedHash?.signer || ''),
+        sender: String(payload?.approvedHash?.sender || ''),
+      });
+      const phase = String(payload?.livePhase || 'negotiate');
+      setLivePhase(phase);
+      setSignedOrderState(payload?.signedOrderState || null);
     });
 
     ch.on('broadcast', { event: 'room_state_patch' }, ({ payload }) => {
@@ -866,6 +944,32 @@ export default function LiveMakerClient({
             ts: Date.now(),
           },
         });
+        ch.send({
+          type: 'broadcast',
+          event: 'room_sync_request',
+          payload: {
+            roomId: liveRoomId,
+            fromSessionId: identity.sessionId,
+            fromRole: role,
+            fromPlayerId: identity.playerId,
+            ts: Date.now(),
+          },
+        });
+        setTimeout(() => {
+          try {
+            ch.send({
+              type: 'broadcast',
+              event: 'room_sync_request',
+              payload: {
+                roomId: liveRoomId,
+                fromSessionId: identity.sessionId,
+                fromRole: role,
+                fromPlayerId: identity.playerId,
+                ts: Date.now(),
+              },
+            });
+          } catch {}
+        }, 1000);
       }
     });
 
