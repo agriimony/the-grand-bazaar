@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { useAccount } from 'wagmi';
+import { fetchSession, getStoredAuthToken } from '../lib/client-auth';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -29,8 +30,11 @@ function randomId(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
-function createRoomId() {
-  return `room_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+function createRoomId(signer = '', sender = '') {
+  const s = String(signer || '').trim().toLowerCase();
+  const t = String(sender || '').trim().toLowerCase();
+  const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `r:8453:${s}:${t}:${nonce}`;
 }
 
 function shortAddr(v = '') {
@@ -119,6 +123,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
   const [worldLogs, setWorldLogs] = useState([]);
+  const [authedPlayerId, setAuthedPlayerId] = useState('');
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
@@ -144,16 +149,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   );
 
   const playerIdentity = useMemo(() => {
-    if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
+    if (typeof window === 'undefined') return { playerId: '', sessionId: randomId('session') };
 
-    const walletPlayerId = String(connectedAddress || '').trim().toLowerCase();
-
-    let playerId = walletPlayerId || window.localStorage.getItem('gbz:player-id');
-    if (!playerId) {
-      playerId = randomId('player');
-    }
-    window.localStorage.setItem('gbz:player-id', playerId);
-
+    const playerId = String(authedPlayerId || '').trim().toLowerCase();
     let sessionId = window.sessionStorage.getItem('gbz:session-id');
     if (!sessionId) {
       sessionId = randomId('session');
@@ -161,7 +159,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
 
     return { playerId, sessionId };
-  }, [connectedAddress]);
+  }, [authedPlayerId]);
 
   const tileSize = 58;
   const boardSidePx = Math.round(size * tileSize * zoom);
@@ -175,6 +173,27 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       router.replace('/');
     }
   }, [walletStatus, isConnected, connectedAddress, router]);
+
+  useEffect(() => {
+    let dead = false;
+    async function loadAuth() {
+      if (!connectedAddress) return;
+      const token = getStoredAuthToken();
+      if (!token) {
+        router.replace('/');
+        return;
+      }
+      const r = await fetchSession(token);
+      const player = String(r?.session?.playerId || '').trim().toLowerCase();
+      if (!r?.ok || !/^0x[a-f0-9]{40}$/.test(player) || player !== String(connectedAddress).toLowerCase()) {
+        if (!dead) router.replace('/');
+        return;
+      }
+      if (!dead) setAuthedPlayerId(player);
+    }
+    loadAuth();
+    return () => { dead = true; };
+  }, [connectedAddress, router]);
 
   useEffect(() => {
     let dead = false;
@@ -1376,7 +1395,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
 
       const expiresAt = Date.now() + 60_000;
-      const roomId = createRoomId();
+      const signerAddr = String(playerIdentity.playerId || '').toLowerCase();
+      const senderAddr = String(remote?.playerId || '').toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(signerAddr) || !/^0x[a-f0-9]{40}$/.test(senderAddr)) {
+        setTradeToast('trade requires verified wallet addresses');
+        return;
+      }
+      const roomId = createRoomId(signerAddr, senderAddr);
       ch.send({
         type: 'broadcast',
         event: 'trade_invite',

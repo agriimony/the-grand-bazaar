@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useAccount } from 'wagmi';
 import { ethers } from 'ethers';
 import TokenTile from './TokenTile';
+import { fetchSession, getStoredAuthToken } from '../lib/client-auth';
 
 function randomId(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -191,6 +192,17 @@ function fallbackTokenArt(token = '', symbol = '') {
 
 function isAddress(v = '') {
   return /^0x[a-fA-F0-9]{40}$/.test(String(v || '').trim());
+}
+
+function parseRoomBinding(roomId = '') {
+  const m = String(roomId || '').trim().match(/^r:(\d+):(0x[a-fA-F0-9]{40}):(0x[a-fA-F0-9]{40}):([a-zA-Z0-9]+)$/);
+  if (!m) return null;
+  return {
+    chainId: Number(m[1] || 0),
+    signer: String(m[2] || '').toLowerCase(),
+    sender: String(m[3] || '').toLowerCase(),
+    nonce: String(m[4] || ''),
+  };
 }
 
 const KIND_ERC20 = '0x36372b07';
@@ -454,17 +466,36 @@ export default function LiveMakerClient({
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [inventoryView, setInventoryView] = useState('tokens');
+  const [authedPlayerId, setAuthedPlayerId] = useState('');
 
   const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   const enabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && supabasePublicKey && roomId);
+  const roomBinding = useMemo(() => parseRoomBinding(roomId), [roomId]);
+
+  useEffect(() => {
+    let dead = false;
+    async function loadAuth() {
+      if (!address) return;
+      const token = getStoredAuthToken();
+      if (!token) {
+        router.replace('/');
+        return;
+      }
+      const r = await fetchSession(token);
+      const player = String(r?.session?.playerId || '').trim().toLowerCase();
+      if (!r?.ok || !isAddress(player) || player !== String(address).toLowerCase()) {
+        if (!dead) router.replace('/');
+        return;
+      }
+      if (!dead) setAuthedPlayerId(player);
+    }
+    loadAuth();
+    return () => { dead = true; };
+  }, [address, router]);
 
   const identity = useMemo(() => {
-    if (typeof window === 'undefined') return { playerId: randomId('player'), sessionId: randomId('session') };
-    const walletPlayerId = String(address || '').trim().toLowerCase();
-
-    let playerId = walletPlayerId || window.localStorage.getItem('gbz:player-id');
-    if (!playerId) playerId = randomId('player');
-    window.localStorage.setItem('gbz:player-id', playerId);
+    if (typeof window === 'undefined') return { playerId: '', sessionId: randomId('session') };
+    const playerId = String(authedPlayerId || '').trim().toLowerCase();
 
     let sessionId = window.sessionStorage.getItem('gbz:session-id');
     if (!sessionId) {
@@ -473,7 +504,7 @@ export default function LiveMakerClient({
     }
 
     return { playerId, sessionId };
-  }, [address]);
+  }, [authedPlayerId]);
 
   const channelRef = useRef(null);
   const versionRef = useRef(0);
@@ -486,6 +517,19 @@ export default function LiveMakerClient({
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!roomBinding) {
+      setStatus('invalid room id');
+      return;
+    }
+    if (!identity.playerId) return;
+    const required = role === 'signer' ? roomBinding.signer : roomBinding.sender;
+    if (required !== identity.playerId) {
+      setStatus('wallet not authorized for this room role');
+      router.replace(`/${initialChannel || 'worlds'}`);
+    }
+  }, [roomBinding, identity.playerId, role, router, initialChannel]);
 
   useEffect(() => {
     if (livePhase !== 'success') {
@@ -536,18 +580,26 @@ export default function LiveMakerClient({
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
       const sid = String(payload?.sessionId || '').trim();
       if (!sid) return;
+      const joinRole = String(payload?.role || '').trim().toLowerCase();
+      const playerId = String(payload?.playerId || '').trim().toLowerCase();
+      const expected = joinRole === 'signer' ? roomBinding?.signer : (joinRole === 'sender' ? roomBinding?.sender : '');
+      if (!expected || playerId !== expected) return;
       setPeers((prev) => ({
         ...prev,
         [sid]: {
           sessionId: sid,
-          playerId: String(payload?.playerId || ''),
+          playerId,
           fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
-          role: String(payload?.role || ''),
+          role: joinRole,
         },
       }));
     });
 
     ch.on('broadcast', { event: 'room_state_patch' }, ({ payload }) => {
+      const fromRole = String(payload?.fromRole || '').trim().toLowerCase();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim().toLowerCase();
+      const expected = fromRole === 'signer' ? roomBinding?.signer : (fromRole === 'sender' ? roomBinding?.sender : '');
+      if (!expected || expected !== fromPlayerId) return;
       const nextV = Number(payload?.stateVersion || 0);
       if (nextV <= versionRef.current) return;
 
@@ -574,7 +626,9 @@ export default function LiveMakerClient({
     ch.on('broadcast', { event: 'room_approve' }, ({ payload }) => {
       const who = String(payload?.role || '').trim().toLowerCase();
       const decision = String(payload?.decision || '').trim().toLowerCase();
-      if (who !== 'signer' && who !== 'sender') return;
+      const fromPlayerId = String(payload?.playerId || '').trim().toLowerCase();
+      const expected = who === 'signer' ? roomBinding?.signer : (who === 'sender' ? roomBinding?.sender : '');
+      if ((who !== 'signer' && who !== 'sender') || !expected || expected !== fromPlayerId) return;
       const hash = String(payload?.selectionHash || '').trim();
       debugLog('event:room_approve', { who, decision, hash, fromSessionId: payload?.sessionId || '' });
       setApproved((prev) => ({ ...prev, [who]: decision === 'approve' }));
@@ -582,8 +636,10 @@ export default function LiveMakerClient({
     });
 
     ch.on('broadcast', { event: 'room_signed_order' }, ({ payload }) => {
+      const byRole = String(payload?.byRole || '').trim().toLowerCase();
+      const byPlayerId = String(payload?.playerId || '').trim().toLowerCase();
+      if (byRole !== 'signer' || byPlayerId !== roomBinding?.signer) return;
       const expiresAt = Number(payload?.expiresAt || 0);
-      const byRole = String(payload?.byRole || '').trim();
       const byName = String(payload?.byName || '').trim();
       debugLog('event:room_signed_order', { byRole, byName, expiresAt, hasPayload: Boolean(payload?.signedOrder) });
       setSignedOrderState({
@@ -595,12 +651,14 @@ export default function LiveMakerClient({
       setLivePhase('await_sender');
     });
 
-    ch.on('broadcast', { event: 'room_swapping' }, () => {
+    ch.on('broadcast', { event: 'room_swapping' }, ({ payload }) => {
+      if (String(payload?.playerId || '').trim().toLowerCase() !== roomBinding?.sender) return;
       debugLog('event:room_swapping');
       setLivePhase('swapping');
     });
 
     ch.on('broadcast', { event: 'room_swap_success' }, ({ payload }) => {
+      if (String(payload?.playerId || '').trim().toLowerCase() !== roomBinding?.sender) return;
       const txHash = String(payload?.txHash || '').trim();
       debugLog('event:room_swap_success', { txHash });
       setSwapTxHash(txHash);
@@ -609,6 +667,9 @@ export default function LiveMakerClient({
 
     ch.on('broadcast', { event: 'room_close' }, ({ payload }) => {
       const reason = String(payload?.reason || '').trim().toLowerCase();
+      const byRole = String(payload?.byRole || '').trim().toLowerCase();
+      const expected = byRole === 'signer' ? roomBinding?.signer : (byRole === 'sender' ? roomBinding?.sender : '');
+      if (!expected || String(payload?.playerId || '').trim().toLowerCase() !== expected) return;
       debugLog('event:room_close', { reason, byRole: payload?.byRole || '' });
       if (reason === 'decline') {
         router.push(`/${initialChannel || 'worlds'}`);
@@ -618,6 +679,16 @@ export default function LiveMakerClient({
     ch.subscribe((s) => {
       debugLog('channel_state', s);
       if (s === 'SUBSCRIBED') {
+        if (!identity.playerId) {
+          setStatus('auth pending');
+          return;
+        }
+        const expected = role === 'signer' ? roomBinding?.signer : roomBinding?.sender;
+        if (!expected || expected !== identity.playerId) {
+          setStatus('room auth mismatch');
+          router.replace(`/${initialChannel || 'worlds'}`);
+          return;
+        }
         setStatus('live room connected');
         debugLog('event:room_join:send', { roomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFname });
         ch.send({
@@ -669,7 +740,7 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, roomId, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel]);
+  }, [enabled, roomId, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
@@ -694,6 +765,7 @@ export default function LiveMakerClient({
         senderSelection: normalized.senderSelection,
         fromSessionId: identity.sessionId,
         fromRole: role,
+        fromPlayerId: identity.playerId,
         ts: Date.now(),
       },
     });
@@ -1303,7 +1375,7 @@ export default function LiveMakerClient({
         ch.send({
           type: 'broadcast',
           event: 'room_approve',
-          payload: { roomId, role: 'signer', decision: 'decline', selectionHash: '', ts: Date.now() },
+          payload: { roomId, role: 'signer', decision: 'decline', selectionHash: '', playerId: identity.playerId, ts: Date.now() },
         });
       }
       return;
@@ -1399,6 +1471,7 @@ export default function LiveMakerClient({
           decision: 'approve',
           selectionHash: localHash,
           sessionId: identity.sessionId,
+          playerId: identity.playerId,
           ts: Date.now(),
         },
       });
@@ -1567,6 +1640,7 @@ export default function LiveMakerClient({
         roomId,
         byRole: 'signer',
         byName: localFname || identity.playerId,
+        playerId: identity.playerId,
         expiresAt,
         signedOrder,
       };
@@ -1591,7 +1665,7 @@ export default function LiveMakerClient({
 
     try {
       setLivePhase('swapping');
-      ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId, ts: Date.now() } });
+      ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId, playerId: identity.playerId, ts: Date.now() } });
 
       const o = signedOrderState.payload;
       const isSwapErc20 = IS_SWAP_ERC20(o.swapContract);
@@ -1656,7 +1730,7 @@ export default function LiveMakerClient({
       const txHash = String(rec?.hash || tx?.hash || '');
       setSwapTxHash(txHash);
       setLivePhase('success');
-      ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId, txHash, ts: Date.now() } });
+      ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId, txHash, playerId: identity.playerId, ts: Date.now() } });
     } catch (e) {
       setStatus(`swap failed: ${shortErr(e?.message || 'unknown')}`);
       setLivePhase('await_sender');
@@ -1714,6 +1788,7 @@ export default function LiveMakerClient({
           byRole: myRole,
           reason: 'decline',
           sessionId: identity.sessionId,
+          playerId: identity.playerId,
           ts: Date.now(),
         },
       });
@@ -1733,6 +1808,7 @@ export default function LiveMakerClient({
         decision: 'decline',
         selectionHash: '',
         sessionId: identity.sessionId,
+        playerId: identity.playerId,
         ts: Date.now(),
       },
     });

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
+import { setStoredAuthToken } from '../lib/client-auth';
 
 export default function LandingConnect() {
   const router = useRouter();
@@ -31,7 +32,10 @@ export default function LandingConnect() {
     setBusy(true);
     setErr('');
     try {
-      let connected = false;
+      let provider = null;
+      let authMethod = 'siwe';
+      let fid = '';
+
       try {
         const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
@@ -40,22 +44,60 @@ export default function LandingConnect() {
           const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
           const eip1193 = getter ? await getter() : null;
           if (eip1193) {
-            const bp = new ethers.BrowserProvider(eip1193);
-            const signer = await bp.getSigner();
-            await signer.getAddress();
-            connected = true;
+            provider = new ethers.BrowserProvider(eip1193);
+            authMethod = 'farcaster';
+            let ctx = null;
+            try {
+              if (typeof sdk?.context === 'function') ctx = await sdk.context();
+              else ctx = sdk?.context || null;
+            } catch {}
+            fid = String(ctx?.user?.fid || '').trim();
           }
         }
       } catch {
         // ignore and try injected wallets
       }
 
-      if (!connected && typeof window !== 'undefined' && window.ethereum?.request) {
+      if (!provider && typeof window !== 'undefined' && window.ethereum?.request) {
         await window.ethereum.request({ method: 'eth_requestAccounts' });
-        connected = true;
+        provider = new ethers.BrowserProvider(window.ethereum);
       }
 
-      if (!connected) throw new Error('No wallet provider found');
+      if (!provider) throw new Error('No wallet provider found');
+
+      const signer = await provider.getSigner();
+      const address = String(await signer.getAddress()).toLowerCase();
+
+      const c = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ address, fid }),
+      });
+      const cd = await c.json();
+      if (!c.ok || !cd?.ok || !cd?.message || !cd?.challengeToken) {
+        throw new Error(cd?.error || 'Auth challenge failed');
+      }
+
+      const signature = await signer.signMessage(cd.message);
+
+      const v = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          fid,
+          authMethod,
+          message: cd.message,
+          signature,
+          challengeToken: cd.challengeToken,
+        }),
+      });
+      const vd = await v.json();
+      if (!v.ok || !vd?.ok || !vd?.sessionToken) {
+        throw new Error(vd?.error || 'Auth verify failed');
+      }
+
+      setStoredAuthToken(vd.sessionToken);
       router.push('/worlds');
     } catch (e) {
       setErr(e?.message || 'Connect failed');
