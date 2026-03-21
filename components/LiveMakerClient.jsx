@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseBrowserClient } from '../lib/supabase-browser';
 import { useAccount } from 'wagmi';
 import { ethers } from 'ethers';
 import TokenTile from './TokenTile';
@@ -573,7 +573,8 @@ export default function LiveMakerClient({
       return;
     }
 
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
+    const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
+    if (!supabase) return;
     const ch = supabase.channel(`maker_live:${roomId}`, { config: { broadcast: { self: false } } });
     let unmounted = false;
 
@@ -677,7 +678,22 @@ export default function LiveMakerClient({
     });
 
     ch.subscribe((s) => {
-      debugLog('channel_state', s);
+      debugLog('channel_state', s, {
+        roomId,
+        role,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+        visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      });
+      if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+        console.error('[live-maker] realtime subscription problem', {
+          state: s,
+          roomId,
+          role,
+          playerId: identity.playerId,
+          sessionId: identity.sessionId,
+        });
+      }
       if (s === 'SUBSCRIBED') {
         if (!identity.playerId) {
           setStatus('auth pending');

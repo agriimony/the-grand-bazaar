@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseBrowserClient } from '../lib/supabase-browser';
 import { useAccount, useDisconnect } from 'wagmi';
 import { fetchSession, getStoredAuthToken, setStoredAuthToken } from '../lib/client-auth';
 
@@ -365,7 +365,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       hasKey: Boolean(supabasePublicKey),
     });
 
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
+    const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
+    if (!supabase) return;
     const channel = supabase.channel(`world:${worldName}`, {
       config: { broadcast: { self: false } },
     });
@@ -517,7 +518,20 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     channel.subscribe((status) => {
-      console.log('[mp] channel status', status);
+      console.log('[mp] channel status', status, {
+        world: worldName,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+        visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      });
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.error('[mp] realtime subscription problem', {
+          status,
+          world: worldName,
+          sessionId: playerIdentity.sessionId,
+          playerId: playerIdentity.playerId,
+        });
+      }
       const localCell = playerCellRef.current;
       if (status === 'SUBSCRIBED' && localCell) {
         channel.send({
