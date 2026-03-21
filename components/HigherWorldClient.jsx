@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { useAccount } from 'wagmi';
-import { fetchSession, getStoredAuthToken } from '../lib/client-auth';
+import { useAccount, useDisconnect } from 'wagmi';
+import { fetchSession, getStoredAuthToken, setStoredAuthToken } from '../lib/client-auth';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -102,6 +102,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [localFname, setLocalFname] = useState('');
   const [localPfp, setLocalPfp] = useState('');
   const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
+  const { disconnect } = useDisconnect();
   const [menu, setMenu] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [playerCell, setPlayerCell] = useState(null);
@@ -124,6 +125,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [tradeToast, setTradeToast] = useState('');
   const [worldLogs, setWorldLogs] = useState([]);
   const [authedPlayerId, setAuthedPlayerId] = useState('');
+  const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const supabaseRef = useRef(null);
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
@@ -194,6 +196,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     loadAuth();
     return () => { dead = true; };
   }, [connectedAddress, router]);
+
+  useEffect(() => {
+    if (!playerMenuOpen) return undefined;
+    const onDocClick = () => setPlayerMenuOpen(false);
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [playerMenuOpen]);
 
   useEffect(() => {
     let dead = false;
@@ -1555,6 +1564,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
+  const playerTag = localFname ? `@${localFname}` : shortAddr(playerIdentity.playerId || connectedAddress || '');
+
+  const onDisconnectPlayer = async () => {
+    try {
+      setStoredAuthToken('');
+      try { disconnect?.(); } catch {}
+      router.replace('/');
+    } catch {
+      router.replace('/');
+    }
+  };
+
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
@@ -1761,7 +1782,66 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             ← Back
           </button>
           <div style={{ flex: 1, textAlign: 'center' }}>/{worldName}</div>
-          <div style={{ width: 82 }} aria-hidden />
+          <div style={{ position: 'relative', minWidth: 82, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setPlayerMenuOpen((v) => !v);
+              }}
+              style={{
+                border: '1px solid rgba(236,200,120,0.55)',
+                background: 'rgba(28,22,14,0.75)',
+                color: '#f4e3b8',
+                borderRadius: 6,
+                padding: '5px 8px',
+                fontSize: 12,
+                cursor: 'pointer',
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={String(playerIdentity.playerId || connectedAddress || '')}
+            >
+              {playerTag}
+            </button>
+            {playerMenuOpen ? (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  zIndex: 30,
+                  minWidth: 250,
+                  border: '1px solid rgba(236,200,120,0.45)',
+                  background: 'rgba(20, 16, 10, 0.95)',
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                }}
+              >
+                <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 4 }}>Connected as</div>
+                <div style={{ fontSize: 12, marginBottom: 2 }}>{playerTag}</div>
+                <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 8 }}>{shortAddr(playerIdentity.playerId || connectedAddress || '')}</div>
+                <button
+                  onClick={onDisconnectPlayer}
+                  style={{
+                    width: '100%',
+                    border: '1px solid rgba(236,120,120,0.6)',
+                    background: 'rgba(60, 24, 24, 0.92)',
+                    color: '#ffd8d8',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div style={{ position: 'relative' }}>
