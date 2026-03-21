@@ -5,6 +5,19 @@ import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import { setStoredAuthToken } from '../lib/client-auth';
 
+function storePreferredWallet(connector) {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload = {
+      id: String(connector?.id || ''),
+      name: String(connector?.name || ''),
+      rdns: String(connector?.rdns || ''),
+      authMethod: String(connector?.authMethod || ''),
+    };
+    window.sessionStorage.setItem('gbz:wallet-preferred', JSON.stringify(payload));
+  } catch {}
+}
+
 export default function LandingConnect() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -111,6 +124,7 @@ export default function LandingConnect() {
     setBusy(true);
     setErr('');
     try {
+      storePreferredWallet(connector);
       const provider = new ethers.BrowserProvider(connector.provider);
       try {
         await connector.provider.request?.({ method: 'eth_requestAccounts' });
