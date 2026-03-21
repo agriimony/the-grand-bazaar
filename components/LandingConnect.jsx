@@ -13,8 +13,32 @@ export default function LandingConnect() {
 
   useEffect(() => {
     let mounted = true;
-    async function initConnectors() {
+    const eip6963 = new Map();
+
+    const normalizeAnnounced = (detail) => {
+      const info = detail?.info || {};
+      const provider = detail?.provider;
+      const uuid = String(info?.uuid || '').trim();
+      if (!provider || !uuid) return null;
+      const rdns = String(info?.rdns || '').toLowerCase();
+      const rawName = String(info?.name || '').trim();
+      let name = rawName || 'Injected Wallet';
+      if (rdns.includes('metamask')) name = 'MetaMask';
+      else if (rdns.includes('rabby')) name = 'Rabby';
+      else if (rdns.includes('coinbase')) name = 'Coinbase Wallet';
+      return {
+        id: `eip6963:${uuid}`,
+        name,
+        provider,
+        authMethod: 'siwe',
+        rdns,
+        uuid,
+      };
+    };
+
+    const applyConnectors = async () => {
       const found = [];
+
       try {
         const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
@@ -22,12 +46,15 @@ export default function LandingConnect() {
         const inMiniApp = Boolean(await sdk?.isInMiniApp?.());
         if (inMiniApp) {
           const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
-          const eip1193 = getter ? await getter() : null;
-          if (eip1193) found.push({ id: 'farcaster', name: 'Farcaster Wallet', provider: eip1193, authMethod: 'farcaster' });
+          const p = getter ? await getter() : null;
+          if (p) found.push({ id: 'farcaster', name: 'Farcaster Wallet', provider: p, authMethod: 'farcaster' });
         }
       } catch {}
 
-      if (typeof window !== 'undefined' && window.ethereum) {
+      const announced = Array.from(eip6963.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      for (const a of announced) found.push(a);
+
+      if (!announced.length && typeof window !== 'undefined' && window.ethereum) {
         const providers = Array.isArray(window.ethereum.providers) && window.ethereum.providers.length
           ? window.ethereum.providers
           : [window.ethereum];
@@ -37,16 +64,33 @@ export default function LandingConnect() {
           const isRabby = Boolean(p?.isRabby);
           const name = isRabby ? 'Rabby' : (isMetaMask ? 'MetaMask' : (isCoinbase ? 'Coinbase Wallet' : 'Injected Wallet'));
           const id = isRabby ? 'rabby' : (isMetaMask ? 'metamask' : (isCoinbase ? 'coinbase' : `injected-${found.length}`));
-          if (!found.some((x) => x.id === id)) {
-            found.push({ id, name, provider: p, authMethod: 'siwe' });
-          }
+          if (!found.some((x) => x.id === id)) found.push({ id, name, provider: p, authMethod: 'siwe' });
         }
       }
 
       if (mounted) setConnectors(found);
+    };
+
+    const onAnnounce = (event) => {
+      const c = normalizeAnnounced(event?.detail);
+      if (!c) return;
+      eip6963.set(c.uuid, c);
+      applyConnectors();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('eip6963:announceProvider', onAnnounce);
+      window.dispatchEvent(new Event('eip6963:requestProvider'));
     }
-    initConnectors();
-    return () => { mounted = false; };
+
+    applyConnectors();
+
+    return () => {
+      mounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('eip6963:announceProvider', onAnnounce);
+      }
+    };
   }, []);
 
   async function onConnect(connector) {
