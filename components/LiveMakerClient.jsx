@@ -573,6 +573,11 @@ export default function LiveMakerClient({
       return;
     }
 
+    if (!isAddress(String(identity.playerId || '').toLowerCase())) {
+      setStatus('waiting for authenticated wallet');
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
     const ch = supabase.channel(`maker_live:${roomId}`, { config: { broadcast: { self: false } } });

@@ -357,6 +357,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
+    if (!/^0x[a-f0-9]{40}$/.test(String(playerIdentity.playerId || '').toLowerCase())) {
+      console.log('[mp] waiting for authed playerId before realtime init', {
+        sessionId: playerIdentity.sessionId,
+        playerId: playerIdentity.playerId,
+      });
+      return;
+    }
+
     console.log('[mp] init', {
       world: worldName,
       sessionId: playerIdentity.sessionId,
