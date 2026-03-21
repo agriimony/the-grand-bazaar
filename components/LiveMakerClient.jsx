@@ -804,21 +804,30 @@ export default function LiveMakerClient({
       if (nextV < versionRef.current) return;
 
       setStateVersion(nextV);
+      versionRef.current = nextV;
       const nextTrade = payload?.tradeState || {};
-      setTradeState({
+      const nextTradeState = {
         signerSelection: normalizeSelection(nextTrade?.signerSelection),
         senderSelection: normalizeSelection(nextTrade?.senderSelection),
-      });
-      setApproved({
+      };
+      tradeStateRef.current = nextTradeState;
+      setTradeState(nextTradeState);
+      const nextApproved = {
         signer: Boolean(payload?.approved?.signer),
         sender: Boolean(payload?.approved?.sender),
-      });
-      setApprovedHash({
+      };
+      approvedRef.current = nextApproved;
+      setApproved(nextApproved);
+      const nextApprovedHash = {
         signer: String(payload?.approvedHash?.signer || ''),
         sender: String(payload?.approvedHash?.sender || ''),
-      });
+      };
+      approvedHashRef.current = nextApprovedHash;
+      setApprovedHash(nextApprovedHash);
       const phase = String(payload?.livePhase || 'negotiate');
+      livePhaseRef.current = phase;
       setLivePhase(phase);
+      signedOrderRef.current = payload?.signedOrderState || null;
       setSignedOrderState(payload?.signedOrderState || null);
     });
 
@@ -831,10 +840,13 @@ export default function LiveMakerClient({
       if (nextV <= versionRef.current) return;
 
       setStateVersion(nextV);
-      setTradeState({
+      const nextTradeState = {
         signerSelection: normalizeSelection(payload?.signerSelection),
         senderSelection: normalizeSelection(payload?.senderSelection),
-      });
+      };
+      versionRef.current = nextV;
+      tradeStateRef.current = nextTradeState;
+      setTradeState(nextTradeState);
     });
 
     ch.on('broadcast', { event: 'room_leave' }, ({ payload }) => {
@@ -858,8 +870,16 @@ export default function LiveMakerClient({
       if ((who !== 'signer' && who !== 'sender') || !expected || expected !== fromPlayerId) return;
       const hash = String(payload?.selectionHash || '').trim();
       debugLog('event:room_approve', { who, decision, hash, fromSessionId: payload?.sessionId || '' });
-      setApproved((prev) => ({ ...prev, [who]: decision === 'approve' }));
-      setApprovedHash((prev) => ({ ...prev, [who]: decision === 'approve' ? hash : '' }));
+      setApproved((prev) => {
+        const next = { ...prev, [who]: decision === 'approve' };
+        approvedRef.current = next;
+        return next;
+      });
+      setApprovedHash((prev) => {
+        const next = { ...prev, [who]: decision === 'approve' ? hash : '' };
+        approvedHashRef.current = next;
+        return next;
+      });
     });
 
     ch.on('broadcast', { event: 'room_signed_order' }, ({ payload }) => {
@@ -1056,6 +1076,8 @@ export default function LiveMakerClient({
     };
 
     const nextVersion = versionRef.current + 1;
+    versionRef.current = nextVersion;
+    tradeStateRef.current = normalized;
     setStateVersion(nextVersion);
     setTradeState(normalized);
 
@@ -1765,6 +1787,8 @@ export default function LiveMakerClient({
       const localHash = mySelectionHash;
       const nextApproved = { ...approved, [myRole]: true };
       const nextHashes = { ...approvedHash, [myRole]: localHash };
+      approvedRef.current = nextApproved;
+      approvedHashRef.current = nextHashes;
       setApproved(nextApproved);
       setApprovedHash(nextHashes);
       setPeerSnapshotAtApprove(peerSelectionHash);
