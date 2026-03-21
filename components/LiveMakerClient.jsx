@@ -24,6 +24,12 @@ function shortErr(v = '', max = 140) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
+function decodeKnownRevert(err) {
+  const raw = String(err?.data || err?.info?.error?.data || err?.error?.data || '').toLowerCase();
+  if (raw.startsWith('0x7939f424')) return 'TransferFromFailed()';
+  return '';
+}
+
 function shortPlayer(v = '', max = 14) {
   const s = shortAddr(String(v || '').trim());
   if (s.length <= max) return s;
@@ -2017,10 +2023,32 @@ export default function LiveMakerClient({
             throw new Error(`insufficient sender balance: have ${String(bal)} need ${needed.toString()}`);
           }
           if (BigInt(allowance || 0n) < needed) {
-            throw new Error(`insufficient allowance: have ${String(allowance)} need ${needed.toString()}`);
+            throw new Error(`insufficient sender allowance: have ${String(allowance)} need ${needed.toString()}`);
           }
         } catch (pre) {
-          setStatus(`swap precheck failed: ${shortErr(pre?.message || 'token balance/allowance')}`);
+          setStatus(`swap precheck failed: ${shortErr(pre?.message || 'sender token balance/allowance')}`);
+          setLivePhase('await_sender');
+          return;
+        }
+      }
+
+      const signerKindNow = String(o.signerKind || KIND_ERC20).toLowerCase();
+      if (signerKindNow === KIND_ERC20 && String(o.signerToken || '').toLowerCase() !== ethers.ZeroAddress.toLowerCase()) {
+        try {
+          const erc20Signer = new ethers.Contract(o.signerToken, ERC20_READ_ABI, ws);
+          const [signerBal, signerAllowance] = await Promise.all([
+            erc20Signer.balanceOf(o.signerWallet).catch(() => 0n),
+            erc20Signer.allowance(o.signerWallet, o.swapContract).catch(() => 0n),
+          ]);
+          const signerNeeded = BigInt(o.signerAmount || '0');
+          if (BigInt(signerBal || 0n) < signerNeeded) {
+            throw new Error(`signer insufficient balance: have ${String(signerBal)} need ${signerNeeded.toString()}`);
+          }
+          if (BigInt(signerAllowance || 0n) < signerNeeded) {
+            throw new Error(`signer insufficient allowance: have ${String(signerAllowance)} need ${signerNeeded.toString()}`);
+          }
+        } catch (pre) {
+          setStatus(`swap precheck failed: ${shortErr(pre?.message || 'signer token balance/allowance')}`);
           setLivePhase('await_sender');
           return;
         }
@@ -2108,7 +2136,9 @@ export default function LiveMakerClient({
       setLivePhase('success');
       ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId: liveRoomId, txHash, playerId: identity.playerId, ts: Date.now() } });
     } catch (e) {
-      setStatus(`swap failed: ${shortErr(e?.message || 'unknown')}`);
+      const known = decodeKnownRevert(e);
+      if (known) setStatus(`swap failed: ${known} ${shortErr(e?.message || '')}`);
+      else setStatus(`swap failed: ${shortErr(e?.message || 'unknown')}`);
       setLivePhase('await_sender');
     }
   };
