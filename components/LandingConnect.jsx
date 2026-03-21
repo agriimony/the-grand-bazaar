@@ -9,64 +9,72 @@ export default function LandingConnect() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [connectors, setConnectors] = useState([]);
 
   useEffect(() => {
     let mounted = true;
-    async function signalReady() {
+    async function initConnectors() {
+      const found = [];
       try {
         const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
         await sdk?.actions?.ready?.();
-      } catch {
-        // no-op outside farcaster clients
-      }
-    }
-    if (mounted) signalReady();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function onConnect() {
-    if (busy) return;
-    setBusy(true);
-    setErr('');
-    try {
-      let provider = null;
-      let authMethod = 'siwe';
-      let fid = '';
-
-      try {
-        const mod = await import('@farcaster/miniapp-sdk');
-        const sdk = mod?.sdk || mod?.default || mod;
         const inMiniApp = Boolean(await sdk?.isInMiniApp?.());
         if (inMiniApp) {
           const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
           const eip1193 = getter ? await getter() : null;
-          if (eip1193) {
-            provider = new ethers.BrowserProvider(eip1193);
-            authMethod = 'farcaster';
-            let ctx = null;
-            try {
-              if (typeof sdk?.context === 'function') ctx = await sdk.context();
-              else ctx = sdk?.context || null;
-            } catch {}
-            fid = String(ctx?.user?.fid || '').trim();
+          if (eip1193) found.push({ id: 'farcaster', name: 'Farcaster Wallet', provider: eip1193, authMethod: 'farcaster' });
+        }
+      } catch {}
+
+      if (typeof window !== 'undefined' && window.ethereum) {
+        const providers = Array.isArray(window.ethereum.providers) && window.ethereum.providers.length
+          ? window.ethereum.providers
+          : [window.ethereum];
+        for (const p of providers) {
+          const isMetaMask = Boolean(p?.isMetaMask);
+          const isCoinbase = Boolean(p?.isCoinbaseWallet);
+          const isRabby = Boolean(p?.isRabby);
+          const name = isRabby ? 'Rabby' : (isMetaMask ? 'MetaMask' : (isCoinbase ? 'Coinbase Wallet' : 'Injected Wallet'));
+          const id = isRabby ? 'rabby' : (isMetaMask ? 'metamask' : (isCoinbase ? 'coinbase' : `injected-${found.length}`));
+          if (!found.some((x) => x.id === id)) {
+            found.push({ id, name, provider: p, authMethod: 'siwe' });
           }
         }
-      } catch {
-        // ignore and try injected wallets
       }
 
-      if (!provider && typeof window !== 'undefined' && window.ethereum?.request) {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        provider = new ethers.BrowserProvider(window.ethereum);
-      }
+      if (mounted) setConnectors(found);
+    }
+    initConnectors();
+    return () => { mounted = false; };
+  }, []);
 
-      if (!provider) throw new Error('No wallet provider found');
-
+  async function onConnect(connector) {
+    if (busy || !connector?.provider) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const provider = new ethers.BrowserProvider(connector.provider);
+      try {
+        await connector.provider.request?.({ method: 'eth_requestAccounts' });
+      } catch {}
       const signer = await provider.getSigner();
       const address = String(await signer.getAddress()).toLowerCase();
+
+      const authMethod = String(connector.authMethod || 'siwe');
+      let fid = '';
+      if (authMethod === 'farcaster') {
+        try {
+          const mod = await import('@farcaster/miniapp-sdk');
+          const sdk = mod?.sdk || mod?.default || mod;
+          let ctx = null;
+          try {
+            if (typeof sdk?.context === 'function') ctx = await sdk.context();
+            else ctx = sdk?.context || null;
+          } catch {}
+          fid = String(ctx?.user?.fid || '').trim();
+        } catch {}
+      }
 
       const c = await fetch('/api/auth/challenge', {
         method: 'POST',
@@ -168,24 +176,32 @@ export default function LandingConnect() {
             background: 'linear-gradient(180deg, #3a3225 0%, #2c251b 100%)',
             padding: 10,
           }}>
-            <button
-              onClick={onConnect}
-              disabled={busy}
-              style={{
-                width: '100%',
-                padding: '11px 14px',
-                borderRadius: 4,
-                border: '2px solid #8f7a49',
-                boxShadow: '0 0 0 1px #2a2216 inset',
-                background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
-                color: '#17120b',
-                fontWeight: 800,
-                fontSize: 20,
-                cursor: busy ? 'default' : 'pointer',
-              }}
-            >
-              {busy ? 'Connecting...' : 'Connect'}
-            </button>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {connectors.map((connector) => (
+                <button
+                  key={connector.id}
+                  onClick={() => onConnect(connector)}
+                  disabled={busy}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 4,
+                    border: '2px solid #8f7a49',
+                    boxShadow: '0 0 0 1px #2a2216 inset',
+                    background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
+                    color: '#17120b',
+                    fontWeight: 800,
+                    fontSize: 16,
+                    cursor: busy ? 'default' : 'pointer',
+                  }}
+                >
+                  {busy ? 'Connecting...' : `Connect ${connector.name}`}
+                </button>
+              ))}
+              {!connectors.length ? (
+                <div style={{ color: '#ffb4a8', fontSize: 12 }}>No wallet provider found</div>
+              ) : null}
+            </div>
           </div>
           {err ? <p style={{ marginTop: 10, color: '#ffb4a8' }}>{err}</p> : null}
         </div>
