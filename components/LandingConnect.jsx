@@ -130,6 +130,14 @@ export default function LandingConnect() {
       try {
         await connector.provider.request?.({ method: 'eth_requestAccounts' });
       } catch {}
+      try {
+        const net = await provider.getNetwork();
+        if (BigInt(net?.chainId || 0) !== 8453n) {
+          await connector.provider.request?.({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+        }
+      } catch {
+        throw new Error('Please switch wallet network to Base');
+      }
       const signer = await provider.getSigner();
       const address = String(await signer.getAddress()).toLowerCase();
 

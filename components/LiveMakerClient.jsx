@@ -264,10 +264,34 @@ async function getPreferredEip1193Provider() {
   return pickByHint || providers[0] || eth;
 }
 
+async function ensureBaseNetwork(eip1193, provider) {
+  let chainId = 0n;
+  try {
+    const net = await provider.getNetwork();
+    chainId = BigInt(net?.chainId || 0);
+  } catch {}
+  if (chainId === 8453n) return;
+
+  try {
+    await eip1193.request?.({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+  } catch {
+    throw new Error('wrong network: switch wallet to Base (8453)');
+  }
+
+  try {
+    const net2 = await provider.getNetwork();
+    const chain2 = BigInt(net2?.chainId || 0);
+    if (chain2 !== 8453n) throw new Error('not on Base');
+  } catch {
+    throw new Error('wrong network: switch wallet to Base (8453)');
+  }
+}
+
 async function getPreferredSigner(expectedAddress = '') {
   const eip1193 = await getPreferredEip1193Provider();
   if (!eip1193) throw new Error('wallet provider not found');
   const provider = new ethers.BrowserProvider(eip1193);
+  await ensureBaseNetwork(eip1193, provider);
   const signer = await provider.getSigner();
   const addr = String(await signer.getAddress()).toLowerCase();
   const exp = String(expectedAddress || '').toLowerCase();
