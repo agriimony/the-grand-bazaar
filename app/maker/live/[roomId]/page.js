@@ -2,7 +2,13 @@ import AutoFitTitle from '../../../../components/AutoFitTitle';
 import LiveMakerClient from '../../../../components/LiveMakerClient';
 
 export default function LiveMakerPage({ params, searchParams }) {
-  const roomId = String(params?.roomId || '').trim();
+  const roomIdRaw = String(params?.roomId || '').trim();
+  let roomId = roomIdRaw;
+  try {
+    roomId = decodeURIComponent(roomIdRaw);
+  } catch {
+    roomId = roomIdRaw;
+  }
   const roleRaw = String(searchParams?.role || '').trim().toLowerCase();
   const role = roleRaw === 'sender' ? 'sender' : 'signer';
   const channel = String(searchParams?.channel || '').replace(/^\//, '');
