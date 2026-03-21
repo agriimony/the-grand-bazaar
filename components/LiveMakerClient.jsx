@@ -506,6 +506,7 @@ export default function LiveMakerClient({
   const [inventoryView, setInventoryView] = useState('tokens');
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const reconnectAttemptRef = useRef(0);
+  const skipLeaveOnceRef = useRef(false);
   const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
 
   const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -744,6 +745,16 @@ export default function LiveMakerClient({
       });
       if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
         if (unmounted) return;
+        if (s === 'CLOSED') {
+          console.warn('[live-maker] channel closed', {
+            roomId: liveRoomId,
+            topic: liveTopic,
+            role,
+            playerId: identity.playerId,
+            sessionId: identity.sessionId,
+          });
+          return;
+        }
         console.error('[live-maker] realtime subscription problem', {
           state: s,
           roomId: liveRoomId,
@@ -760,6 +771,7 @@ export default function LiveMakerClient({
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
+            skipLeaveOnceRef.current = true;
             setRealtimeRetryTick((v) => v + 1);
           }, delay);
         }
@@ -827,7 +839,11 @@ export default function LiveMakerClient({
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', announceLeave);
       }
-      announceLeave();
+      if (skipLeaveOnceRef.current) {
+        skipLeaveOnceRef.current = false;
+      } else {
+        announceLeave();
+      }
       try {
         supabase.removeChannel(ch);
       } catch {}
