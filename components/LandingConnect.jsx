@@ -131,8 +131,9 @@ export default function LandingConnect() {
         await connector.provider.request?.({ method: 'eth_requestAccounts' });
       } catch {}
       try {
-        const net = await provider.getNetwork();
-        if (BigInt(net?.chainId || 0) !== 8453n) {
+        const raw = await connector.provider.request?.({ method: 'eth_chainId' });
+        const chain = String(raw || '').toLowerCase().startsWith('0x') ? BigInt(String(raw)) : BigInt(parseInt(String(raw || '0'), 10));
+        if (chain !== 8453n) {
           await connector.provider.request?.({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
         }
       } catch {

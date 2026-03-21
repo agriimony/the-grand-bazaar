@@ -217,9 +217,9 @@ function channelTopicFromRoomId(roomId = '') {
 }
 
 async function getPreferredEip1193Provider() {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') return { provider: null, info: null };
   const eth = window.ethereum;
-  if (!eth) return null;
+  if (!eth) return { provider: null, info: null };
 
   const providers = Array.isArray(eth.providers) && eth.providers.length ? eth.providers : [eth];
 
@@ -233,29 +233,33 @@ async function getPreferredEip1193Provider() {
   const name = String(pref?.name || '').toLowerCase();
   const uuid = String(pref?.uuid || '').trim();
 
-  if (uuid && typeof window !== 'undefined') {
-    const announced = [];
+  const announced = [];
+  if (typeof window !== 'undefined') {
     const onAnnounce = (event) => {
       const info = event?.detail?.info || {};
       const provider = event?.detail?.provider;
       if (!provider) return;
-      announced.push({ uuid: String(info?.uuid || ''), provider });
+      announced.push({
+        uuid: String(info?.uuid || ''),
+        rdns: String(info?.rdns || ''),
+        name: String(info?.name || ''),
+        provider,
+      });
     };
     try {
       window.addEventListener('eip6963:announceProvider', onAnnounce);
       window.dispatchEvent(new Event('eip6963:requestProvider'));
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 500));
     } catch {}
     try {
       window.removeEventListener('eip6963:announceProvider', onAnnounce);
     } catch {}
+  }
 
-    const exact = announced.find((a) => a.uuid === uuid)?.provider;
-    if (exact) return exact;
-
-    // strict mode: if we explicitly selected an EIP-6963 wallet at connect,
-    // do not silently fall back to another injected provider.
-    if (id.startsWith('eip6963:')) return null;
+  if (uuid) {
+    const exact = announced.find((a) => a.uuid === uuid);
+    if (exact?.provider) return { provider: exact.provider, info: exact };
+    if (id.startsWith('eip6963:')) return { provider: null, info: null };
   }
 
   const pickByHint = providers.find((p) => {
@@ -265,44 +269,58 @@ async function getPreferredEip1193Provider() {
     return false;
   });
 
-  return pickByHint || providers[0] || eth;
+  return { provider: pickByHint || providers[0] || eth, info: null };
 }
 
-async function ensureBaseNetwork(eip1193, provider) {
+function normalizeChainId(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return 0n;
+  try {
+    if (v.startsWith('0x')) return BigInt(v);
+    return BigInt(parseInt(v, 10));
+  } catch {
+    return 0n;
+  }
+}
+
+async function ensureBaseNetwork(eip1193) {
   let chainId = 0n;
   try {
-    const net = await provider.getNetwork();
-    chainId = BigInt(net?.chainId || 0);
+    const raw = await eip1193.request?.({ method: 'eth_chainId' });
+    chainId = normalizeChainId(raw);
   } catch {}
-  if (chainId === 8453n) return;
+  if (chainId === 8453n) return 8453n;
 
   try {
     await eip1193.request?.({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
   } catch {
-    throw new Error('wrong network: switch wallet to Base (8453)');
+    throw new Error(`wrong network: detected ${chainId.toString()} switch wallet to Base (8453)`);
   }
 
+  let after = 0n;
   try {
-    const net2 = await provider.getNetwork();
-    const chain2 = BigInt(net2?.chainId || 0);
-    if (chain2 !== 8453n) throw new Error('not on Base');
-  } catch {
-    throw new Error('wrong network: switch wallet to Base (8453)');
+    const raw2 = await eip1193.request?.({ method: 'eth_chainId' });
+    after = normalizeChainId(raw2);
+  } catch {}
+  if (after !== 8453n) {
+    throw new Error(`wrong network: detected ${after.toString()} switch wallet to Base (8453)`);
   }
+  return after;
 }
 
 async function getPreferredSigner(expectedAddress = '') {
-  const eip1193 = await getPreferredEip1193Provider();
+  const picked = await getPreferredEip1193Provider();
+  const eip1193 = picked?.provider;
   if (!eip1193) throw new Error('selected wallet provider unavailable. reconnect using your intended wallet');
+  await ensureBaseNetwork(eip1193);
   const provider = new ethers.BrowserProvider(eip1193);
-  await ensureBaseNetwork(eip1193, provider);
   const signer = await provider.getSigner();
   const addr = String(await signer.getAddress()).toLowerCase();
   const exp = String(expectedAddress || '').toLowerCase();
   if (exp && addr !== exp) {
     throw new Error(`wallet mismatch: connected ${shortAddr(addr)} expected ${shortAddr(exp)}`);
   }
-  return { provider, signer, address: addr };
+  return { provider, signer, address: addr, providerInfo: picked?.info || null };
 }
 
 const KIND_ERC20 = '0x36372b07';
@@ -528,6 +546,7 @@ export default function LiveMakerClient({
   const [stateVersion, setStateVersion] = useState(0);
   const [status, setStatus] = useState('connecting...');
   const [channelSubscribed, setChannelSubscribed] = useState(false);
+  const [walletProviderLabel, setWalletProviderLabel] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [peers, setPeers] = useState({});
   const [tradeState, setTradeState] = useState({
@@ -690,6 +709,18 @@ export default function LiveMakerClient({
       dead = true;
     };
   }, []);
+
+  useEffect(() => {
+    let dead = false;
+    async function loadWalletLabel() {
+      const picked = await getPreferredEip1193Provider();
+      const info = picked?.info;
+      const label = info?.name ? `${info.name}${info?.uuid ? ` (${String(info.uuid).slice(0, 8)})` : ''}` : 'selected wallet';
+      if (!dead) setWalletProviderLabel(label);
+    }
+    loadWalletLabel();
+    return () => { dead = true; };
+  }, [identity.playerId]);
 
   useEffect(() => {
     if (!enabled) {
@@ -2182,6 +2213,7 @@ export default function LiveMakerClient({
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75, maxWidth: 'min(520px, 92vw)', overflowWrap: 'anywhere' }}>{status}</div>
+          <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.65, maxWidth: 'min(520px, 92vw)', overflowWrap: 'anywhere' }}>{`Wallet context: ${walletProviderLabel || 'resolving...'}`}</div>
           {feeLoading ? (
             <div className="rs-loading-wrap" style={{ width: 'min(320px, 86vw)' }}>
               <div className="rs-loading-track">
