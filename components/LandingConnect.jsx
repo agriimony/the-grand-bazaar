@@ -12,6 +12,7 @@ function storePreferredWallet(connector) {
       id: String(connector?.id || ''),
       name: String(connector?.name || ''),
       rdns: String(connector?.rdns || ''),
+      uuid: String(connector?.uuid || ''),
       authMethod: String(connector?.authMethod || ''),
     };
     window.sessionStorage.setItem('gbz:wallet-preferred', JSON.stringify(payload));

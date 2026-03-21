@@ -216,7 +216,7 @@ function channelTopicFromRoomId(roomId = '') {
   return `maker_live_${hex}`;
 }
 
-function getPreferredEip1193Provider() {
+async function getPreferredEip1193Provider() {
   if (typeof window === 'undefined') return null;
   const eth = window.ethereum;
   if (!eth) return null;
@@ -231,6 +231,28 @@ function getPreferredEip1193Provider() {
   const id = String(pref?.id || '').toLowerCase();
   const rdns = String(pref?.rdns || '').toLowerCase();
   const name = String(pref?.name || '').toLowerCase();
+  const uuid = String(pref?.uuid || '').trim();
+
+  if (uuid && typeof window !== 'undefined') {
+    const announced = [];
+    const onAnnounce = (event) => {
+      const info = event?.detail?.info || {};
+      const provider = event?.detail?.provider;
+      if (!provider) return;
+      announced.push({ uuid: String(info?.uuid || ''), provider });
+    };
+    try {
+      window.addEventListener('eip6963:announceProvider', onAnnounce);
+      window.dispatchEvent(new Event('eip6963:requestProvider'));
+      await new Promise((r) => setTimeout(r, 120));
+    } catch {}
+    try {
+      window.removeEventListener('eip6963:announceProvider', onAnnounce);
+    } catch {}
+
+    const exact = announced.find((a) => a.uuid === uuid)?.provider;
+    if (exact) return exact;
+  }
 
   const pickByHint = providers.find((p) => {
     if (rdns.includes('metamask') || name.includes('metamask') || id.includes('metamask')) return Boolean(p?.isMetaMask);
@@ -240,6 +262,19 @@ function getPreferredEip1193Provider() {
   });
 
   return pickByHint || providers[0] || eth;
+}
+
+async function getPreferredSigner(expectedAddress = '') {
+  const eip1193 = await getPreferredEip1193Provider();
+  if (!eip1193) throw new Error('wallet provider not found');
+  const provider = new ethers.BrowserProvider(eip1193);
+  const signer = await provider.getSigner();
+  const addr = String(await signer.getAddress()).toLowerCase();
+  const exp = String(expectedAddress || '').toLowerCase();
+  if (exp && addr !== exp) {
+    throw new Error(`wallet mismatch: connected ${shortAddr(addr)} expected ${shortAddr(exp)}`);
+  }
+  return { provider, signer, address: addr };
 }
 
 const KIND_ERC20 = '0x36372b07';
@@ -1505,10 +1540,7 @@ export default function LiveMakerClient({
 
     try {
       setApprovalBusy(true);
-      const eip1193 = getPreferredEip1193Provider();
-      if (!eip1193) throw new Error('wallet provider not found');
-      const provider = new ethers.BrowserProvider(eip1193);
-      const signer = await provider.getSigner();
+      const { signer } = await getPreferredSigner(identity.playerId);
 
       const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
       const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
@@ -1629,10 +1661,7 @@ export default function LiveMakerClient({
     try {
       setIsWrapping(true);
       setCustomTokenError('');
-      const eip1193 = getPreferredEip1193Provider();
-      if (!eip1193) throw new Error('wallet provider not found');
-      const provider = new ethers.BrowserProvider(eip1193);
-      const signer = await provider.getSigner();
+      const { signer } = await getPreferredSigner(identity.playerId);
       const weth = new ethers.Contract(BASE_WETH, WETH_ABI, signer);
       const value = ethers.parseUnits(raw, 18);
       const tx = await weth.deposit({ value });
@@ -1726,10 +1755,7 @@ export default function LiveMakerClient({
         senderAmount,
       };
 
-      const eip1193 = getPreferredEip1193Provider();
-      if (!eip1193) throw new Error('wallet provider not found');
-      const provider = new ethers.BrowserProvider(eip1193);
-      const ws = await provider.getSigner();
+      const { signer: ws } = await getPreferredSigner(identity.playerId);
       const sig = await ws.signTypedData(domain, isSwapErc20 ? ORDER_TYPES_ERC20 : ORDER_TYPES, isSwapErc20 ? typedOrderErc20 : typedOrder);
       const split = ethers.Signature.from(sig);
 
@@ -1788,10 +1814,7 @@ export default function LiveMakerClient({
 
       const o = signedOrderState.payload;
       const isSwapErc20 = IS_SWAP_ERC20(o.swapContract);
-      const eip1193 = getPreferredEip1193Provider();
-      if (!eip1193) throw new Error('wallet provider not found');
-      const provider = new ethers.BrowserProvider(eip1193);
-      const ws = await provider.getSigner();
+      const { signer: ws } = await getPreferredSigner(identity.playerId);
       const swap = new ethers.Contract(o.swapContract, isSwapErc20 ? SWAP_ERC20_ABI : SWAP_ABI, ws);
 
       let tx;
@@ -1871,10 +1894,7 @@ export default function LiveMakerClient({
     let revokeOk = true;
     try {
       if (localApproved) {
-        const eip1193 = getPreferredEip1193Provider();
-        if (!eip1193) throw new Error('wallet provider not found');
-        const provider = new ethers.BrowserProvider(eip1193);
-        const signer = await provider.getSigner();
+        const { signer } = await getPreferredSigner(identity.playerId);
         const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
         const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
         const ownKind = normalizeKind(own?.kind || KIND_ERC20);
