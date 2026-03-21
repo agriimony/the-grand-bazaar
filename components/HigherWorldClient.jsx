@@ -379,6 +379,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
     let reconnectTimer = null;
+    let unmounted = false;
     const channel = supabase.channel(`world:${worldName}`, {
       config: { broadcast: { self: false } },
     });
@@ -537,6 +538,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
       });
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (unmounted) return;
+        if (status === 'CLOSED') {
+          console.warn('[mp] channel closed', {
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+          });
+          return;
+        }
         console.error('[mp] realtime subscription problem', {
           status,
           world: worldName,
@@ -633,6 +643,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }, 8_000);
 
     return () => {
+      unmounted = true;
       clearInterval(staleSweep);
       clearInterval(heartbeat);
       if (reconnectTimer) clearTimeout(reconnectTimer);
