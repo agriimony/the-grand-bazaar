@@ -743,6 +743,7 @@ export default function LiveMakerClient({
         supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
       });
       if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+        if (unmounted) return;
         console.error('[live-maker] realtime subscription problem', {
           state: s,
           roomId: liveRoomId,
@@ -765,6 +766,10 @@ export default function LiveMakerClient({
       }
       if (s === 'SUBSCRIBED') {
         reconnectAttemptRef.current = 0;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
         setChannelSubscribed(true);
         if (!identity.playerId) {
           setStatus('auth pending');

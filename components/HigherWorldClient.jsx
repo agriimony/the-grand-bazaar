@@ -130,6 +130,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const channelRef = useRef(null);
   const lastBroadcastAtRef = useRef(0);
   const reconnectAttemptRef = useRef(0);
+  const skipLeaveOnceRef = useRef(false);
   const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
 
   const pushWorldLog = (text) => {
@@ -549,6 +550,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
+            skipLeaveOnceRef.current = true;
             setRealtimeRetryTick((v) => v + 1);
           }, delay);
         }
@@ -556,6 +558,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const localCell = playerCellRef.current;
       if (status === 'SUBSCRIBED' && localCell) {
         reconnectAttemptRef.current = 0;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
         channel.send({
           type: 'broadcast',
           event: 'player_state',
@@ -630,13 +636,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       clearInterval(staleSweep);
       clearInterval(heartbeat);
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      try {
-        channel.send({
-          type: 'broadcast',
-          event: 'player_leave',
-          payload: { world: worldName, sessionId: playerIdentity.sessionId, ts: Date.now() },
-        });
-      } catch {}
+      if (skipLeaveOnceRef.current) {
+        skipLeaveOnceRef.current = false;
+      } else {
+        try {
+          channel.send({
+            type: 'broadcast',
+            event: 'player_leave',
+            payload: { world: worldName, sessionId: playerIdentity.sessionId, ts: Date.now() },
+          });
+        } catch {}
+      }
       try {
         supabase.removeChannel(channel);
       } catch {}
