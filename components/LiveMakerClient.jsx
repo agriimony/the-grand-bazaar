@@ -205,6 +205,17 @@ function parseRoomBinding(roomId = '') {
   };
 }
 
+function channelTopicFromRoomId(roomId = '') {
+  const s = String(roomId || '').trim();
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+  }
+  const hex = (h >>> 0).toString(16).padStart(8, '0');
+  return `maker_live_${hex}`;
+}
+
 const KIND_ERC20 = '0x36372b07';
 const KIND_ERC721 = '0x80ac58cd';
 const KIND_ERC1155 = '0xd9b67a26';
@@ -478,6 +489,7 @@ export default function LiveMakerClient({
     }
   }, [roomId]);
   const enabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && supabasePublicKey && liveRoomId);
+  const liveTopic = useMemo(() => channelTopicFromRoomId(liveRoomId), [liveRoomId]);
   const roomBinding = useMemo(() => parseRoomBinding(liveRoomId), [liveRoomId]);
 
   useEffect(() => {
@@ -588,7 +600,7 @@ export default function LiveMakerClient({
 
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
-    const ch = supabase.channel(`maker_live:${liveRoomId}`, { config: { broadcast: { self: false } } });
+    const ch = supabase.channel(liveTopic, { config: { broadcast: { self: false } } });
     let unmounted = false;
 
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
@@ -693,6 +705,7 @@ export default function LiveMakerClient({
     ch.subscribe((s) => {
       debugLog('channel_state', s, {
         roomId: liveRoomId,
+        topic: liveTopic,
         role,
         online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
         visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
@@ -702,6 +715,7 @@ export default function LiveMakerClient({
         console.error('[live-maker] realtime subscription problem', {
           state: s,
           roomId: liveRoomId,
+          topic: liveTopic,
           role,
           playerId: identity.playerId,
           sessionId: identity.sessionId,
@@ -769,7 +783,7 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, liveRoomId, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding]);
+  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
