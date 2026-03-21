@@ -10,6 +10,7 @@ export default function LandingConnect() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [connectors, setConnectors] = useState([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -68,7 +69,17 @@ export default function LandingConnect() {
         }
       }
 
-      if (mounted) setConnectors(found);
+      if (mounted) {
+        setConnectors(found);
+        setSelectedConnectorId((prev) => {
+          if (prev && found.some((x) => x.id === prev)) return prev;
+          const fc = found.find((x) => x.authMethod === 'farcaster');
+          if (fc) return fc.id;
+          const metamask = found.find((x) => String(x.name || '').toLowerCase().includes('metamask') || String(x.rdns || '').includes('metamask'));
+          if (metamask) return metamask.id;
+          return found[0]?.id || '';
+        });
+      }
     };
 
     const onAnnounce = (event) => {
@@ -93,7 +104,9 @@ export default function LandingConnect() {
     };
   }, []);
 
-  async function onConnect(connector) {
+  const selectedConnector = connectors.find((x) => x.id === selectedConnectorId) || connectors[0] || null;
+
+  async function onConnect(connector = selectedConnector) {
     if (busy || !connector?.provider) return;
     setBusy(true);
     setErr('');
@@ -221,27 +234,48 @@ export default function LandingConnect() {
             padding: 10,
           }}>
             <div style={{ display: 'grid', gap: 8 }}>
-              {connectors.map((connector) => (
-                <button
-                  key={connector.id}
-                  onClick={() => onConnect(connector)}
+              <button
+                onClick={() => onConnect()}
+                disabled={busy || !selectedConnector}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 4,
+                  border: '2px solid #8f7a49',
+                  boxShadow: '0 0 0 1px #2a2216 inset',
+                  background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
+                  color: '#17120b',
+                  fontWeight: 800,
+                  fontSize: 20,
+                  cursor: busy ? 'default' : 'pointer',
+                }}
+              >
+                {busy ? 'Connecting...' : `Connect${selectedConnector ? ` ${selectedConnector.name}` : ''}`}
+              </button>
+
+              {connectors.length > 1 ? (
+                <select
+                  value={selectedConnectorId}
+                  onChange={(e) => setSelectedConnectorId(String(e.target.value || ''))}
                   disabled={busy}
                   style={{
                     width: '100%',
-                    padding: '10px 12px',
+                    padding: '9px 10px',
                     borderRadius: 4,
                     border: '2px solid #8f7a49',
-                    boxShadow: '0 0 0 1px #2a2216 inset',
-                    background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
-                    color: '#17120b',
-                    fontWeight: 800,
-                    fontSize: 16,
-                    cursor: busy ? 'default' : 'pointer',
+                    background: 'rgba(28,22,14,0.75)',
+                    color: '#f4e3b8',
+                    fontSize: 14,
                   }}
                 >
-                  {busy ? 'Connecting...' : `Connect ${connector.name}`}
-                </button>
-              ))}
+                  {connectors.map((connector) => (
+                    <option key={connector.id} value={connector.id}>
+                      {connector.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+
               {!connectors.length ? (
                 <div style={{ color: '#ffb4a8', fontSize: 12 }}>No wallet provider found</div>
               ) : null}
