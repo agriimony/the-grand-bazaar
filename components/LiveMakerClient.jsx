@@ -347,6 +347,7 @@ const ERC20_ABI = [
 const ERC721_ABI = ['function approve(address to,uint256 tokenId)'];
 const ERC721_READ_ABI = [
   'function ownerOf(uint256 tokenId) view returns (address)',
+  'function tokenURI(uint256 tokenId) view returns (string)',
   'function symbol() view returns (string)',
   'function name() view returns (string)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
@@ -354,6 +355,7 @@ const ERC721_READ_ABI = [
 const ERC1155_ABI = ['function setApprovalForAll(address operator,bool approved)'];
 const ERC1155_READ_ABI = [
   'function balanceOf(address account,uint256 id) view returns (uint256)',
+  'function uri(uint256 id) view returns (string)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
 ];
 const ERC20_READ_ABI = [
@@ -1275,6 +1277,49 @@ export default function LiveMakerClient({
     return KIND_ERC721;
   };
 
+  const ipfsToHttpLite = (u = '') => {
+    const s = String(u || '').trim();
+    if (!s) return '';
+    if (s.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${s.replace('ipfs://', '').replace(/^ipfs\//, '')}`;
+    return s;
+  };
+
+  const readNftMetaLite = async (tokenAddr, tokenId, kind, provider) => {
+    try {
+      if (kind === KIND_ERC721) {
+        const c721 = new ethers.Contract(tokenAddr, ERC721_READ_ABI, provider);
+        const uri = String(await c721.tokenURI(BigInt(tokenId)).catch(() => '')).trim();
+        const url = ipfsToHttpLite(uri);
+        if (!url) return { symbol: '', name: '', imgUrl: '' };
+        const r = await fetch(url, { cache: 'no-store' });
+        if (!r.ok) return { symbol: '', name: '', imgUrl: '' };
+        const j = await r.json();
+        return {
+          symbol: String(j?.symbol || '').trim(),
+          name: String(j?.name || '').trim(),
+          imgUrl: ipfsToHttpLite(j?.image || j?.image_url || ''),
+        };
+      }
+      if (kind === KIND_ERC1155) {
+        const c1155 = new ethers.Contract(tokenAddr, ERC1155_READ_ABI, provider);
+        const raw = String(await c1155.uri(BigInt(tokenId)).catch(() => '')).trim();
+        const hexId = BigInt(tokenId).toString(16).padStart(64, '0');
+        const uri = raw.replace(/\{id\}/gi, hexId);
+        const url = ipfsToHttpLite(uri);
+        if (!url) return { symbol: '', name: '', imgUrl: '' };
+        const r = await fetch(url, { cache: 'no-store' });
+        if (!r.ok) return { symbol: '', name: '', imgUrl: '' };
+        const j = await r.json();
+        return {
+          symbol: String(j?.symbol || '').trim(),
+          name: String(j?.name || '').trim(),
+          imgUrl: ipfsToHttpLite(j?.image || j?.image_url || ''),
+        };
+      }
+    } catch {}
+    return { symbol: '', name: '', imgUrl: '' };
+  };
+
   const applyCustomToken = async () => {
     const token = String(customTokenValue || '').trim();
     if (!token) {
@@ -1403,14 +1448,15 @@ export default function LiveMakerClient({
             return;
           }
           const sym = await c721.symbol().catch(() => selectedNftCollection?.symbol || 'NFT');
+          const meta = await readNftMetaLite(collectionAddr, tokenId, KIND_ERC721, provider);
           row = {
             token: collectionAddr,
             tokenId,
             balance: '1',
             kind: KIND_ERC721,
-            symbol: String(sym || 'NFT'),
-            name: String(sym || 'NFT'),
-            imgUrl: '',
+            symbol: String(meta?.symbol || sym || 'NFT'),
+            name: String(meta?.name || meta?.symbol || sym || 'NFT'),
+            imgUrl: String(meta?.imgUrl || ''),
           };
         } else {
           const c1155 = new ethers.Contract(collectionAddr, ERC1155_READ_ABI, provider);
@@ -1419,14 +1465,15 @@ export default function LiveMakerClient({
             setCustomTokenError('you do not own this token id');
             return;
           }
+          const meta = await readNftMetaLite(collectionAddr, tokenId, KIND_ERC1155, provider);
           row = {
             token: collectionAddr,
             tokenId,
             balance: String(bal),
             kind: KIND_ERC1155,
-            symbol: String(selectedNftCollection?.symbol || 'NFT'),
-            name: String(selectedNftCollection?.symbol || 'NFT'),
-            imgUrl: '',
+            symbol: String(meta?.symbol || selectedNftCollection?.symbol || 'NFT'),
+            name: String(meta?.name || meta?.symbol || selectedNftCollection?.symbol || 'NFT'),
+            imgUrl: String(meta?.imgUrl || ''),
           };
         }
       } catch {
