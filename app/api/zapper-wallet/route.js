@@ -189,8 +189,10 @@ export async function GET(req) {
             const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
             const tokenType = String(n?.token?.__typename || '');
             const balNum = Number(n?.balance || 0);
-            const fallbackKind = /1155/i.test(tokenType) || balNum > 1 ? KIND_ERC1155 : KIND_ERC721;
-            const kind = onchainKind || fallbackKind;
+            let kind = KIND_ERC721;
+            if (balNum > 1) kind = KIND_ERC1155;
+            else if (onchainKind === KIND_ERC1155 || onchainKind === KIND_ERC721) kind = onchainKind;
+            else if (/1155/i.test(tokenType)) kind = KIND_ERC1155;
             nftDebugRows.push({
               collection: c?.collection?.address || null,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),
