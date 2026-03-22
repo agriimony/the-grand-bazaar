@@ -1489,7 +1489,7 @@ export default function LiveMakerClient({
         const signerTokenId = String(signerSel?.tokenId || '').trim();
         const senderAmount = String(senderSel?.amount || '0').trim();
         const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
-        if (!feeOnSignerSide && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+        if (!feeOnSignerSide && senderKind === KIND_ERC20 && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
           const token = new ethers.Contract(signerToken, ROYALTY_ABI, provider);
           const supports = await token.supportsInterface('0x2a55205a').catch(() => false);
           if (supports) {
@@ -1825,10 +1825,11 @@ export default function LiveMakerClient({
             const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
             const signerToken = String(signerSel?.token || '').split(':')[0];
             const signerTokenId = String(signerSel?.tokenId || '').trim();
+            const senderKind = String(senderSel?.kind || KIND_ERC20).toLowerCase();
             const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
             const senderAmountHuman = String(senderSel?.amount || '0');
 
-            if ((signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+            if (senderKind === KIND_ERC20 && (signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
               const royaltyToken = new ethers.Contract(signerToken, ROYALTY_ABI, signer.provider);
               const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
               if (supports) {
@@ -2207,8 +2208,9 @@ export default function LiveMakerClient({
         let maxRoyaltyForCall = 0n;
         try {
           const signerKindNow = String(o.signerKind || KIND_ERC20).toLowerCase();
+          const senderKindNow = String(o.senderKind || KIND_ERC20).toLowerCase();
           const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
-          if (signerIsNft) {
+          if (signerIsNft && senderKindNow === KIND_ERC20) {
             const royaltyToken = new ethers.Contract(o.signerToken, ROYALTY_ABI, ws.provider);
             const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
             if (supports) {
