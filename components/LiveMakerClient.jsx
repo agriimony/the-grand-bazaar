@@ -2335,7 +2335,6 @@ export default function LiveMakerClient({
           title={topTitle}
           selection={topDisplaySelection}
           editable={topEditable}
-          hideSymbolOverlay
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
           onLockedTileClick={() => {}}
