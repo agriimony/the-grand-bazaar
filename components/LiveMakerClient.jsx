@@ -1284,6 +1284,15 @@ export default function LiveMakerClient({
     return s;
   };
 
+  const readNftContractSymbolLite = async (tokenAddr, provider) => {
+    try {
+      const c = new ethers.Contract(tokenAddr, ERC20_READ_ABI, provider);
+      const s = String(await c.symbol().catch(() => '')).trim();
+      return s;
+    } catch {}
+    return '';
+  };
+
   const readNftMetaLite = async (tokenAddr, tokenId, kind, provider) => {
     try {
       if (kind === KIND_ERC721) {
@@ -1405,11 +1414,12 @@ export default function LiveMakerClient({
         return;
       }
 
+      const contractSymbol = await readNftContractSymbolLite(token, provider);
       setInventoryView('nfts');
       setSelectedNftCollection({
         collectionAddress: token,
         collectionName: shortAddr(token),
-        symbol: 'NFT',
+        symbol: String(contractSymbol || 'NFT'),
         kind,
         nfts: [],
       });
@@ -1466,13 +1476,14 @@ export default function LiveMakerClient({
             return;
           }
           const meta = await readNftMetaLite(collectionAddr, tokenId, KIND_ERC1155, provider);
+          const contractSymbol = await readNftContractSymbolLite(collectionAddr, provider);
           row = {
             token: collectionAddr,
             tokenId,
             balance: String(bal),
             kind: KIND_ERC1155,
-            symbol: String(meta?.symbol || selectedNftCollection?.symbol || 'NFT'),
-            name: String(meta?.name || meta?.symbol || selectedNftCollection?.symbol || 'NFT'),
+            symbol: String(meta?.symbol || contractSymbol || selectedNftCollection?.symbol || 'NFT'),
+            name: String(meta?.name || meta?.symbol || contractSymbol || selectedNftCollection?.symbol || 'NFT'),
             imgUrl: String(meta?.imgUrl || ''),
           };
         }
