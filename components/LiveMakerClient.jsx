@@ -2298,7 +2298,7 @@ export default function LiveMakerClient({
             <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
               <div className="rs-loading-track">
                 <div className="rs-loading-fill" />
-                <div className="rs-loading-label">connecting live room...</div>
+                <div className="rs-loading-label">joining room...</div>
               </div>
             </div>
           ) : !bothPartiesJoined ? (
