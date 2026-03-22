@@ -2489,7 +2489,7 @@ export default function LiveMakerClient({
                     </div>
                   ) : null}
 
-                  {inventoryView === 'tokens' && customTokenStep === 'custom' ? (
+                  {customTokenStep === 'custom' ? (
                     <div className="rs-token-grid-wrap" style={{ marginBottom: 10 }}>
                       <button className="rs-modal-back" onClick={() => { setCustomTokenStep('none'); setCustomTokenError(''); }}>← Back</button>
                       <div className="rs-panel-title" style={{ marginTop: 0 }}>Custom token</div>
@@ -2773,15 +2773,12 @@ export default function LiveMakerClient({
                       <button
                         className="rs-token-cell rs-token-cell-plus"
                         onClick={() => {
-                          if (inventoryView === 'tokens') {
-                            setCustomTokenStep('custom');
-                            setCustomTokenValue('');
-                            setCustomTokenAmount('');
-                            setCustomTokenError('');
-                          }
+                          setCustomTokenStep('custom');
+                          setCustomTokenValue('');
+                          setCustomTokenAmount('');
+                          setCustomTokenError('');
                         }}
-                        title={inventoryView === 'tokens' ? 'Custom token' : 'Custom NFT not yet supported'}
-                        disabled={inventoryView !== 'tokens'}
+                        title="Custom token"
                       >
                         +
                       </button>
