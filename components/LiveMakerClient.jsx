@@ -1595,11 +1595,14 @@ export default function LiveMakerClient({
   // - counterparty receives full base amount
   const signerKindNow = String(tradeState.signerSelection?.kind || KIND_ERC20).toLowerCase();
   const senderKindNow = String(tradeState.senderSelection?.kind || KIND_ERC20).toLowerCase();
+  const signerIs721 = signerKindNow === KIND_ERC721;
+  const senderIs721 = senderKindNow === KIND_ERC721;
   const signerIs1155 = signerKindNow === KIND_ERC1155;
   const senderIs1155 = senderKindNow === KIND_ERC1155;
 
   const signerFeeTopup = (() => {
     if (!feeInfo.feeOnSignerSide) return 0;
+    if (signerIs721) return 0;
     if (signerIs1155) {
       const a = BigInt(Math.max(0, Math.floor(signerAmountNum)));
       return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
@@ -1608,6 +1611,7 @@ export default function LiveMakerClient({
   })();
   const senderFeeTopup = (() => {
     if (feeInfo.feeOnSignerSide) return 0;
+    if (senderIs721) return 0;
     if (senderIs1155) {
       const a = BigInt(Math.max(0, Math.floor(senderAmountNum)));
       return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
