@@ -573,6 +573,17 @@ export default function LiveMakerClient({
   const [swapTxHash, setSwapTxHash] = useState('');
   const [successCloseAt, setSuccessCloseAt] = useState(0);
 
+  const sendToWorldWithToast = (message, useReplace = true) => {
+    try {
+      if (typeof window !== 'undefined' && message) {
+        window.sessionStorage.setItem('gbz:world-toast', String(message));
+      }
+    } catch {}
+    const nextPath = `/${initialChannel || 'worlds'}`;
+    if (useReplace) router.replace(nextPath);
+    else router.push(nextPath);
+  };
+
   const debugLog = (...args) => {
     try {
       // eslint-disable-next-line no-console
@@ -672,16 +683,15 @@ export default function LiveMakerClient({
 
   useEffect(() => {
     if (!roomBinding) {
-      setStatus('invalid room id');
+      sendToWorldWithToast('Invalid room id');
       return;
     }
     if (!identity.playerId) return;
     const required = role === 'signer' ? roomBinding.signer : roomBinding.sender;
     if (required !== identity.playerId) {
-      setStatus('wallet not authorized for this room role');
-      router.replace(`/${initialChannel || 'worlds'}`);
+      sendToWorldWithToast('Wallet not authorized for this room role');
     }
-  }, [roomBinding, identity.playerId, role, router, initialChannel]);
+  }, [roomBinding, identity.playerId, role]);
 
   useEffect(() => {
     if (livePhase !== 'success') {
@@ -733,7 +743,7 @@ export default function LiveMakerClient({
 
   useEffect(() => {
     if (!enabled) {
-      setStatus('realtime not configured');
+      sendToWorldWithToast('Realtime not configured');
       return;
     }
 
@@ -1000,13 +1010,13 @@ export default function LiveMakerClient({
         }
         setChannelSubscribed(true);
         if (!identity.playerId) {
-          setStatus('auth pending');
+          setStatus('');
+          debugLog('auth pending');
           return;
         }
         const expected = role === 'signer' ? roomBinding?.signer : roomBinding?.sender;
         if (!expected || expected !== identity.playerId) {
-          setStatus('room auth mismatch');
-          router.replace(`/${initialChannel || 'worlds'}`);
+          sendToWorldWithToast('Room auth mismatch');
           return;
         }
         debugLog('live room connected', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
