@@ -1633,15 +1633,20 @@ export default function LiveMakerClient({
   const topInsufficient = (topIsSignerPanel ? signerInsufficient : senderInsufficient) || peerChangedTop;
   const bottomInsufficient = (topIsSignerPanel ? senderInsufficient : signerInsufficient) || peerChangedBottom;
 
+  const royaltySymbol = String(tradeState.senderSelection?.symbol || '').trim();
+  const royaltyWithSymbol = feeInfo.royaltyHuman
+    ? `${feeInfo.royaltyHuman}${royaltySymbol ? ` ${royaltySymbol}` : ''}`
+    : '';
+
   const signerFeeText = bothDone && feeInfo.feeOnSignerSide ? feeLabel : '';
   const senderFeeText = bothDone && !feeInfo.feeOnSignerSide
-    ? [feeLabel, feeInfo.royaltyHuman ? `incl. royalty ${feeInfo.royaltyHuman}` : ''].filter(Boolean).join(' • ')
+    ? [feeLabel, royaltyWithSymbol ? `incl. ${royaltyWithSymbol} royalty` : ''].filter(Boolean).join(' • ')
     : '';
 
   const protocolPctLabel = `${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}%`;
   const receiverBreakdown = [
     `after ${protocolPctLabel} protocol fee`,
-    feeInfo.royaltyHuman ? `+ ${feeInfo.royaltyHuman} royalty` : '',
+    royaltyWithSymbol ? `+ ${royaltyWithSymbol} royalty` : '',
   ].filter(Boolean).join(' ');
 
   const signerReceiveNote = bothDone && feeInfo.feeOnSignerSide ? receiverBreakdown : '';
