@@ -1487,16 +1487,23 @@ export default function LiveMakerClient({
 
         const signerToken = String(signerSel?.token || '').split(':')[0];
         const signerTokenId = String(signerSel?.tokenId || '').trim();
+        const senderKindNow = String(senderSel?.kind || KIND_ERC20).toLowerCase();
         const senderAmount = String(senderSel?.amount || '0').trim();
         const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
-        if (!feeOnSignerSide && senderKind === KIND_ERC20 && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+        if (!feeOnSignerSide && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
           const token = new ethers.Contract(signerToken, ROYALTY_ABI, provider);
           const supports = await token.supportsInterface('0x2a55205a').catch(() => false);
           if (supports) {
-            const erc20 = new ethers.Contract(senderTokenAddr, ROYALTY_ABI, provider);
-            const decimals = Number(await erc20.decimals().catch(() => 18));
-            royaltyDecimals = Number.isFinite(decimals) ? decimals : 18;
-            const salePrice = ethers.parseUnits(senderAmount || '0', royaltyDecimals);
+            let salePrice = 0n;
+            if (senderKindNow === KIND_ERC721 || senderKindNow === KIND_ERC1155) {
+              royaltyDecimals = 0;
+              salePrice = BigInt(Math.max(0, Math.floor(Number(senderAmount || '0') || 0)));
+            } else {
+              const erc20 = new ethers.Contract(senderTokenAddr, ROYALTY_ABI, provider);
+              const decimals = Number(await erc20.decimals().catch(() => 18));
+              royaltyDecimals = Number.isFinite(decimals) ? decimals : 18;
+              salePrice = ethers.parseUnits(senderAmount || '0', royaltyDecimals);
+            }
             const [, r] = await token.royaltyInfo(BigInt(signerTokenId), salePrice).catch(() => [ethers.ZeroAddress, 0n]);
             royaltyRaw = BigInt(r || 0n);
           }
@@ -1600,11 +1607,12 @@ export default function LiveMakerClient({
   const senderIs721 = senderKindNow === KIND_ERC721;
   const signerIs1155 = signerKindNow === KIND_ERC1155;
   const senderIs1155 = senderKindNow === KIND_ERC1155;
+  const signerIsIntegerKind = signerIs721 || signerIs1155;
+  const senderIsIntegerKind = senderIs721 || senderIs1155;
 
   const signerFeeTopup = (() => {
     if (!feeInfo.feeOnSignerSide) return 0;
-    if (signerIs721) return 0;
-    if (signerIs1155) {
+    if (signerIsIntegerKind) {
       const a = BigInt(Math.max(0, Math.floor(signerAmountNum)));
       return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
     }
@@ -1612,8 +1620,7 @@ export default function LiveMakerClient({
   })();
   const senderFeeTopup = (() => {
     if (feeInfo.feeOnSignerSide) return 0;
-    if (senderIs721) return 0;
-    if (senderIs1155) {
+    if (senderIsIntegerKind) {
       const a = BigInt(Math.max(0, Math.floor(senderAmountNum)));
       return Number((a * BigInt(Math.max(0, protocolFeeBps))) / 10000n);
     }
@@ -1829,13 +1836,18 @@ export default function LiveMakerClient({
             const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
             const senderAmountHuman = String(senderSel?.amount || '0');
 
-            if (senderKind === KIND_ERC20 && (signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+            if ((signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
               const royaltyToken = new ethers.Contract(signerToken, ROYALTY_ABI, signer.provider);
               const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
               if (supports) {
-                const senderErc20Read = new ethers.Contract(senderTokenAddr, ERC20_READ_ABI, signer.provider);
-                const senderDec = Number(await senderErc20Read.decimals().catch(() => 18));
-                const senderAmountRawForRoyalty = ethers.parseUnits(senderAmountHuman || '0', Number.isFinite(senderDec) ? senderDec : 18);
+                let senderAmountRawForRoyalty = 0n;
+                if (senderKind === KIND_ERC721 || senderKind === KIND_ERC1155) {
+                  senderAmountRawForRoyalty = BigInt(Math.max(0, Math.floor(Number(senderAmountHuman || '0') || 0)));
+                } else {
+                  const senderErc20Read = new ethers.Contract(senderTokenAddr, ERC20_READ_ABI, signer.provider);
+                  const senderDec = Number(await senderErc20Read.decimals().catch(() => 18));
+                  senderAmountRawForRoyalty = ethers.parseUnits(senderAmountHuman || '0', Number.isFinite(senderDec) ? senderDec : 18);
+                }
                 const [, royaltyAmount] = await royaltyToken.royaltyInfo(BigInt(signerTokenId), senderAmountRawForRoyalty).catch(() => [ethers.ZeroAddress, 0n]);
                 royaltyRawForApproval = BigInt(royaltyAmount || 0n);
               }
@@ -2208,9 +2220,8 @@ export default function LiveMakerClient({
         let maxRoyaltyForCall = 0n;
         try {
           const signerKindNow = String(o.signerKind || KIND_ERC20).toLowerCase();
-          const senderKindNow = String(o.senderKind || KIND_ERC20).toLowerCase();
           const signerIsNft = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
-          if (signerIsNft && senderKindNow === KIND_ERC20) {
+          if (signerIsNft) {
             const royaltyToken = new ethers.Contract(o.signerToken, ROYALTY_ABI, ws.provider);
             const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
             if (supports) {
