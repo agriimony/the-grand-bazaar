@@ -758,6 +758,7 @@ export default function LiveMakerClient({
             fromSessionId: identity.sessionId,
             fromRole: role,
             fromPlayerId: identity.playerId,
+            fromFname: localFname,
             stateVersion: versionRef.current,
             tradeState: tradeStateRef.current,
             approved: approvedRef.current,
@@ -802,10 +803,24 @@ export default function LiveMakerClient({
     ch.on('broadcast', { event: 'room_snapshot' }, ({ payload }) => {
       const toSessionId = String(payload?.toSessionId || '').trim();
       if (toSessionId && toSessionId !== identity.sessionId) return;
+      const fromSessionId = String(payload?.fromSessionId || '').trim();
       const fromRole = String(payload?.fromRole || '').trim().toLowerCase();
       const fromPlayerId = String(payload?.fromPlayerId || '').trim().toLowerCase();
       const expected = fromRole === 'signer' ? roomBinding?.signer : (fromRole === 'sender' ? roomBinding?.sender : '');
       if (!expected || expected !== fromPlayerId) return;
+
+      if (fromSessionId) {
+        setPeers((prev) => ({
+          ...prev,
+          [fromSessionId]: {
+            sessionId: fromSessionId,
+            playerId: fromPlayerId,
+            fname: String(payload?.fromFname || '').replace(/^@/, '').trim().toLowerCase(),
+            role: fromRole,
+          },
+        }));
+      }
+
       const nextV = Number(payload?.stateVersion || 0);
       if (nextV < versionRef.current) return;
 
