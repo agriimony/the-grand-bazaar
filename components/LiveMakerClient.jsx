@@ -2365,7 +2365,7 @@ export default function LiveMakerClient({
                   <button className="rs-btn rs-btn-positive" onClick={onAcknowledgeChangedOffer}>Approve</button>
                   <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
                 </div>
-              ) : (myRole === 'signer' && localApproved && !bothApproved) ? (
+              ) : (localApproved && !bothApproved) ? (
                 <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
                   <div className="rs-loading-track">
                     <div className="rs-loading-fill" />
