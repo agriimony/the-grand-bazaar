@@ -1299,6 +1299,7 @@ export default function LiveMakerClient({
     if (coll) {
       setInventoryView('nfts');
       setSelectedNftCollection({ ...coll, kind: String(coll?.kind || coll?.nfts?.[0]?.kind || KIND_ERC721).toLowerCase() });
+      setCustomTokenValue('');
       setCustomTokenStep('custom-id');
       setCustomTokenError('');
       return;
@@ -1354,6 +1355,7 @@ export default function LiveMakerClient({
         kind,
         nfts: [],
       });
+      setCustomTokenValue('');
       setCustomTokenStep('custom-id');
       setCustomTokenError('');
     } catch {
