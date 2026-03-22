@@ -1529,8 +1529,8 @@ export default function LiveMakerClient({
   const rawOtherDisplay = String(otherPeer?.fname || otherPeer?.playerId || otherPeer?.sessionId || initialPeerDisplay || '').trim();
   const otherDisplay = shortPlayer(rawOtherDisplay || '') || 'player';
 
-  const topTitle = role === 'signer' ? 'You offer' : `${otherDisplay} offers`;
-  const bottomTitle = role === 'signer' ? `${otherDisplay} offers` : 'You offer';
+  const topTitle = role === 'signer' ? 'You offer' : 'You receive';
+  const bottomTitle = role === 'signer' ? 'You receive' : 'You offer';
 
   const topSelection = tradeState.signerSelection;
   const bottomSelection = tradeState.senderSelection;
