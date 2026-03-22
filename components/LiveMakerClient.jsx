@@ -738,7 +738,8 @@ export default function LiveMakerClient({
     }
 
     if (!isAddress(String(identity.playerId || '').toLowerCase())) {
-      setStatus('waiting for authenticated wallet');
+      setStatus('');
+      debugLog('waiting for authenticated wallet');
       return;
     }
 
@@ -981,7 +982,8 @@ export default function LiveMakerClient({
         const delay = (s === 'TIMED_OUT' && attempt === 1)
           ? 150
           : Math.min(8000, 800 * attempt);
-        setStatus(`reconnecting live room... (${attempt})`);
+        setStatus('');
+        debugLog('reconnecting live room', { attempt });
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
