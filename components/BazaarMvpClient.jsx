@@ -2269,7 +2269,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
     const token = makerOverrides.senderToken;
     const amount = makerOverrides.senderAmount;
-    const decimals = Number(makerOverrides.senderDecimals ?? 18);
+    let decimals = Number(makerOverrides.senderDecimals ?? checks?.senderDecimals ?? guessDecimals(token));
     if (!token || !amount) {
       setStatus('select your offer token and amount first');
       return;
@@ -2285,7 +2285,20 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     const isSwapErc20 = IS_SWAP_ERC20(swapContract);
 
     try {
-      const rawAmount = ethers.parseUnits(String(amount), decimals);
+      if (!isEthSentinelAddr(token)) {
+        try {
+          const erc20Read = new ethers.Contract(token, ERC20_ABI, readProvider);
+          const onchainDecimals = Number(await erc20Read.decimals().catch(() => decimals));
+          if (Number.isFinite(onchainDecimals) && onchainDecimals >= 0) decimals = onchainDecimals;
+        } catch {}
+      }
+      let rawAmount = 0n;
+      const rawFromUi = String(makerOverrides.senderAmountRaw || '').trim();
+      if (rawFromUi && /^\d+$/.test(rawFromUi)) {
+        rawAmount = BigInt(rawFromUi);
+      } else {
+        rawAmount = ethers.parseUnits(String(amount), decimals);
+      }
       const sym = makerOverrides.senderSymbol || guessSymbol(token);
       const offeredKindRaw = String(makerOverrides.senderKind || KIND_ERC20);
       const hasSenderTokenId = Boolean(makerOverrides.senderTokenId && String(makerOverrides.senderTokenId) !== '0');
@@ -2395,14 +2408,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
     }
 
     const signerToken = makerOverrides.senderToken || parsed?.senderToken;
-    const signerDecimals = Number(makerOverrides.senderDecimals ?? checks?.senderDecimals ?? guessDecimals(signerToken));
-    const signerAmountHuman = makerOverrides.senderAmount || (parsed ? ethers.formatUnits(parsed.senderAmount, signerDecimals) : '');
-
     const senderToken = makerOverrides.signerToken || parsed?.signerToken;
-    const senderDecimals = Number(makerOverrides.signerDecimals ?? checks?.signerDecimals ?? guessDecimals(senderToken));
-    const senderAmountHuman = makerOverrides.signerAmount || (parsed ? ethers.formatUnits(parsed.signerAmount, senderDecimals) : '');
 
-    if (!signerToken || !signerAmountHuman || !senderToken || !senderAmountHuman) {
+    if (!signerToken || !senderToken) {
       setStatus('select your offer token and amount first');
       return;
     }
@@ -2420,11 +2428,45 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
 
       const signerKindNow = String(makerOverrides.senderKind || KIND_ERC20);
       const senderKindNow = String(makerOverrides.signerKind || routedSenderKind || requiredSenderKind || KIND_ERC20);
+
+      const signerIsErc20 = signerKindNow === KIND_ERC20;
+      const senderIsErc20 = senderKindNow === KIND_ERC20;
+
+      let signerDecimals = Number(makerOverrides.senderDecimals ?? checks?.senderDecimals ?? guessDecimals(signerToken));
+      let senderDecimals = Number(makerOverrides.signerDecimals ?? checks?.signerDecimals ?? guessDecimals(senderToken));
+
+      if (signerIsErc20 && !isEthSentinelAddr(signerToken)) {
+        try {
+          const signerErc20Read = new ethers.Contract(signerToken, ERC20_ABI, readProvider);
+          const onchainSignerDecimals = Number(await signerErc20Read.decimals().catch(() => signerDecimals));
+          if (Number.isFinite(onchainSignerDecimals) && onchainSignerDecimals >= 0) signerDecimals = onchainSignerDecimals;
+        } catch {}
+      }
+
+      if (senderIsErc20 && !isEthSentinelAddr(senderToken)) {
+        try {
+          const senderErc20Read = new ethers.Contract(senderToken, ERC20_ABI, readProvider);
+          const onchainSenderDecimals = Number(await senderErc20Read.decimals().catch(() => senderDecimals));
+          if (Number.isFinite(onchainSenderDecimals) && onchainSenderDecimals >= 0) senderDecimals = onchainSenderDecimals;
+        } catch {}
+      }
+
+      const signerAmountHuman = makerOverrides.senderAmount || (parsed ? ethers.formatUnits(parsed.senderAmount, signerDecimals) : '');
+      const senderAmountHuman = makerOverrides.signerAmount || (parsed ? ethers.formatUnits(parsed.signerAmount, senderDecimals) : '');
+      if (!signerAmountHuman || !senderAmountHuman) {
+        setStatus('select your offer token and amount first');
+        return;
+      }
+
       const signerAmount = (signerKindNow === KIND_ERC721)
         ? '0'
+        : (String(makerOverrides.senderAmountRaw || '').trim() && /^\d+$/.test(String(makerOverrides.senderAmountRaw || '').trim()))
+        ? String(makerOverrides.senderAmountRaw).trim()
         : ethers.parseUnits(String(signerAmountHuman), signerDecimals).toString();
       const senderAmount = (senderKindNow === KIND_ERC721)
         ? '0'
+        : (String(makerOverrides.signerAmountRaw || '').trim() && /^\d+$/.test(String(makerOverrides.signerAmountRaw || '').trim()))
+        ? String(makerOverrides.signerAmountRaw).trim()
         : ethers.parseUnits(String(senderAmountHuman), senderDecimals).toString();
 
       const signerIsNftNow = signerKindNow === KIND_ERC721 || signerKindNow === KIND_ERC1155;
@@ -3157,6 +3199,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         [`${panel}ImgUrl`]: option.imgUrl || null,
         [`${panel}AvailableRaw`]: nftAvailable,
         [`${panel}Amount`]: nftSelected,
+        [`${panel}AmountRaw`]: String(nftKind === KIND_ERC721 ? '0' : nftSelected),
         [`${panel}Usd`]: Number.isFinite(floorUsd) && floorUsd > 0 ? floorUsd : null,
         [`${panel}TokenId`]: String(option.tokenId || '0'),
         [`${panel}Kind`]: nftKind,
@@ -3736,6 +3779,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         [`${panel}ImgUrl`]: wethOption.imgUrl || null,
         [`${panel}AvailableRaw`]: typeof wethOption.availableRaw === 'bigint' ? wethOption.availableRaw.toString() : String(wethOption.availableRaw || '0'),
         [`${panel}Amount`]: String(n),
+        [`${panel}AmountRaw`]: ethers.parseUnits(String(n), Number(wethOption.decimals ?? 18)).toString(),
         [`${panel}Usd`]: usd,
       }));
       setTokenModalOpen(false);
@@ -3832,6 +3876,22 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       selectedUsd = null;
     }
 
+    const normalizedAmount = String(pendingToken?.kind === KIND_ERC1155 ? Math.floor(Number(pendingAmount || 0)) : pendingAmount);
+    let normalizedAmountRaw = '0';
+    try {
+      const kind = String(pendingToken?.kind || KIND_ERC20);
+      if (kind === KIND_ERC721) {
+        normalizedAmountRaw = '0';
+      } else if (kind === KIND_ERC1155) {
+        normalizedAmountRaw = String(BigInt(normalizedAmount || '0'));
+      } else {
+        const dec = Number(pendingToken.decimals ?? 18);
+        normalizedAmountRaw = ethers.parseUnits(String(normalizedAmount || '0'), Number.isFinite(dec) ? dec : 18).toString();
+      }
+    } catch {
+      normalizedAmountRaw = '0';
+    }
+
     const nextOverrides = {
       ...makerOverrides,
       [`${panel}Token`]: pendingToken.token,
@@ -3839,7 +3899,8 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       [`${panel}Decimals`]: pendingToken.decimals,
       [`${panel}ImgUrl`]: pendingToken.imgUrl || null,
       [`${panel}AvailableRaw`]: typeof pendingToken.availableRaw === 'bigint' ? pendingToken.availableRaw.toString() : String(pendingToken.availableRaw || '0'),
-      [`${panel}Amount`]: String(pendingToken?.kind === KIND_ERC1155 ? Math.floor(Number(pendingAmount || 0)) : pendingAmount),
+      [`${panel}Amount`]: normalizedAmount,
+      [`${panel}AmountRaw`]: normalizedAmountRaw,
       [`${panel}Usd`]: selectedUsd,
       [`${panel}Kind`]: pendingToken?.kind || KIND_ERC20,
       [`${panel}TokenId`]: pendingToken?.tokenId ? String(pendingToken.tokenId) : '0',
@@ -3896,7 +3957,9 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
                 const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
                 if (supports) {
                   const senderDecimals = Number(nextOverrides.signerDecimals ?? 18);
-                  const senderAmountRaw = ethers.parseUnits(String(nextOverrides.signerAmount || 0), senderDecimals);
+                  const senderAmountRaw = (String(nextOverrides.signerAmountRaw || '').trim() && /^\d+$/.test(String(nextOverrides.signerAmountRaw || '').trim()))
+                    ? BigInt(String(nextOverrides.signerAmountRaw).trim())
+                    : ethers.parseUnits(String(nextOverrides.signerAmount || 0), senderDecimals);
                   const signerId = BigInt(nextOverrides.senderTokenId || 0);
                   const [, royaltyAmount] = await royaltyToken.royaltyInfo(signerId, senderAmountRaw).catch(() => [ethers.ZeroAddress, 0n]);
                   const ra = BigInt(royaltyAmount || 0n);
@@ -4336,7 +4399,10 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
   if (makerMode) {
     try {
       const dec = Number(makerOverrides.senderDecimals ?? 18);
-      const inRaw = makerOverrides.senderAmount ? ethers.parseUnits(String(makerOverrides.senderAmount), dec) : 0n;
+      const senderAmountRawStr = String(makerOverrides.senderAmountRaw || '').trim();
+      const inRaw = (senderAmountRawStr && /^\d+$/.test(senderAmountRawStr))
+        ? BigInt(senderAmountRawStr)
+        : (makerOverrides.senderAmount ? ethers.parseUnits(String(makerOverrides.senderAmount), dec) : 0n);
       const availRaw = BigInt(makerOverrides.senderAvailableRaw || '0');
       makerSenderInsufficient = inRaw > 0n && inRaw > availRaw;
     } catch {}
@@ -4347,16 +4413,21 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       const is1155 = signerKind === KIND_ERC1155;
       const feeBps = BigInt(uiProtocolFeeBps || 0);
       const baseAmount = String(makerOverrides.signerAmount || '0');
+      const signerAmountRawStr = String(makerOverrides.signerAmountRaw || '').trim();
 
       let inRaw = 0n;
       if (is721) {
-        inRaw = ethers.parseUnits(baseAmount, dec);
+        inRaw = 0n;
       } else if (is1155) {
-        const baseUnits = BigInt(Math.max(0, Math.floor(Number(baseAmount) || 0)));
+        const baseUnits = (signerAmountRawStr && /^\d+$/.test(signerAmountRawStr))
+          ? BigInt(signerAmountRawStr)
+          : BigInt(Math.max(0, Math.floor(Number(baseAmount) || 0)));
         const feeUnits = (baseUnits * feeBps) / 10000n;
         inRaw = baseUnits + feeUnits;
       } else {
-        const baseRaw = ethers.parseUnits(baseAmount, dec);
+        const baseRaw = (signerAmountRawStr && /^\d+$/.test(signerAmountRawStr))
+          ? BigInt(signerAmountRawStr)
+          : ethers.parseUnits(baseAmount, dec);
         const feeRaw = (baseRaw * feeBps) / 10000n;
         inRaw = baseRaw + feeRaw;
       }

@@ -1898,8 +1898,33 @@ export default function LiveMakerClient({
       const protocolFee = await swap.protocolFee();
       debugLog('sign:context', { swapContract, protocolFee: protocolFee.toString(), isSwapErc20 });
 
-      const signerDecimals = Number(tradeState.signerSelection?.decimals || 18);
-      const senderDecimals = Number(tradeState.senderSelection?.decimals || 18);
+      const signerToken = String(tradeState.signerSelection?.token || '').split(':')[0];
+      const senderToken = String(tradeState.senderSelection?.token || '').split(':')[0];
+      const signerKind = String(tradeState.signerSelection?.kind || KIND_ERC20);
+      const senderKind = String(tradeState.senderSelection?.kind || KIND_ERC20);
+
+      const signerIsErc20 = String(signerKind).toLowerCase() === KIND_ERC20;
+      const senderIsErc20 = String(senderKind).toLowerCase() === KIND_ERC20;
+
+      let signerDecimals = Number(tradeState.signerSelection?.decimals || 18);
+      let senderDecimals = Number(tradeState.senderSelection?.decimals || 18);
+
+      if (signerIsErc20 && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && !isEthSentinelAddr(signerToken)) {
+        try {
+          const signerErc20Read = new ethers.Contract(signerToken, ERC20_READ_ABI, readProvider);
+          const onchainSignerDecimals = Number(await signerErc20Read.decimals().catch(() => signerDecimals));
+          if (Number.isFinite(onchainSignerDecimals) && onchainSignerDecimals >= 0) signerDecimals = onchainSignerDecimals;
+        } catch {}
+      }
+
+      if (senderIsErc20 && /^0x[a-fA-F0-9]{40}$/.test(senderToken) && !isEthSentinelAddr(senderToken)) {
+        try {
+          const senderErc20Read = new ethers.Contract(senderToken, ERC20_READ_ABI, readProvider);
+          const onchainSenderDecimals = Number(await senderErc20Read.decimals().catch(() => senderDecimals));
+          if (Number.isFinite(onchainSenderDecimals) && onchainSenderDecimals >= 0) senderDecimals = onchainSenderDecimals;
+        } catch {}
+      }
+
       const signerAmount = (String(tradeState.signerSelection?.kind || '').toLowerCase() === KIND_ERC721)
         ? '0'
         : ethers.parseUnits(String(tradeState.signerSelection?.amount || '0'), Number.isFinite(signerDecimals) ? signerDecimals : 18).toString();
@@ -1910,10 +1935,6 @@ export default function LiveMakerClient({
       const nonce = (BigInt(Math.floor(Date.now() / 1000)) * 1000000n + BigInt(Math.floor(Math.random() * 1000000))).toString();
       const expirySec = Math.floor(Date.now() / 1000) + 5 * 60;
 
-      const signerToken = String(tradeState.signerSelection?.token || '').split(':')[0];
-      const senderToken = String(tradeState.senderSelection?.token || '').split(':')[0];
-      const signerKind = String(tradeState.signerSelection?.kind || KIND_ERC20);
-      const senderKind = String(tradeState.senderSelection?.kind || KIND_ERC20);
       const signerId = Number(tradeState.signerSelection?.tokenId || 0);
       const senderId = Number(tradeState.senderSelection?.tokenId || 0);
 
