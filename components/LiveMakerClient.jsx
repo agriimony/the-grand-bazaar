@@ -550,6 +550,7 @@ export default function LiveMakerClient({
 
   const [role] = useState(initialRole === 'sender' ? 'sender' : 'signer');
   const [localFname, setLocalFname] = useState('');
+  const localFnameRef = useRef('');
   const [stateVersion, setStateVersion] = useState(0);
   const [status, setStatus] = useState('connecting...');
   const [channelSubscribed, setChannelSubscribed] = useState(false);
@@ -662,6 +663,7 @@ export default function LiveMakerClient({
   useEffect(() => { approvedHashRef.current = approvedHash; }, [approvedHash]);
   useEffect(() => { livePhaseRef.current = livePhase; }, [livePhase]);
   useEffect(() => { signedOrderRef.current = signedOrderState; }, [signedOrderState]);
+  useEffect(() => { localFnameRef.current = localFname; }, [localFname]);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -758,7 +760,7 @@ export default function LiveMakerClient({
             fromSessionId: identity.sessionId,
             fromRole: role,
             fromPlayerId: identity.playerId,
-            fromFname: localFname,
+            fromFname: localFnameRef.current,
             stateVersion: versionRef.current,
             tradeState: tradeStateRef.current,
             approved: approvedRef.current,
@@ -976,7 +978,9 @@ export default function LiveMakerClient({
         setChannelSubscribed(false);
         const attempt = reconnectAttemptRef.current + 1;
         reconnectAttemptRef.current = attempt;
-        const delay = Math.min(8000, 800 * attempt);
+        const delay = (s === 'TIMED_OUT' && attempt === 1)
+          ? 150
+          : Math.min(8000, 800 * attempt);
         setStatus(`reconnecting live room... (${attempt})`);
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
@@ -1004,7 +1008,7 @@ export default function LiveMakerClient({
           return;
         }
         setStatus('live room connected');
-        debugLog('event:room_join:send', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFname });
+        debugLog('event:room_join:send', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
         ch.send({
           type: 'broadcast',
           event: 'room_join',
@@ -1013,7 +1017,7 @@ export default function LiveMakerClient({
             role,
             sessionId: identity.sessionId,
             playerId: identity.playerId,
-            fname: localFname,
+            fname: localFnameRef.current,
             ts: Date.now(),
           },
         });
@@ -1057,7 +1061,7 @@ export default function LiveMakerClient({
             roomId: liveRoomId,
             sessionId: identity.sessionId,
             playerId: identity.playerId,
-            fname: localFname,
+            fname: localFnameRef.current,
             role,
             ts: Date.now(),
           },
@@ -1085,7 +1089,7 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, localFname, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick]);
+  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
