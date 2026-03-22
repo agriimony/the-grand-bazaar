@@ -1651,7 +1651,7 @@ export default function LiveMakerClient({
     ? signerFeeText
     : signerReceiveNote;
   const bottomFeeText = role === 'signer'
-    ? senderReceiveNote
+    ? senderFeeText
     : senderFeeText;
 
   const signerPanelAmountForViewer = role === 'signer' ? signerOutgoing : senderIncoming;
