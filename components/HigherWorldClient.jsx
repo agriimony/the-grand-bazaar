@@ -94,6 +94,7 @@ function findPath({ size, blocked, start, goal }) {
 export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
   const size = 37;
+  const maxWorldPlayers = 37;
   const center = Math.floor(size / 2);
   const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
@@ -132,6 +133,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
   const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
+  const worldCapKickedRef = useRef(false);
 
   const pushWorldLog = (text) => {
     const label = String(text || '').trim();
@@ -381,7 +383,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     let reconnectTimer = null;
     let unmounted = false;
     const channel = supabase.channel(`world:${worldName}`, {
-      config: { broadcast: { self: false } },
+      config: {
+        broadcast: { self: false },
+        presence: { key: playerIdentity.sessionId },
+      },
     });
 
     const upsertRemote = (payload) => {
@@ -530,6 +535,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
     });
 
+    channel.on('presence', { event: 'sync' }, () => {
+      if (worldCapKickedRef.current) return;
+      let ids = [];
+      try {
+        const state = channel.presenceState() || {};
+        ids = Object.keys(state || {}).filter(Boolean);
+      } catch {}
+      const count = ids.length;
+      if (count <= maxWorldPlayers) return;
+      const admitted = ids.slice().sort().slice(0, maxWorldPlayers);
+      if (admitted.includes(playerIdentity.sessionId)) return;
+      worldCapKickedRef.current = true;
+      try {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('gbz:world-toast', `${worldName} is full (${maxWorldPlayers}/${maxWorldPlayers})`);
+        }
+      } catch {}
+      router.replace('/worlds');
+    });
+
     channel.subscribe((status) => {
       console.log('[mp] channel status', status, {
         world: worldName,
@@ -566,26 +591,36 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }
       }
       const localCell = playerCellRef.current;
-      if (status === 'SUBSCRIBED' && localCell) {
+      if (status === 'SUBSCRIBED') {
         reconnectAttemptRef.current = 0;
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
         }
-        channel.send({
-          type: 'broadcast',
-          event: 'player_state',
-          payload: {
-            world: worldName,
+        try {
+          channel.track({
             sessionId: playerIdentity.sessionId,
             playerId: playerIdentity.playerId,
-            fname: localFname,
-            pfp: localPfp,
-            x: localCell.x,
-            y: localCell.y,
+            world: worldName,
             ts: Date.now(),
-          },
-        });
+          });
+        } catch {}
+        if (localCell) {
+          channel.send({
+            type: 'broadcast',
+            event: 'player_state',
+            payload: {
+              world: worldName,
+              sessionId: playerIdentity.sessionId,
+              playerId: playerIdentity.playerId,
+              fname: localFname,
+              pfp: localPfp,
+              x: localCell.x,
+              y: localCell.y,
+              ts: Date.now(),
+            },
+          });
+        }
       }
     });
 
