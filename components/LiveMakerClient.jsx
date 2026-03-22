@@ -1801,10 +1801,37 @@ export default function LiveMakerClient({
           requiredRaw = amountRaw + ((amountRaw * feeBps) / 10000n);
         } else if (!feeInfo.feeOnSignerSide && myRole === 'sender') {
           requiredRaw = amountRaw + ((amountRaw * feeBps) / 10000n);
+
+          let royaltyRawForApproval = 0n;
           try {
-            const royaltyRaw = BigInt(String(feeInfo.royaltyRaw || '0'));
-            if (royaltyRaw > 0n) requiredRaw += royaltyRaw;
+            royaltyRawForApproval = BigInt(String(feeInfo.royaltyRaw || '0'));
+          } catch {
+            royaltyRawForApproval = 0n;
+          }
+
+          try {
+            const signerSel = tradeState.signerSelection;
+            const senderSel = tradeState.senderSelection;
+            const signerKind = String(signerSel?.kind || KIND_ERC20).toLowerCase();
+            const signerToken = String(signerSel?.token || '').split(':')[0];
+            const signerTokenId = String(signerSel?.tokenId || '').trim();
+            const senderTokenAddr = String(senderSel?.token || '').split(':')[0];
+            const senderAmountHuman = String(senderSel?.amount || '0');
+
+            if ((signerKind === KIND_ERC721 || signerKind === KIND_ERC1155) && /^0x[a-fA-F0-9]{40}$/.test(signerToken) && signerTokenId && /^0x[a-fA-F0-9]{40}$/.test(senderTokenAddr)) {
+              const royaltyToken = new ethers.Contract(signerToken, ROYALTY_ABI, signer.provider);
+              const supports = await royaltyToken.supportsInterface('0x2a55205a').catch(() => false);
+              if (supports) {
+                const senderErc20Read = new ethers.Contract(senderTokenAddr, ERC20_READ_ABI, signer.provider);
+                const senderDec = Number(await senderErc20Read.decimals().catch(() => 18));
+                const senderAmountRawForRoyalty = ethers.parseUnits(senderAmountHuman || '0', Number.isFinite(senderDec) ? senderDec : 18);
+                const [, royaltyAmount] = await royaltyToken.royaltyInfo(BigInt(signerTokenId), senderAmountRawForRoyalty).catch(() => [ethers.ZeroAddress, 0n]);
+                royaltyRawForApproval = BigInt(royaltyAmount || 0n);
+              }
+            }
           } catch {}
+
+          if (royaltyRawForApproval > 0n) requiredRaw += royaltyRawForApproval;
         }
         const tx = await erc20.approve(swapContract, requiredRaw);
         debugLog('approve:erc20:submitted', { txHash: tx?.hash || '', requiredRaw: requiredRaw.toString() });
