@@ -34,6 +34,7 @@ export default function TokenTile({
   amountClassName,
   symbol,
   symbolClassName,
+  showSymbol = true,
   imgUrl,
   tokenAddress,
   tokenKind,
@@ -54,7 +55,7 @@ export default function TokenTile({
     <div className={`rs-token-wrap ${wrapClassName}`.trim()}>
       {amountNode != null ? <div className={`rs-amount-overlay ${amountClassName || ''}`.trim()}>{amountNode}</div> : null}
       {showId ? <div className={`rs-tokenid-overlay ${tokenIdClassName || ''}`.trim()}>{formatTokenIdLabel(String(tokenId))}</div> : null}
-      <div className={`rs-symbol-overlay ${symbolClassName || ''}`.trim()}>{symbol || 'NFT'}</div>
+      {showSymbol ? <div className={`rs-symbol-overlay ${symbolClassName || ''}`.trim()}>{symbol || 'NFT'}</div> : null}
       {insufficient ? <div className="rs-insufficient-mark">❗</div> : null}
       <a
         href={!disableLink && linkHref ? linkHref : undefined}

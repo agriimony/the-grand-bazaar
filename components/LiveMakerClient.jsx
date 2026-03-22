@@ -463,7 +463,7 @@ function resolveSwapContractForSelections(signerSel, senderSel) {
   return BASE_SWAP_CONTRACT;
 }
 
-function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onLockedTileClick, feeText = '', footer = '', footerTone = 'ok', insufficient = false }) {
+function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onLockedTileClick, feeText = '', footer = '', footerTone = 'ok', insufficient = false, hideSymbolOverlay = false }) {
   const token = String(selection?.token || '');
   const amount = String(selection?.amount || '');
   const symbol = String(selection?.symbol || '');
@@ -516,6 +516,7 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onL
                 amountClassName="rs-token-cell-amount"
                 symbol={symbolDisplay}
                 symbolClassName="rs-token-cell-symbol"
+                showSymbol={!hideSymbolOverlay}
                 imgUrl={imgUrl}
                 tokenAddress={String(token).split(':')[0]}
                 tokenKind={selection?.kind}
@@ -2334,6 +2335,7 @@ export default function LiveMakerClient({
           title={topTitle}
           selection={topDisplaySelection}
           editable={topEditable}
+          hideSymbolOverlay
           onChange={onChangeOwn}
           onOpenInventory={openInventory}
           onLockedTileClick={() => {}}
