@@ -180,7 +180,9 @@ function catalogIconArt(token = '') {
 function tokenIconUrl(token = '') {
   const t = String(token || '').trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(t)) return '';
-  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${t}/logo.png`;
+  let checksum = t;
+  try { checksum = ethers.getAddress(t); } catch {}
+  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${checksum}/logo.png`;
 }
 
 function fallbackTokenArt(token = '', symbol = '') {

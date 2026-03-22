@@ -1,5 +1,7 @@
 'use client';
 
+import { ethers } from 'ethers';
+
 function tokenInitials(sym = '') {
   const s = String(sym || '').trim();
   if (!s) return '?';
@@ -22,7 +24,9 @@ function tokenIconUrl(chainId, token) {
   const t = String(token || '').trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(t)) return '';
   if (Number(chainId) !== 8453) return '';
-  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${t}/logo.png`;
+  let checksum = t;
+  try { checksum = ethers.getAddress(t); } catch {}
+  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${checksum}/logo.png`;
 }
 
 export default function TokenTile({
