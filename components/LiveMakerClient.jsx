@@ -1264,6 +1264,17 @@ export default function LiveMakerClient({
     return KIND_ERC20;
   };
 
+  const resolveNftKindForSelection = async (tokenAddr, balanceHint = '1') => {
+    const bal = Number(balanceHint || 0);
+    if (Number.isFinite(bal) && bal > 1) return KIND_ERC1155;
+    try {
+      const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+      const onchainKind = await detectCustomKind(tokenAddr, provider);
+      if (onchainKind === KIND_ERC1155 || onchainKind === KIND_ERC721) return onchainKind;
+    } catch {}
+    return KIND_ERC721;
+  };
+
   const applyCustomToken = async () => {
     const token = String(customTokenValue || '').trim();
     if (!token) {
@@ -1297,8 +1308,10 @@ export default function LiveMakerClient({
 
     const coll = inventoryNftCollections.find((c) => String(c?.collectionAddress || '').toLowerCase() === token.toLowerCase());
     if (coll) {
+      const collBalanceHint = String(coll?.nfts?.[0]?.balance || '1');
+      const resolvedKind = await resolveNftKindForSelection(token, collBalanceHint);
       setInventoryView('nfts');
-      setSelectedNftCollection({ ...coll, kind: String(coll?.kind || coll?.nfts?.[0]?.kind || KIND_ERC721).toLowerCase() });
+      setSelectedNftCollection({ ...coll, kind: resolvedKind });
       setCustomTokenValue('');
       setCustomTokenStep('custom-id');
       setCustomTokenError('');
@@ -1381,7 +1394,7 @@ export default function LiveMakerClient({
       try {
         const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
         const owner = String(identity.playerId || '').trim();
-        const kind = String(selectedNftCollection?.kind || await detectCustomKind(collectionAddr, provider)).toLowerCase();
+        const kind = await resolveNftKindForSelection(collectionAddr, '1');
         if (kind === KIND_ERC721) {
           const c721 = new ethers.Contract(collectionAddr, ERC721_READ_ABI, provider);
           const ownerOf = String(await c721.ownerOf(BigInt(tokenId))).toLowerCase();
@@ -2716,7 +2729,7 @@ export default function LiveMakerClient({
                           <button
                             key={`${inventoryView}-${String(token)}-${i}`}
                             className="rs-token-cell"
-                            onClick={() => {
+                            onClick={async () => {
                               if (isToken) {
                                 setCustomTokenPreview({
                                   token,
@@ -2735,8 +2748,8 @@ export default function LiveMakerClient({
                                 setCustomTokenStep('amount');
                                 return;
                               }
-                              const nftKind = String(item?.kind || KIND_ERC721).toLowerCase();
                               const nftBalance = String(item?.balance || '1');
+                              const nftKind = await resolveNftKindForSelection(String(token).split(':')[0], nftBalance);
                               setCustomTokenPreview({
                                 token,
                                 amount: nftBalance,
