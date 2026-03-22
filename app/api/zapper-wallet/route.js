@@ -5,6 +5,10 @@ export const dynamic = 'force-dynamic';
 const ZAPPER_URL = 'https://public.zapper.xyz/graphql';
 const APP_ORIGIN = process.env.APP_ORIGIN || 'https://bazaar.agrimonys.com';
 const APP_ORIGIN_DEV = process.env.APP_ORIGIN_DEV || 'https://dev-bazaar.agrimonys.com';
+const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
+const ERC165_ABI = ['function supportsInterface(bytes4 interfaceId) view returns (bool)'];
+const KIND_ERC721 = '0x80ac58cd';
+const KIND_ERC1155 = '0xd9b67a26';
 
 function normHost(v = '') {
   try { return new URL(v).host.toLowerCase(); } catch { return String(v || '').toLowerCase(); }
@@ -13,6 +17,17 @@ function normHost(v = '') {
 function shortAddress(v = '') {
   const s = String(v || '');
   return s.length > 10 ? `${s.slice(0, 6)}...${s.slice(-4)}` : s;
+}
+
+async function detectCollectionKind(provider, collectionAddress) {
+  try {
+    const c = new ethers.Contract(collectionAddress, ERC165_ABI, provider);
+    const is1155 = await c.supportsInterface(KIND_ERC1155).catch(() => false);
+    if (is1155) return KIND_ERC1155;
+    const is721 = await c.supportsInterface(KIND_ERC721).catch(() => false);
+    if (is721) return KIND_ERC721;
+  } catch {}
+  return null;
 }
 
 function isAllowedOrigin(req) {
@@ -150,10 +165,22 @@ export async function GET(req) {
 
     const collectionEdges = out?.data?.portfolioV2?.nftBalances?.byCollection?.edges || [];
     const nftDebugRows = [];
-    const nftCollections = collectionEdges
+    const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+    const kindCache = new Map();
+    const nftCollectionsRaw = await Promise.all(collectionEdges
       .map((e) => e?.node)
       .filter(Boolean)
-      .map((c) => {
+      .map(async (c) => {
+        const collectionAddress = String(c?.collection?.address || '').trim();
+        let onchainKind = null;
+        if (collectionAddress && /^0x[a-fA-F0-9]{40}$/.test(collectionAddress)) {
+          if (kindCache.has(collectionAddress.toLowerCase())) onchainKind = kindCache.get(collectionAddress.toLowerCase());
+          else {
+            onchainKind = await detectCollectionKind(provider, collectionAddress);
+            kindCache.set(collectionAddress.toLowerCase(), onchainKind);
+          }
+        }
+
         const nftRows = (c?.tokens?.edges || [])
           .map((e) => e?.node)
           .filter(Boolean)
@@ -162,12 +189,14 @@ export async function GET(req) {
             const floorUsd = Number(c?.collection?.floorPrice?.valueUsd || 0);
             const tokenType = String(n?.token?.__typename || '');
             const balNum = Number(n?.balance || 0);
-            const kind = /1155/i.test(tokenType) || balNum > 1 ? '0xd9b67a26' : '0x80ac58cd';
+            const fallbackKind = /1155/i.test(tokenType) || balNum > 1 ? KIND_ERC1155 : KIND_ERC721;
+            const kind = onchainKind || fallbackKind;
             nftDebugRows.push({
               collection: c?.collection?.address || null,
               tokenId: String(n?.token?.tokenId || n.tokenId || ''),
               balance: String(n.balance || '1'),
               __typename: tokenType || null,
+              onchainKind,
               inferredKind: kind,
             });
             return {
@@ -192,7 +221,9 @@ export async function GET(req) {
           totalBalanceUSD: Number(c.balanceUSD || 0),
           nfts: nftRows,
         };
-      })
+      }));
+
+    const nftCollections = nftCollectionsRaw
       .filter((c) => c.collectionAddress)
       .sort((a, b) => (b.totalBalanceUSD || 0) - (a.totalBalanceUSD || 0))
       .slice(0, 24);
