@@ -1797,8 +1797,16 @@ export default function LiveMakerClient({
 
       const swapContract = resolveSwapContractForSelections(tradeState.signerSelection, tradeState.senderSelection);
       const own = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
-      const ownKind = normalizeKind(own?.kind || KIND_ERC20);
+      let ownKind = normalizeKind(own?.kind || KIND_ERC20);
       const tokenAddress = String(own?.token || '').split(':')[0];
+
+      if (ownKind === KIND_ERC20 && /^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
+        try {
+          const detectedKind = await detectCustomKind(tokenAddress, signer.provider || new ethers.JsonRpcProvider(BASE_RPCS[0]));
+          if (detectedKind === KIND_ERC721 || detectedKind === KIND_ERC1155) ownKind = detectedKind;
+        } catch {}
+      }
+
       debugLog('approve:context', { myRole, ownKind, tokenAddress, swapContract, amount: own?.amount, balance: own?.balance, protocolFeeBps: feeInfo.protocolFeeBps, royaltyRaw: feeInfo.royaltyRaw });
 
       let didSubmitApproval = false;
