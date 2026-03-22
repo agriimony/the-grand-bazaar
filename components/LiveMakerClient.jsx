@@ -1007,7 +1007,7 @@ export default function LiveMakerClient({
           router.replace(`/${initialChannel || 'worlds'}`);
           return;
         }
-        setStatus('live room connected');
+        debugLog('live room connected', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
         debugLog('event:room_join:send', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
         ch.send({
           type: 'broadcast',
@@ -1526,6 +1526,14 @@ export default function LiveMakerClient({
   // Semantic aliases for UI clarity. Keep signer/sender for contract payload boundaries.
   const myFlowRole = myRole === 'signer' ? 'offer maker' : 'offer taker';
   const peerFlowRole = peerRole === 'signer' ? 'offer maker' : 'offer taker';
+
+  useEffect(() => {
+    debugLog('wallet context', { walletProviderLabel: walletProviderLabel || 'resolving...' });
+  }, [walletProviderLabel]);
+
+  useEffect(() => {
+    debugLog('flow roles', { you: myFlowRole, peer: peerFlowRole });
+  }, [myFlowRole, peerFlowRole]);
   const mySelection = myRole === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
   const peerSelection = myRole === 'signer' ? tradeState.senderSelection : tradeState.signerSelection;
   const mySelectionHash = selectionHash(mySelection);
@@ -2368,7 +2376,6 @@ export default function LiveMakerClient({
             </div>
           )}
           <div style={{ textAlign: 'center', fontSize: 12, opacity: 0.75, maxWidth: 'min(520px, 92vw)', overflowWrap: 'anywhere' }}>{status}</div>
-          <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.65, maxWidth: 'min(520px, 92vw)', overflowWrap: 'anywhere' }}>{`Wallet context: ${walletProviderLabel || 'resolving...'}`}</div>
           {feeLoading ? (
             <div className="rs-loading-wrap" style={{ width: 'min(320px, 86vw)' }}>
               <div className="rs-loading-track">
@@ -2377,7 +2384,6 @@ export default function LiveMakerClient({
               </div>
             </div>
           ) : null}
-          <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.65 }}>{`You: ${myFlowRole} · Peer: ${peerFlowRole}`}</div>
         </div>
 
         <OfferPanel
