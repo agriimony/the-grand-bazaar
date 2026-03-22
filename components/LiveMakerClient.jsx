@@ -1485,6 +1485,9 @@ export default function LiveMakerClient({
   }, [tradeState.signerSelection, tradeState.senderSelection]);
 
   const otherPeer = Object.values(peers).find((p) => p?.sessionId && p.sessionId !== identity.sessionId) || null;
+  const roomHasSigner = role === 'signer' || Object.values(peers).some((p) => String(p?.role || '').toLowerCase() === 'signer');
+  const roomHasSender = role === 'sender' || Object.values(peers).some((p) => String(p?.role || '').toLowerCase() === 'sender');
+  const bothPartiesJoined = roomHasSigner && roomHasSender;
   const inviteSignerDisplay = role === 'sender'
     ? String(initialSignerFname || initialSignerPlayerId || '').trim()
     : '';
@@ -1513,10 +1516,12 @@ export default function LiveMakerClient({
   const peerApproved = Boolean(approved[peerRole]);
   const peerChangedAfterMyApprove = Boolean(localApproved && peerSnapshotAtApprove && peerSnapshotAtApprove !== peerSelectionHash);
 
-  const topEditable = role === 'signer' && !localApproved;
-  const bottomEditable = role === 'sender' && !localApproved;
+  const topEditable = bothPartiesJoined && role === 'signer' && !localApproved;
+  const bottomEditable = bothPartiesJoined && role === 'sender' && !localApproved;
 
-  const midText = !ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`;
+  const midText = !bothPartiesJoined
+    ? `waiting for ${otherDisplay} to join`
+    : (!ownDone ? 'select your token(s)' : `waiting for ${otherDisplay}`);
 
   const protocolFeeBps = Number(feeInfo.protocolFeeBps || 100);
   const feeLabel = `incl. ${(Number(protocolFeeBps) / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}% protocol fees`;
@@ -2267,6 +2272,13 @@ export default function LiveMakerClient({
               <div className="rs-loading-track">
                 <div className="rs-loading-fill" />
                 <div className="rs-loading-label">connecting live room...</div>
+              </div>
+            </div>
+          ) : !bothPartiesJoined ? (
+            <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
+                <div className="rs-loading-label">{`waiting for ${otherDisplay} to join`}</div>
               </div>
             </div>
           ) : (!bothDone || livePhase === 'negotiate') ? (
