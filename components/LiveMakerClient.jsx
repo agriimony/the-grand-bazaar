@@ -1307,6 +1307,50 @@ export default function LiveMakerClient({
     return KIND_ERC721;
   };
 
+  const retryErc20BalanceLite = async (tokenAddress, owner, decimalsHint = 18, attempts = 2) => {
+    let lastErr = null;
+    for (let rpcIndex = 0; rpcIndex < BASE_RPCS.length; rpcIndex += 1) {
+      const rpc = BASE_RPCS[rpcIndex];
+      const provider = new ethers.JsonRpcProvider(rpc);
+      for (let i = 0; i < attempts; i += 1) {
+        try {
+          const c20 = new ethers.Contract(tokenAddress, ERC20_READ_ABI, provider);
+          const [balRaw, decimalsRaw] = await Promise.all([
+            c20.balanceOf(owner),
+            c20.decimals().catch(() => Number(decimalsHint || 18)),
+          ]);
+          debugLog('custom20:balanceOf:success', {
+            tokenAddress,
+            owner,
+            rpc,
+            rpcIndex,
+            attempt: i + 1,
+            balRaw: String(balRaw || 0n),
+            decimals: Number(decimalsRaw || decimalsHint || 18),
+          });
+          return { balRaw: BigInt(balRaw || 0n), decimals: Number(decimalsRaw || decimalsHint || 18) };
+        } catch (err) {
+          lastErr = err;
+          debugLog('custom20:balanceOf:error', {
+            tokenAddress,
+            owner,
+            rpc,
+            rpcIndex,
+            attempt: i + 1,
+            error: err?.shortMessage || err?.reason || err?.message || String(err || 'unknown'),
+            code: err?.code || '',
+            data: err?.data || err?.info?.error?.data || err?.error?.data || '',
+          });
+          if (i < attempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+          }
+        }
+      }
+      debugLog('custom20:balanceOf:rpc-fallback', { tokenAddress, owner, nextRpc: BASE_RPCS[rpcIndex + 1] || '' });
+    }
+    throw lastErr || new Error('balanceOf failed');
+  };
+
   const retryOwnerOfLite = async (tokenAddress, tokenId, attempts = 2) => {
     let lastErr = null;
     for (let rpcIndex = 0; rpcIndex < BASE_RPCS.length; rpcIndex += 1) {
@@ -1613,12 +1657,7 @@ export default function LiveMakerClient({
     debugLog('holdings:verify:start', logBase);
 
     if (kind === KIND_ERC20) {
-      const c20 = new ethers.Contract(tokenAddress, ERC20_READ_ABI, provider);
-      const [balRaw, decimalsRaw] = await Promise.all([
-        c20.balanceOf(owner).catch(() => 0n),
-        c20.decimals().catch(() => Number(selection?.decimals || 18)),
-      ]);
-      const decimals = Number(decimalsRaw || selection?.decimals || 18);
+      const { balRaw, decimals } = await retryErc20BalanceLite(tokenAddress, owner, Number(selection?.decimals || 18));
       const onchainBalance = ethers.formatUnits(BigInt(balRaw || 0n), Number.isFinite(decimals) ? decimals : 18);
       const neededRaw = ethers.parseUnits(amountStr || '0', Number.isFinite(decimals) ? decimals : 18);
       const ok = BigInt(balRaw || 0n) >= neededRaw;
@@ -1627,6 +1666,7 @@ export default function LiveMakerClient({
         decimals,
         balRaw: String(balRaw || 0n),
         neededRaw: String(neededRaw || 0n),
+        onchainBalance,
         ok,
       });
       return {
@@ -2102,24 +2142,6 @@ export default function LiveMakerClient({
     debugLog('approve:start', { bothDone, signerInsufficient, senderInsufficient, approvalBusy, myRole });
     if (!bothDone) return;
     if (approvalBusy) return;
-
-    const ownNow = myRole === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
-    if (selectionSource === 'inventory') {
-      const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: 'Insufficient Balance' }));
-      const latestOwnPatched = {
-        ...ownNow,
-        onchainBalance: String(latestOwnCheck?.onchainBalance || ownNow?.onchainBalance || ownNow?.balance || ''),
-        onchainOwnerOk: Boolean(latestOwnCheck?.ok),
-        staleHoldingsWarning: String(latestOwnCheck?.warning || ''),
-        balance: String(latestOwnCheck?.onchainBalance || ownNow?.balance || ''),
-      };
-      if (myRole === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: latestOwnPatched });
-      else publishPatch({ ...tradeStateRef.current, senderSelection: latestOwnPatched });
-      if (!latestOwnCheck?.ok) {
-        setStatus('Insufficient Balance');
-        return;
-      }
-    }
 
     if (signerInsufficient || senderInsufficient) return;
 
