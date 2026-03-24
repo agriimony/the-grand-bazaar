@@ -495,8 +495,8 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onL
   return (
     <div className="rs-panel">
       <div className="rs-panel-title">{title}</div>
-      <div className={`rs-box ${insufficient ? 'rs-danger' : ''}`} style={{ minHeight: 140 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: 16, gap: 12 }}>
+      <div className={`rs-box ${insufficient ? 'rs-danger' : ''}`} style={{ minHeight: 140, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: 16, gap: 12, flex: '1 1 auto' }}>
           <button
             type="button"
             onClick={() => {
