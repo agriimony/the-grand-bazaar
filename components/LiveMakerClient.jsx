@@ -624,6 +624,7 @@ export default function LiveMakerClient({
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [inventoryView, setInventoryView] = useState('tokens');
   const [selectionPreflightBusy, setSelectionPreflightBusy] = useState(false);
+  const [selectionSource, setSelectionSource] = useState('inventory');
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
@@ -1266,7 +1267,7 @@ export default function LiveMakerClient({
     }
   };
 
-  const pickInventoryToken = (selectionPatch = {}) => {
+  const pickInventoryToken = (selectionPatch = {}, source = 'inventory') => {
     const patch = normalizeSelection({
       ...(role === 'signer' ? tradeState.signerSelection : tradeState.senderSelection),
       ...selectionPatch,
@@ -1280,6 +1281,7 @@ export default function LiveMakerClient({
     } else {
       publishPatch({ ...tradeState, senderSelection: patch });
     }
+    setSelectionSource(source);
     setInventoryOpen(false);
   };
 
@@ -1729,8 +1731,9 @@ export default function LiveMakerClient({
 
   useEffect(() => {
     if (!ownDone) return;
+    if (selectionSource !== 'inventory') return;
     applyOwnSelectionPreflight(ownSelection);
-  }, [ownSelection.token, ownSelection.tokenId, ownSelection.amount, ownSelection.balance, ownDone, applyOwnSelectionPreflight]);
+  }, [ownSelection.token, ownSelection.tokenId, ownSelection.amount, ownDone, applyOwnSelectionPreflight, selectionSource]);
 
   useEffect(() => {
     let dead = false;
@@ -2068,19 +2071,21 @@ export default function LiveMakerClient({
     if (approvalBusy) return;
 
     const ownNow = myRole === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
-    const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: 'Insufficient Balance' }));
-    const latestOwnPatched = {
-      ...ownNow,
-      onchainBalance: String(latestOwnCheck?.onchainBalance || ownNow?.onchainBalance || ownNow?.balance || ''),
-      onchainOwnerOk: Boolean(latestOwnCheck?.ok),
-      staleHoldingsWarning: String(latestOwnCheck?.warning || ''),
-      balance: String(latestOwnCheck?.onchainBalance || ownNow?.balance || ''),
-    };
-    if (myRole === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: latestOwnPatched });
-    else publishPatch({ ...tradeStateRef.current, senderSelection: latestOwnPatched });
-    if (!latestOwnCheck?.ok) {
-      setStatus('Insufficient Balance');
-      return;
+    if (selectionSource === 'inventory') {
+      const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: 'Insufficient Balance' }));
+      const latestOwnPatched = {
+        ...ownNow,
+        onchainBalance: String(latestOwnCheck?.onchainBalance || ownNow?.onchainBalance || ownNow?.balance || ''),
+        onchainOwnerOk: Boolean(latestOwnCheck?.ok),
+        staleHoldingsWarning: String(latestOwnCheck?.warning || ''),
+        balance: String(latestOwnCheck?.onchainBalance || ownNow?.balance || ''),
+      };
+      if (myRole === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: latestOwnPatched });
+      else publishPatch({ ...tradeStateRef.current, senderSelection: latestOwnPatched });
+      if (!latestOwnCheck?.ok) {
+        setStatus('Insufficient Balance');
+        return;
+      }
     }
 
     if (signerInsufficient || senderInsufficient) return;
@@ -2937,7 +2942,7 @@ export default function LiveMakerClient({
                               kind: normalizeKind(row.kind || KIND_ERC20),
                               balance: String(row.balance || ''),
                               decimals: String(row.decimals || '18'),
-                            });
+                            }, amountStepBack === 'custom' || amountStepBack === 'custom-id' ? 'custom' : 'inventory');
                           }}
                         >
                           {amountStepOver
