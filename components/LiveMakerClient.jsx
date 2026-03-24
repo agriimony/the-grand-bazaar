@@ -1558,12 +1558,24 @@ export default function LiveMakerClient({
     const amountStr = String(selection?.amount || '').trim();
     const tokenIdStr = String(selection?.tokenId || '').trim();
     const tokenAddress = String(tokenRef).split(':')[0].trim();
+    const logBase = {
+      owner,
+      tokenRef,
+      tokenAddress,
+      kind,
+      amount: amountStr,
+      tokenId: tokenIdStr,
+      localBalance: String(selection?.balance || ''),
+      onchainBalance: String(selection?.onchainBalance || ''),
+    };
 
     if (!isAddress(owner) || !isAddress(tokenAddress) || !kind) {
+      debugLog('holdings:verify:skip', logBase);
       return { ok: true, onchainBalance: String(selection?.balance || ''), warning: '' };
     }
 
     const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+    debugLog('holdings:verify:start', logBase);
 
     if (kind === KIND_ERC20) {
       const c20 = new ethers.Contract(tokenAddress, ERC20_READ_ABI, provider);
@@ -1575,6 +1587,13 @@ export default function LiveMakerClient({
       const onchainBalance = ethers.formatUnits(BigInt(balRaw || 0n), Number.isFinite(decimals) ? decimals : 18);
       const neededRaw = ethers.parseUnits(amountStr || '0', Number.isFinite(decimals) ? decimals : 18);
       const ok = BigInt(balRaw || 0n) >= neededRaw;
+      debugLog('holdings:verify:erc20', {
+        ...logBase,
+        decimals,
+        balRaw: String(balRaw || 0n),
+        neededRaw: String(neededRaw || 0n),
+        ok,
+      });
       return {
         ok,
         onchainBalance,
@@ -1586,6 +1605,12 @@ export default function LiveMakerClient({
       const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
       const ownerOf = String(await c721.ownerOf(BigInt(tokenIdStr || '0')).catch(() => '')).toLowerCase();
       const ok = ownerOf === owner.toLowerCase();
+      debugLog('holdings:verify:erc721', {
+        ...logBase,
+        ownerOf,
+        expectedOwner: owner.toLowerCase(),
+        ok,
+      });
       return {
         ok,
         onchainBalance: ok ? '1' : '0',
@@ -1598,6 +1623,12 @@ export default function LiveMakerClient({
       const balRaw = await c1155.balanceOf(owner, BigInt(tokenIdStr || '0')).catch(() => 0n);
       const needed = BigInt(Math.max(0, Math.floor(Number(amountStr || '0') || 0)));
       const ok = BigInt(balRaw || 0n) >= needed;
+      debugLog('holdings:verify:erc1155', {
+        ...logBase,
+        balRaw: String(balRaw || 0n),
+        needed: String(needed || 0n),
+        ok,
+      });
       return {
         ok,
         onchainBalance: String(balRaw || 0n),
@@ -1605,17 +1636,36 @@ export default function LiveMakerClient({
       };
     }
 
+    debugLog('holdings:verify:pass-through', logBase);
     return { ok: true, onchainBalance: String(selection?.balance || ''), warning: '' };
   }, [identity.playerId]);
 
   const applyOwnSelectionPreflight = useCallback(async (selection) => {
     const normalized = normalizeSelection(selection);
     if (!String(normalized?.token || '').trim() || !String(normalized?.amount || '').trim()) return;
+    debugLog('holdings:preflight:start', {
+      role,
+      selection: {
+        token: normalized?.token,
+        tokenId: normalized?.tokenId,
+        kind: normalized?.kind,
+        amount: normalized?.amount,
+        balance: normalized?.balance,
+        onchainBalance: normalized?.onchainBalance,
+      },
+    });
     setSelectionPreflightBusy(true);
     try {
       const result = await verifySelectionHoldings(normalized);
       const current = role === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
-      if (selectionHash(current) !== selectionHash(normalized)) return;
+      if (selectionHash(current) !== selectionHash(normalized)) {
+        debugLog('holdings:preflight:stale-skip', {
+          role,
+          currentHash: selectionHash(current),
+          normalizedHash: selectionHash(normalized),
+        });
+        return;
+      }
       const patched = {
         ...current,
         onchainBalance: String(result?.onchainBalance || current?.onchainBalance || current?.balance || ''),
@@ -1623,9 +1673,26 @@ export default function LiveMakerClient({
         staleHoldingsWarning: String(result?.warning || ''),
         balance: String(result?.onchainBalance || current?.balance || ''),
       };
+      debugLog('holdings:preflight:result', {
+        role,
+        ok: Boolean(result?.ok),
+        warning: String(result?.warning || ''),
+        patchedBalance: patched.balance,
+        patchedOnchainBalance: patched.onchainBalance,
+      });
       if (role === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: patched });
       else publishPatch({ ...tradeStateRef.current, senderSelection: patched });
-    } catch {
+    } catch (err) {
+      debugLog('holdings:preflight:error', {
+        role,
+        error: err?.message || String(err || 'unknown'),
+        selection: {
+          token: normalized?.token,
+          tokenId: normalized?.tokenId,
+          kind: normalized?.kind,
+          amount: normalized?.amount,
+        },
+      });
       const current = role === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
       if (selectionHash(current) !== selectionHash(normalized)) return;
       const patched = {
@@ -1638,6 +1705,7 @@ export default function LiveMakerClient({
       else publishPatch({ ...tradeStateRef.current, senderSelection: patched });
     } finally {
       setSelectionPreflightBusy(false);
+      debugLog('holdings:preflight:end', { role });
     }
   }, [role, verifySelectionHoldings]);
 
