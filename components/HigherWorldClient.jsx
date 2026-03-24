@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '../lib/supabase-browser';
 import { useAccount, useDisconnect } from 'wagmi';
@@ -124,6 +124,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
   const [worldLogs, setWorldLogs] = useState([]);
+  const zoneChannelsRef = useRef(new Map());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const supabaseRef = useRef(null);
@@ -168,6 +169,30 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [authedPlayerId]);
 
   const tileSize = 58;
+  const zoneSize = 12;
+  const zoneKeyForCell = (cell) => {
+    if (!cell) return '';
+    const zx = Math.max(0, Math.floor(Number(cell.x) / zoneSize));
+    const zy = Math.max(0, Math.floor(Number(cell.y) / zoneSize));
+    return `${zx}:${zy}`;
+  };
+  const neighborhoodZoneKeys = (cell) => {
+    if (!cell) return [];
+    const zx = Math.max(0, Math.floor(Number(cell.x) / zoneSize));
+    const zy = Math.max(0, Math.floor(Number(cell.y) / zoneSize));
+    const maxZone = Math.max(0, Math.floor((size - 1) / zoneSize));
+    const out = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const nx = zx + dx;
+        const ny = zy + dy;
+        if (nx < 0 || ny < 0 || nx > maxZone || ny > maxZone) continue;
+        out.push(`${nx}:${ny}`);
+      }
+    }
+    return out;
+  };
+  const zoneChannelName = (zoneKey) => `world:${worldName}:zone:${zoneKey}`;
   const boardSidePx = Math.round(size * tileSize * zoom);
   const boardSide = `${boardSidePx}px`;
   const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
@@ -351,6 +376,30 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return () => clearTimeout(t);
   }, [outgoingTradeInvite, nowMs]);
 
+  const sendExactPlayerState = useCallback((payloadOverride = null) => {
+    const basePayload = payloadOverride || (() => {
+      const localCell = playerCellRef.current;
+      if (!localCell) return null;
+      return {
+        world: worldName,
+        sessionId: playerIdentity.sessionId,
+        playerId: playerIdentity.playerId,
+        fname: localFname,
+        pfp: localPfp,
+        x: localCell.x,
+        y: localCell.y,
+        zone: zoneKeyForCell(localCell),
+        ts: Date.now(),
+      };
+    })();
+    if (!basePayload) return;
+    for (const ch of zoneChannelsRef.current.values()) {
+      try {
+        ch.send({ type: 'broadcast', event: 'player_state', payload: basePayload });
+      } catch {}
+    }
+  }, [worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp]);
+
   useEffect(() => {
     if (!multiplayerEnabled) {
       console.log('[mp] disabled', {
@@ -388,6 +437,46 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       },
     });
 
+    const syncZoneSubscriptions = (cell) => {
+      const wanted = new Set(neighborhoodZoneKeys(cell));
+      for (const [zoneKey, ch] of Array.from(zoneChannelsRef.current.entries())) {
+        if (wanted.has(zoneKey)) continue;
+        try { supabase.removeChannel(ch); } catch {}
+        zoneChannelsRef.current.delete(zoneKey);
+      }
+      for (const zoneKey of wanted) {
+        if (zoneChannelsRef.current.has(zoneKey)) continue;
+        const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
+        zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
+          console.log('[mp] recv zone player_state', zoneKey, payload);
+          upsertRemote(payload);
+        });
+        zoneChannel.subscribe((status) => {
+          console.log('[mp] zone channel status', status, { world: worldName, zoneKey });
+          if (status === 'SUBSCRIBED') {
+            const localCellNow = playerCellRef.current;
+            if (!localCellNow) return;
+            zoneChannel.send({
+              type: 'broadcast',
+              event: 'player_state',
+              payload: {
+                world: worldName,
+                sessionId: playerIdentity.sessionId,
+                playerId: playerIdentity.playerId,
+                fname: localFname,
+                pfp: localPfp,
+                x: localCellNow.x,
+                y: localCellNow.y,
+                zone: zoneKeyForCell(localCellNow),
+                ts: Date.now(),
+              },
+            });
+          }
+        });
+        zoneChannelsRef.current.set(zoneKey, zoneChannel);
+      }
+    };
+
     const upsertRemote = (payload) => {
       const sessionId = String(payload?.sessionId || '').trim();
       if (!sessionId || sessionId === playerIdentity.sessionId) return;
@@ -424,10 +513,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       });
     };
 
-    channel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
-      console.log('[mp] recv player_state', payload);
-      upsertRemote(payload);
-    });
     channel.on('broadcast', { event: 'player_leave' }, ({ payload }) => {
       console.log('[mp] recv player_leave', payload);
 
@@ -601,23 +686,22 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             sessionId: playerIdentity.sessionId,
             playerId: playerIdentity.playerId,
             world: worldName,
+            zone: zoneKeyForCell(playerCellRef.current),
             ts: Date.now(),
           });
         } catch {}
         if (localCell) {
-          channel.send({
-            type: 'broadcast',
-            event: 'player_state',
-            payload: {
-              world: worldName,
-              sessionId: playerIdentity.sessionId,
-              playerId: playerIdentity.playerId,
-              fname: localFname,
-              pfp: localPfp,
-              x: localCell.x,
-              y: localCell.y,
-              ts: Date.now(),
-            },
+          syncZoneSubscriptions(localCell);
+          sendExactPlayerState({
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            x: localCell.x,
+            y: localCell.y,
+            zone: zoneKeyForCell(localCell),
+            ts: Date.now(),
           });
         }
       }
@@ -660,19 +744,25 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const ch = channelRef.current;
       const localCell = playerCellRef.current;
       if (!ch || !localCell) return;
-      ch.send({
-        type: 'broadcast',
-        event: 'player_state',
-        payload: {
-          world: worldName,
+      try {
+        ch.track({
           sessionId: playerIdentity.sessionId,
           playerId: playerIdentity.playerId,
-          fname: localFname,
-          pfp: localPfp,
-          x: localCell.x,
-          y: localCell.y,
+          world: worldName,
+          zone: zoneKeyForCell(localCell),
           ts: Date.now(),
-        },
+        });
+      } catch {}
+      sendExactPlayerState({
+        world: worldName,
+        sessionId: playerIdentity.sessionId,
+        playerId: playerIdentity.playerId,
+        fname: localFname,
+        pfp: localPfp,
+        x: localCell.x,
+        y: localCell.y,
+        zone: zoneKeyForCell(localCell),
+        ts: Date.now(),
       });
     }, 8_000);
 
@@ -695,12 +785,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       try {
         supabase.removeChannel(channel);
       } catch {}
+      for (const ch of zoneChannelsRef.current.values()) {
+        try { supabase.removeChannel(ch); } catch {}
+      }
+      zoneChannelsRef.current.clear();
       channelRef.current = null;
       supabaseRef.current = null;
       setRemotePlayers({});
       setTradePlaceholders({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick, sendExactPlayerState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -860,22 +954,65 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       sessionId: playerIdentity.sessionId,
       x: playerCell.x,
       y: playerCell.y,
+      zone: zoneKeyForCell(playerCell),
     });
-    ch.send({
-      type: 'broadcast',
-      event: 'player_state',
-      payload: {
-        world: worldName,
+    try {
+      ch.track({
         sessionId: playerIdentity.sessionId,
         playerId: playerIdentity.playerId,
-        fname: localFname,
-        pfp: localPfp,
-        x: playerCell.x,
-        y: playerCell.y,
+        world: worldName,
+        zone: zoneKeyForCell(playerCell),
         ts: now,
-      },
+      });
+    } catch {}
+    const syncZoneSubscriptions = (cell) => {
+      const supabase = supabaseRef.current;
+      if (!supabase || !cell) return;
+      const wanted = new Set(neighborhoodZoneKeys(cell));
+      for (const [zoneKey, zoneCh] of Array.from(zoneChannelsRef.current.entries())) {
+        if (wanted.has(zoneKey)) continue;
+        try { supabase.removeChannel(zoneCh); } catch {}
+        zoneChannelsRef.current.delete(zoneKey);
+      }
+      for (const zoneKey of wanted) {
+        if (zoneChannelsRef.current.has(zoneKey)) continue;
+        const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
+        zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
+          console.log('[mp] recv zone player_state', zoneKey, payload);
+          upsertRemote(payload);
+        });
+        zoneChannel.subscribe((status) => {
+          console.log('[mp] zone channel status', status, { world: worldName, zoneKey });
+          if (status === 'SUBSCRIBED') {
+            sendExactPlayerState({
+              world: worldName,
+              sessionId: playerIdentity.sessionId,
+              playerId: playerIdentity.playerId,
+              fname: localFname,
+              pfp: localPfp,
+              x: playerCell.x,
+              y: playerCell.y,
+              zone: zoneKeyForCell(playerCell),
+              ts: Date.now(),
+            });
+          }
+        });
+        zoneChannelsRef.current.set(zoneKey, zoneChannel);
+      }
+    };
+    syncZoneSubscriptions(playerCell);
+    sendExactPlayerState({
+      world: worldName,
+      sessionId: playerIdentity.sessionId,
+      playerId: playerIdentity.playerId,
+      fname: localFname,
+      pfp: localPfp,
+      x: playerCell.x,
+      y: playerCell.y,
+      zone: zoneKeyForCell(playerCell),
+      ts: now,
     });
-  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell]);
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell, sendExactPlayerState]);
 
 
   const npcsWithCurrentCast = useMemo(() => {
