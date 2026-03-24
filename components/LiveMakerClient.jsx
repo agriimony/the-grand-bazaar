@@ -1307,6 +1307,32 @@ export default function LiveMakerClient({
     return KIND_ERC721;
   };
 
+  const retryOwnerOfLite = async (tokenAddress, tokenId, provider, attempts = 3) => {
+    let lastErr = null;
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
+        const ownerOf = await c721.ownerOf(BigInt(tokenId));
+        debugLog('custom721:ownerOf:success', { tokenAddress, tokenId: String(tokenId), attempt: i + 1, ownerOf: String(ownerOf || '') });
+        return String(ownerOf || '');
+      } catch (err) {
+        lastErr = err;
+        debugLog('custom721:ownerOf:error', {
+          tokenAddress,
+          tokenId: String(tokenId),
+          attempt: i + 1,
+          error: err?.shortMessage || err?.reason || err?.message || String(err || 'unknown'),
+          code: err?.code || '',
+          data: err?.data || err?.info?.error?.data || err?.error?.data || '',
+        });
+        if (i < attempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+        }
+      }
+    }
+    throw lastErr || new Error('ownerOf failed');
+  };
+
   const ipfsToHttpLite = (u = '') => {
     const s = String(u || '').trim();
     if (!s) return '';
@@ -1481,8 +1507,7 @@ export default function LiveMakerClient({
         const owner = String(identity.playerId || '').trim();
         const kind = await resolveNftKindForSelection(collectionAddr, '1');
         if (kind === KIND_ERC721) {
-          const c721 = new ethers.Contract(collectionAddr, ERC721_READ_ABI, provider);
-          const ownerOf = String(await c721.ownerOf(BigInt(tokenId))).toLowerCase();
+          const ownerOf = String(await retryOwnerOfLite(collectionAddr, tokenId, provider)).toLowerCase();
           if (ownerOf !== owner.toLowerCase()) {
             setCustomTokenError('you do not own this token id');
             return;
