@@ -547,7 +547,7 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onL
           </button>
         </div>
         {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
-        {footer ? <p className={`${footerTone === 'bad' ? 'rs-footer-bad rs-inline-error-flash' : 'rs-footer-ok'}`}>{footer}</p> : null}
+        {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
       </div>
     </div>
   );
