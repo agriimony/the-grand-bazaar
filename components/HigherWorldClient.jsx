@@ -124,6 +124,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
   const [tradeToast, setTradeToast] = useState('');
   const [worldLogs, setWorldLogs] = useState([]);
+  const [worldPresence, setWorldPresence] = useState({});
   const zoneChannelsRef = useRef(new Map());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
@@ -622,10 +623,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     channel.on('presence', { event: 'sync' }, () => {
       if (worldCapKickedRef.current) return;
       let ids = [];
+      let state = {};
       try {
-        const state = channel.presenceState() || {};
+        state = channel.presenceState() || {};
         ids = Object.keys(state || {}).filter(Boolean);
       } catch {}
+      const nextPresence = {};
+      for (const [sid, metas] of Object.entries(state || {})) {
+        if (!sid || sid === playerIdentity.sessionId) continue;
+        const meta = Array.isArray(metas) ? (metas[metas.length - 1] || {}) : (metas || {});
+        nextPresence[sid] = {
+          sessionId: sid,
+          playerId: String(meta?.playerId || ''),
+          fname: String(meta?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+          pfp: String(meta?.pfp || '').trim(),
+          zone: String(meta?.zone || ''),
+          updatedAt: Number(meta?.ts || Date.now()),
+          present: true,
+        };
+      }
+      setWorldPresence(nextPresence);
       const count = ids.length;
       if (count <= maxWorldPlayers) return;
       const admitted = ids.slice().sort().slice(0, maxWorldPlayers);
@@ -685,6 +702,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           channel.track({
             sessionId: playerIdentity.sessionId,
             playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
             world: worldName,
             zone: zoneKeyForCell(playerCellRef.current),
             ts: Date.now(),
@@ -748,6 +767,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         ch.track({
           sessionId: playerIdentity.sessionId,
           playerId: playerIdentity.playerId,
+          fname: localFname,
+          pfp: localPfp,
           world: worldName,
           zone: zoneKeyForCell(localCell),
           ts: Date.now(),
@@ -960,6 +981,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       ch.track({
         sessionId: playerIdentity.sessionId,
         playerId: playerIdentity.playerId,
+        fname: localFname,
+        pfp: localPfp,
         world: worldName,
         zone: zoneKeyForCell(playerCell),
         ts: now,
@@ -1233,6 +1256,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
     return out;
   }, [remotePlayers, tradePlaceholders, playerCell]);
+
+  const presentElsewhereCount = useMemo(() => {
+    const nearbyIds = new Set([
+      ...Object.keys(remotePlayers || {}),
+      ...Object.keys(tradePlaceholders || {}),
+    ]);
+    return Object.keys(worldPresence || {}).filter((sid) => sid && !nearbyIds.has(sid)).length;
+  }, [worldPresence, remotePlayers, tradePlaceholders]);
 
   const openNpcMenu = (e, npc) => {
     e.preventDefault();
@@ -2086,7 +2117,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             </div>
           </div>
         </section>
-          {worldLogs.length ? (
+          {(worldLogs.length || presentElsewhereCount > 0) ? (
             <div
               style={{
                 position: 'absolute',
@@ -2099,6 +2130,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 gap: 6,
               }}
             >
+              {presentElsewhereCount > 0 ? (
+                <div
+                  style={{
+                    background: 'rgba(13, 11, 8, 0.46)',
+                    border: '1px solid rgba(236,200,120,0.28)',
+                    color: '#f6e3ad',
+                    borderRadius: 6,
+                    padding: '5px 7px',
+                    fontSize: 12,
+                    lineHeight: 1.2,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                    backdropFilter: 'blur(1px)',
+                  }}
+                >
+                  {presentElsewhereCount === 1 ? '1 player elsewhere in world' : `${presentElsewhereCount} players elsewhere in world`}
+                </div>
+              ) : null}
               {worldLogs.map((log) => (
                 <div
                   key={log.id}
