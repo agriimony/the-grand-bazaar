@@ -420,7 +420,20 @@ function isFilled(sel) {
 }
 
 function emptySelection() {
-  return { token: '', amount: '', imgUrl: '', symbol: '', tokenId: '', name: '', kind: '', balance: '', decimals: '' };
+  return {
+    token: '',
+    amount: '',
+    imgUrl: '',
+    symbol: '',
+    tokenId: '',
+    name: '',
+    kind: '',
+    balance: '',
+    decimals: '',
+    onchainBalance: '',
+    onchainOwnerOk: true,
+    staleHoldingsWarning: '',
+  };
 }
 
 function selectionHash(sel) {
@@ -534,7 +547,7 @@ function OfferPanel({ title, selection, editable, onChange, onOpenInventory, onL
           </button>
         </div>
         {feeText ? <p className="rs-fee-note">{feeText}</p> : null}
-        {footer ? <p className={footerTone === 'bad' ? 'rs-footer-bad' : 'rs-footer-ok'}>{footer}</p> : null}
+        {footer ? <p className={`${footerTone === 'bad' ? 'rs-footer-bad rs-inline-error-flash' : 'rs-footer-ok'}`}>{footer}</p> : null}
       </div>
     </div>
   );
@@ -610,6 +623,7 @@ export default function LiveMakerClient({
   const [customTokenError, setCustomTokenError] = useState('');
   const [customTokenPreview, setCustomTokenPreview] = useState(null);
   const [inventoryView, setInventoryView] = useState('tokens');
+  const [selectionPreflightBusy, setSelectionPreflightBusy] = useState(false);
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
@@ -1145,24 +1159,35 @@ export default function LiveMakerClient({
 
     if (k === 'amount') {
       const raw = String(v || '').trim();
-      const bal = Number(current?.balance || 0);
+      const bal = Number(current?.onchainBalance || current?.balance || 0);
       const amt = Number(raw || 0);
       if (Number.isFinite(bal) && bal > 0 && Number.isFinite(amt) && amt > bal) {
-        nextVal = String(current?.balance || '');
+        nextVal = String(current?.onchainBalance || current?.balance || '');
       }
+    }
+
+    const nextSelection = {
+      ...(role === 'signer' ? tradeState.signerSelection : tradeState.senderSelection),
+      [k]: nextVal,
+    };
+
+    if (k === 'token' || k === 'tokenId' || k === 'amount' || k === 'balance') {
+      nextSelection.staleHoldingsWarning = '';
+      nextSelection.onchainOwnerOk = true;
+      if (k === 'balance') nextSelection.onchainBalance = String(nextVal || '');
     }
 
     if (role === 'signer') {
       publishPatch({
         ...tradeState,
-        signerSelection: { ...tradeState.signerSelection, [k]: nextVal },
+        signerSelection: nextSelection,
       });
       return;
     }
 
     publishPatch({
       ...tradeState,
-      senderSelection: { ...tradeState.senderSelection, [k]: nextVal },
+      senderSelection: nextSelection,
     });
   };
 
@@ -1245,6 +1270,9 @@ export default function LiveMakerClient({
     const patch = normalizeSelection({
       ...(role === 'signer' ? tradeState.signerSelection : tradeState.senderSelection),
       ...selectionPatch,
+      staleHoldingsWarning: '',
+      onchainOwnerOk: true,
+      onchainBalance: String(selectionPatch?.balance ?? selectionPatch?.onchainBalance ?? (role === 'signer' ? tradeState.signerSelection?.balance : tradeState.senderSelection?.balance) ?? ''),
     });
 
     if (role === 'signer') {
@@ -1523,9 +1551,104 @@ export default function LiveMakerClient({
   const ownSelection = role === 'signer' ? tradeState.signerSelection : tradeState.senderSelection;
   const otherSelection = role === 'signer' ? tradeState.senderSelection : tradeState.signerSelection;
 
+  const verifySelectionHoldings = useCallback(async (selection) => {
+    const owner = String(identity.playerId || '').trim();
+    const tokenRef = String(selection?.token || '').trim();
+    const kind = normalizeKind(selection?.kind || '');
+    const amountStr = String(selection?.amount || '').trim();
+    const tokenIdStr = String(selection?.tokenId || '').trim();
+    const tokenAddress = String(tokenRef).split(':')[0].trim();
+
+    if (!isAddress(owner) || !isAddress(tokenAddress) || !kind) {
+      return { ok: true, onchainBalance: String(selection?.balance || ''), warning: '' };
+    }
+
+    const provider = new ethers.JsonRpcProvider(BASE_RPCS[0]);
+
+    if (kind === KIND_ERC20) {
+      const c20 = new ethers.Contract(tokenAddress, ERC20_READ_ABI, provider);
+      const [balRaw, decimalsRaw] = await Promise.all([
+        c20.balanceOf(owner).catch(() => 0n),
+        c20.decimals().catch(() => Number(selection?.decimals || 18)),
+      ]);
+      const decimals = Number(decimalsRaw || selection?.decimals || 18);
+      const onchainBalance = ethers.formatUnits(BigInt(balRaw || 0n), Number.isFinite(decimals) ? decimals : 18);
+      const neededRaw = ethers.parseUnits(amountStr || '0', Number.isFinite(decimals) ? decimals : 18);
+      const ok = BigInt(balRaw || 0n) >= neededRaw;
+      return {
+        ok,
+        onchainBalance,
+        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+      };
+    }
+
+    if (kind === KIND_ERC721) {
+      const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
+      const ownerOf = String(await c721.ownerOf(BigInt(tokenIdStr || '0')).catch(() => '')).toLowerCase();
+      const ok = ownerOf === owner.toLowerCase();
+      return {
+        ok,
+        onchainBalance: ok ? '1' : '0',
+        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+      };
+    }
+
+    if (kind === KIND_ERC1155) {
+      const c1155 = new ethers.Contract(tokenAddress, ERC1155_READ_ABI, provider);
+      const balRaw = await c1155.balanceOf(owner, BigInt(tokenIdStr || '0')).catch(() => 0n);
+      const needed = BigInt(Math.max(0, Math.floor(Number(amountStr || '0') || 0)));
+      const ok = BigInt(balRaw || 0n) >= needed;
+      return {
+        ok,
+        onchainBalance: String(balRaw || 0n),
+        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+      };
+    }
+
+    return { ok: true, onchainBalance: String(selection?.balance || ''), warning: '' };
+  }, [identity.playerId]);
+
+  const applyOwnSelectionPreflight = useCallback(async (selection) => {
+    const normalized = normalizeSelection(selection);
+    if (!String(normalized?.token || '').trim() || !String(normalized?.amount || '').trim()) return;
+    setSelectionPreflightBusy(true);
+    try {
+      const result = await verifySelectionHoldings(normalized);
+      const current = role === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
+      if (selectionHash(current) !== selectionHash(normalized)) return;
+      const patched = {
+        ...current,
+        onchainBalance: String(result?.onchainBalance || current?.onchainBalance || current?.balance || ''),
+        onchainOwnerOk: Boolean(result?.ok),
+        staleHoldingsWarning: String(result?.warning || ''),
+        balance: String(result?.onchainBalance || current?.balance || ''),
+      };
+      if (role === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: patched });
+      else publishPatch({ ...tradeStateRef.current, senderSelection: patched });
+    } catch {
+      const current = role === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
+      if (selectionHash(current) !== selectionHash(normalized)) return;
+      const patched = {
+        ...current,
+        staleHoldingsWarning: '❗ INSUFFICIENT BALANCE',
+        onchainOwnerOk: false,
+        onchainBalance: String(current?.onchainBalance || current?.balance || ''),
+      };
+      if (role === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: patched });
+      else publishPatch({ ...tradeStateRef.current, senderSelection: patched });
+    } finally {
+      setSelectionPreflightBusy(false);
+    }
+  }, [role, verifySelectionHoldings]);
+
   const ownDone = isFilled(ownSelection);
   const otherDone = isFilled(otherSelection);
   const bothDone = ownDone && otherDone;
+
+  useEffect(() => {
+    if (!ownDone) return;
+    applyOwnSelectionPreflight(ownSelection);
+  }, [ownSelection.token, ownSelection.tokenId, ownSelection.amount, ownSelection.balance, ownDone, applyOwnSelectionPreflight]);
 
   useEffect(() => {
     let dead = false;
@@ -1708,8 +1831,10 @@ export default function LiveMakerClient({
   const signerRequired = signerOutgoing;
   const senderRequired = senderOutgoing;
 
-  const signerInsufficient = bothDone && signerBalNum > 0 && signerRequired > signerBalNum;
-  const senderInsufficient = bothDone && senderBalNum > 0 && senderRequired > senderBalNum;
+  const signerStaleInsufficient = Boolean(tradeState.signerSelection?.staleHoldingsWarning) || tradeState.signerSelection?.onchainOwnerOk === false;
+  const senderStaleInsufficient = Boolean(tradeState.senderSelection?.staleHoldingsWarning) || tradeState.senderSelection?.onchainOwnerOk === false;
+  const signerInsufficient = signerStaleInsufficient || (bothDone && signerBalNum > 0 && signerRequired > signerBalNum);
+  const senderInsufficient = senderStaleInsufficient || (bothDone && senderBalNum > 0 && senderRequired > senderBalNum);
   const myInsufficient = myRole === 'signer' ? signerInsufficient : senderInsufficient;
 
   const topIsSignerPanel = true; // top panel always renders signerSelection
@@ -1777,13 +1902,15 @@ export default function LiveMakerClient({
 
   const topAccepted = acceptedTextFor(topPanelRole);
   const bottomAccepted = acceptedTextFor(bottomPanelRole);
+  const topWarningText = String(tradeState.signerSelection?.staleHoldingsWarning || '').trim();
+  const bottomWarningText = String(tradeState.senderSelection?.staleHoldingsWarning || '').trim();
 
   const topFooter = peerChangedTop
     ? 'This offer has been changed'
-    : (topInsufficient ? 'Insufficient balance' : (topAccepted || topFlowFooter));
+    : (topInsufficient ? (topWarningText || '❗ INSUFFICIENT BALANCE') : (topAccepted || topFlowFooter));
   const bottomFooter = peerChangedBottom
     ? 'This offer has been changed'
-    : (bottomInsufficient ? 'Insufficient balance' : (bottomAccepted || bottomFlowFooter));
+    : (bottomInsufficient ? (bottomWarningText || '❗ INSUFFICIENT BALANCE') : (bottomAccepted || bottomFlowFooter));
 
   const visibleInventoryItems = useMemo(() => {
     if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
@@ -1856,8 +1983,25 @@ export default function LiveMakerClient({
     setStatus('');
     debugLog('approve:start', { bothDone, signerInsufficient, senderInsufficient, approvalBusy, myRole });
     if (!bothDone) return;
-    if (signerInsufficient || senderInsufficient) return;
     if (approvalBusy) return;
+
+    const ownNow = myRole === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
+    const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: '❗ INSUFFICIENT BALANCE' }));
+    const latestOwnPatched = {
+      ...ownNow,
+      onchainBalance: String(latestOwnCheck?.onchainBalance || ownNow?.onchainBalance || ownNow?.balance || ''),
+      onchainOwnerOk: Boolean(latestOwnCheck?.ok),
+      staleHoldingsWarning: String(latestOwnCheck?.warning || ''),
+      balance: String(latestOwnCheck?.onchainBalance || ownNow?.balance || ''),
+    };
+    if (myRole === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: latestOwnPatched });
+    else publishPatch({ ...tradeStateRef.current, senderSelection: latestOwnPatched });
+    if (!latestOwnCheck?.ok) {
+      setStatus('❗ INSUFFICIENT BALANCE');
+      return;
+    }
+
+    if (signerInsufficient || senderInsufficient) return;
 
     const ch = channelRef.current;
     if (!ch) return;
@@ -2471,10 +2615,10 @@ export default function LiveMakerClient({
                 <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
                   <button
                     className="rs-btn rs-btn-positive"
-                    onClick={myInsufficient ? onUseMax : onApprove}
-                    disabled={approvalBusy || (!myInsufficient && (signerInsufficient || senderInsufficient)) || (myInsufficient && !String(mySelection?.balance || '').trim())}
+                    onClick={myInsufficient ? openInventory : onApprove}
+                    disabled={approvalBusy || selectionPreflightBusy || (!myInsufficient && (signerInsufficient || senderInsufficient))}
                   >
-                    {approvalBusy ? 'Approving...' : (myInsufficient ? 'Use max' : 'Approve')}
+                    {approvalBusy ? 'Approving...' : (selectionPreflightBusy ? 'Checking...' : (myInsufficient ? 'Reselect' : 'Approve'))}
                   </button>
                   <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
                 </div>

@@ -883,6 +883,10 @@ html, body {
   text-shadow: 1px 1px 0 #000;
 }
 
+.rs-inline-error-flash {
+  animation: rsFlashWarn 0.9s steps(2, end) infinite;
+}
+
 .rs-counterparty-results {
   width: min(360px, 86%);
   margin: 4px auto 8px;
