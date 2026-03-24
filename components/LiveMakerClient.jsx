@@ -1307,28 +1307,35 @@ export default function LiveMakerClient({
     return KIND_ERC721;
   };
 
-  const retryOwnerOfLite = async (tokenAddress, tokenId, provider, attempts = 3) => {
+  const retryOwnerOfLite = async (tokenAddress, tokenId, attempts = 2) => {
     let lastErr = null;
-    for (let i = 0; i < attempts; i += 1) {
-      try {
-        const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
-        const ownerOf = await c721.ownerOf(BigInt(tokenId));
-        debugLog('custom721:ownerOf:success', { tokenAddress, tokenId: String(tokenId), attempt: i + 1, ownerOf: String(ownerOf || '') });
-        return String(ownerOf || '');
-      } catch (err) {
-        lastErr = err;
-        debugLog('custom721:ownerOf:error', {
-          tokenAddress,
-          tokenId: String(tokenId),
-          attempt: i + 1,
-          error: err?.shortMessage || err?.reason || err?.message || String(err || 'unknown'),
-          code: err?.code || '',
-          data: err?.data || err?.info?.error?.data || err?.error?.data || '',
-        });
-        if (i < attempts - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+    for (let rpcIndex = 0; rpcIndex < BASE_RPCS.length; rpcIndex += 1) {
+      const rpc = BASE_RPCS[rpcIndex];
+      const provider = new ethers.JsonRpcProvider(rpc);
+      for (let i = 0; i < attempts; i += 1) {
+        try {
+          const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
+          const ownerOf = await c721.ownerOf(BigInt(tokenId));
+          debugLog('custom721:ownerOf:success', { tokenAddress, tokenId: String(tokenId), rpc, rpcIndex, attempt: i + 1, ownerOf: String(ownerOf || '') });
+          return String(ownerOf || '');
+        } catch (err) {
+          lastErr = err;
+          debugLog('custom721:ownerOf:error', {
+            tokenAddress,
+            tokenId: String(tokenId),
+            rpc,
+            rpcIndex,
+            attempt: i + 1,
+            error: err?.shortMessage || err?.reason || err?.message || String(err || 'unknown'),
+            code: err?.code || '',
+            data: err?.data || err?.info?.error?.data || err?.error?.data || '',
+          });
+          if (i < attempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+          }
         }
       }
+      debugLog('custom721:ownerOf:rpc-fallback', { tokenAddress, tokenId: String(tokenId), nextRpc: BASE_RPCS[rpcIndex + 1] || '' });
     }
     throw lastErr || new Error('ownerOf failed');
   };
@@ -1507,7 +1514,7 @@ export default function LiveMakerClient({
         const owner = String(identity.playerId || '').trim();
         const kind = await resolveNftKindForSelection(collectionAddr, '1');
         if (kind === KIND_ERC721) {
-          const ownerOf = String(await retryOwnerOfLite(collectionAddr, tokenId, provider)).toLowerCase();
+          const ownerOf = String(await retryOwnerOfLite(collectionAddr, tokenId)).toLowerCase();
           if (ownerOf !== owner.toLowerCase()) {
             setCustomTokenError('you do not own this token id');
             return;
