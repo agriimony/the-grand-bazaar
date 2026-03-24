@@ -105,7 +105,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
   const { disconnect } = useDisconnect();
   const [menu, setMenu] = useState(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom] = useState(1);
   const [playerCell, setPlayerCell] = useState(null);
   const [playerPath, setPlayerPath] = useState([]);
   const [pendingAction, setPendingAction] = useState(null);
@@ -115,7 +115,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, moved: false, suppressClick: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
-  const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
   const nonTouchInputRef = useRef(false);
   const playerCellRef = useRef(null);
@@ -878,31 +877,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
   }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell]);
 
-  const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
-
-  const applyZoomAtPoint = (nextZoom, clientX, clientY) => {
-    const el = worldScrollRef.current;
-    const prevZoom = zoomRef.current;
-    const z = clampZoom(nextZoom);
-    if (!el || !Number.isFinite(z) || Math.abs(z - prevZoom) < 0.001) return;
-
-    const rect = el.getBoundingClientRect();
-    const px = clientX - rect.left;
-    const py = clientY - rect.top;
-    const worldX = el.scrollLeft + px;
-    const worldY = el.scrollTop + py;
-    const ratio = z / prevZoom;
-
-    zoomRef.current = z;
-    setZoom(z);
-
-    requestAnimationFrame(() => {
-      const left = worldX * ratio - px;
-      const top = worldY * ratio - py;
-      el.scrollLeft = Math.max(0, left);
-      el.scrollTop = Math.max(0, top);
-    });
-  };
 
   const npcsWithCurrentCast = useMemo(() => {
     const allCasts = (npcs || [])
@@ -1223,61 +1197,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const onWorldPointerDown = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
     if (t !== 'touch') return;
-
     touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touchPointsRef.current.size === 2) {
-      const [a, b] = Array.from(touchPointsRef.current.values());
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      pinchRef.current = {
-        startDist: Math.hypot(dx, dy),
-        startZoom: zoomRef.current,
-        active: false,
-      };
-    }
   };
 
   const onWorldPointerMove = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
     if (t !== 'touch') return;
     if (!touchPointsRef.current.has(e.pointerId)) return;
-
     touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touchPointsRef.current.size !== 2) {
-      pinchRef.current.active = false;
-      return;
-    }
-
-    const [a, b] = Array.from(touchPointsRef.current.values());
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const dist = Math.hypot(dx, dy);
-    const midX = (a.x + b.x) / 2;
-    const midY = (a.y + b.y) / 2;
-    const base = pinchRef.current.startDist || dist;
-    const delta = Math.abs(dist - base);
-
-    if (!pinchRef.current.active && delta < 10) return;
-    pinchRef.current.active = true;
-
-    e.preventDefault();
-    const startZoom = pinchRef.current.startZoom || zoomRef.current;
-    const next = startZoom * (dist / Math.max(1, base));
-    applyZoomAtPoint(next, midX, midY);
   };
 
   const onWorldPointerUp = (e) => {
     touchPointsRef.current.delete(e.pointerId);
-    if (touchPointsRef.current.size < 2) pinchRef.current.active = false;
   };
 
-  const onWorldWheel = (e) => {
-    if (!nonTouchInputRef.current) return;
-    if (dragRef.current.active) return;
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.08 : 0.92;
-    applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
-  };
+  const onWorldWheel = () => {};
 
   const runTalk = (npc) => {
     if (!npc) return;
