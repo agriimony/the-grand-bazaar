@@ -1597,7 +1597,7 @@ export default function LiveMakerClient({
       return {
         ok,
         onchainBalance,
-        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+        warning: ok ? '' : 'Insufficient Balance',
       };
     }
 
@@ -1614,7 +1614,7 @@ export default function LiveMakerClient({
       return {
         ok,
         onchainBalance: ok ? '1' : '0',
-        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+        warning: ok ? '' : 'Insufficient Balance',
       };
     }
 
@@ -1632,7 +1632,7 @@ export default function LiveMakerClient({
       return {
         ok,
         onchainBalance: String(balRaw || 0n),
-        warning: ok ? '' : '❗ INSUFFICIENT BALANCE',
+        warning: ok ? '' : 'Insufficient Balance',
       };
     }
 
@@ -1697,7 +1697,7 @@ export default function LiveMakerClient({
       if (selectionHash(current) !== selectionHash(normalized)) return;
       const patched = {
         ...current,
-        staleHoldingsWarning: '❗ INSUFFICIENT BALANCE',
+        staleHoldingsWarning: 'Insufficient Balance',
         onchainOwnerOk: false,
         onchainBalance: String(current?.onchainBalance || current?.balance || ''),
       };
@@ -1975,10 +1975,10 @@ export default function LiveMakerClient({
 
   const topFooter = peerChangedTop
     ? 'This offer has been changed'
-    : (topInsufficient ? (topWarningText || '❗ INSUFFICIENT BALANCE') : (topAccepted || topFlowFooter));
+    : (topInsufficient ? (topWarningText || 'Insufficient Balance') : (topAccepted || topFlowFooter));
   const bottomFooter = peerChangedBottom
     ? 'This offer has been changed'
-    : (bottomInsufficient ? (bottomWarningText || '❗ INSUFFICIENT BALANCE') : (bottomAccepted || bottomFlowFooter));
+    : (bottomInsufficient ? (bottomWarningText || 'Insufficient Balance') : (bottomAccepted || bottomFlowFooter));
 
   const visibleInventoryItems = useMemo(() => {
     if (inventoryView === 'tokens') return inventoryTokens.slice(0, 23);
@@ -2054,7 +2054,7 @@ export default function LiveMakerClient({
     if (approvalBusy) return;
 
     const ownNow = myRole === 'signer' ? tradeStateRef.current.signerSelection : tradeStateRef.current.senderSelection;
-    const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: '❗ INSUFFICIENT BALANCE' }));
+    const latestOwnCheck = await verifySelectionHoldings(ownNow).catch(() => ({ ok: false, onchainBalance: '0', warning: 'Insufficient Balance' }));
     const latestOwnPatched = {
       ...ownNow,
       onchainBalance: String(latestOwnCheck?.onchainBalance || ownNow?.onchainBalance || ownNow?.balance || ''),
@@ -2065,7 +2065,7 @@ export default function LiveMakerClient({
     if (myRole === 'signer') publishPatch({ ...tradeStateRef.current, signerSelection: latestOwnPatched });
     else publishPatch({ ...tradeStateRef.current, senderSelection: latestOwnPatched });
     if (!latestOwnCheck?.ok) {
-      setStatus('❗ INSUFFICIENT BALANCE');
+      setStatus('Insufficient Balance');
       return;
     }
 
