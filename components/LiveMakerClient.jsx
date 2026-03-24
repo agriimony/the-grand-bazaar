@@ -1603,11 +1603,25 @@ export default function LiveMakerClient({
 
     if (kind === KIND_ERC721) {
       const c721 = new ethers.Contract(tokenAddress, ERC721_READ_ABI, provider);
-      const ownerOf = String(await c721.ownerOf(BigInt(tokenIdStr || '0')).catch(() => '')).toLowerCase();
+      let ownerOf = '';
+      let ownerOfError = '';
+      try {
+        ownerOf = String(await c721.ownerOf(BigInt(tokenIdStr || '0'))).toLowerCase();
+      } catch (err) {
+        ownerOfError = err?.shortMessage || err?.reason || err?.message || String(err || 'unknown');
+        debugLog('holdings:verify:erc721:error', {
+          ...logBase,
+          expectedOwner: owner.toLowerCase(),
+          error: ownerOfError,
+          code: err?.code || '',
+          data: err?.data || err?.info?.error?.data || err?.error?.data || '',
+        });
+      }
       const ok = ownerOf === owner.toLowerCase();
       debugLog('holdings:verify:erc721', {
         ...logBase,
         ownerOf,
+        ownerOfError,
         expectedOwner: owner.toLowerCase(),
         ok,
       });
