@@ -590,6 +590,8 @@ export default function LiveMakerClient({
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
   const [successCloseAt, setSuccessCloseAt] = useState(0);
+  const [lastRoomActivityAt, setLastRoomActivityAt] = useState(() => Date.now());
+  const [staleCloseAt, setStaleCloseAt] = useState(0);
 
   const sendToWorldWithToast = (message, useReplace = true) => {
     try {
@@ -701,6 +703,13 @@ export default function LiveMakerClient({
     return () => clearInterval(t);
   }, []);
 
+  const markRoomActivity = useCallback((reason = '') => {
+    const ts = Date.now();
+    setLastRoomActivityAt(ts);
+    setStaleCloseAt(0);
+    if (reason) debugLog('room:activity', { reason, ts });
+  }, []);
+
   useEffect(() => {
     if (!roomBinding) {
       sendToWorldWithToast('Invalid room id');
@@ -725,6 +734,63 @@ export default function LiveMakerClient({
     }, 8000);
     return () => clearTimeout(t);
   }, [livePhase, router, initialChannel]);
+
+  useEffect(() => {
+    const ch = channelRef.current;
+    if (!ch || !channelSubscribed || livePhase === 'success' || livePhase === 'swapping') return;
+    if ((nowMs - lastRoomActivityAt) < 10000) return;
+    debugLog('room:heartbeat:sync-request', { idleMs: nowMs - lastRoomActivityAt, roomId: liveRoomId });
+    try {
+      ch.send({
+        type: 'broadcast',
+        event: 'room_sync_request',
+        payload: {
+          roomId: liveRoomId,
+          fromSessionId: identity.sessionId,
+          fromRole: role,
+          fromPlayerId: identity.playerId,
+          ts: Date.now(),
+        },
+      });
+      setLastRoomActivityAt(Date.now());
+    } catch {}
+  }, [nowMs, lastRoomActivityAt, channelSubscribed, livePhase, liveRoomId, identity.sessionId, identity.playerId, role]);
+
+  useEffect(() => {
+    if (!channelSubscribed || livePhase === 'success' || livePhase === 'swapping') {
+      setStaleCloseAt(0);
+      return;
+    }
+    const idleMs = nowMs - lastRoomActivityAt;
+    if (idleMs < 5 * 60 * 1000) {
+      if (staleCloseAt) setStaleCloseAt(0);
+      return;
+    }
+    if (!staleCloseAt) {
+      const closeAt = Date.now() + 10000;
+      debugLog('room:stale:countdown:start', { idleMs, closeAt, roomId: liveRoomId });
+      setStaleCloseAt(closeAt);
+      return;
+    }
+    if (nowMs >= staleCloseAt) {
+      debugLog('room:stale:close', { idleMs, roomId: liveRoomId });
+      try {
+        channelRef.current?.send({
+          type: 'broadcast',
+          event: 'room_close',
+          payload: {
+            roomId: liveRoomId,
+            byRole: role,
+            reason: 'stale',
+            sessionId: identity.sessionId,
+            playerId: identity.playerId,
+            ts: Date.now(),
+          },
+        });
+      } catch {}
+      router.push(`/${initialChannel || 'worlds'}`);
+    }
+  }, [nowMs, lastRoomActivityAt, staleCloseAt, channelSubscribed, livePhase, liveRoomId, role, identity.sessionId, identity.playerId, router, initialChannel]);
 
   useEffect(() => {
     let dead = false;
@@ -820,6 +886,7 @@ export default function LiveMakerClient({
           role: joinRole,
         },
       }));
+      markRoomActivity('room_join');
       if (sid !== identity.sessionId) sendRoomSnapshot(sid);
     });
 
@@ -830,6 +897,7 @@ export default function LiveMakerClient({
       const expected = fromRole === 'signer' ? roomBinding?.signer : (fromRole === 'sender' ? roomBinding?.sender : '');
       if (!fromSessionId || !expected || fromPlayerId !== expected) return;
       if (fromSessionId === identity.sessionId) return;
+      markRoomActivity('room_sync_request');
       sendRoomSnapshot(fromSessionId);
     });
 
@@ -856,6 +924,7 @@ export default function LiveMakerClient({
 
       const nextV = Number(payload?.stateVersion || 0);
       if (nextV < versionRef.current) return;
+      markRoomActivity('room_snapshot');
 
       setStateVersion(nextV);
       versionRef.current = nextV;
@@ -892,6 +961,7 @@ export default function LiveMakerClient({
       if (!expected || expected !== fromPlayerId) return;
       const nextV = Number(payload?.stateVersion || 0);
       if (nextV <= versionRef.current) return;
+      markRoomActivity('room_state_patch');
 
       setStateVersion(nextV);
       const nextTradeState = {
@@ -924,6 +994,7 @@ export default function LiveMakerClient({
       if ((who !== 'signer' && who !== 'sender') || !expected || expected !== fromPlayerId) return;
       const hash = String(payload?.selectionHash || '').trim();
       debugLog('event:room_approve', { who, decision, hash, fromSessionId: payload?.sessionId || '' });
+      markRoomActivity('room_approve');
       setApproved((prev) => {
         const next = { ...prev, [who]: decision === 'approve' };
         approvedRef.current = next;
@@ -943,6 +1014,7 @@ export default function LiveMakerClient({
       const expiresAt = Number(payload?.expiresAt || 0);
       const byName = String(payload?.byName || '').trim();
       debugLog('event:room_signed_order', { byRole, byName, expiresAt, hasPayload: Boolean(payload?.signedOrder) });
+      markRoomActivity('room_signed_order');
       setSignedOrderState({
         byRole,
         byName,
@@ -955,6 +1027,7 @@ export default function LiveMakerClient({
     ch.on('broadcast', { event: 'room_swapping' }, ({ payload }) => {
       if (String(payload?.playerId || '').trim().toLowerCase() !== roomBinding?.sender) return;
       debugLog('event:room_swapping');
+      markRoomActivity('room_swapping');
       setLivePhase('swapping');
     });
 
@@ -962,6 +1035,7 @@ export default function LiveMakerClient({
       if (String(payload?.playerId || '').trim().toLowerCase() !== roomBinding?.sender) return;
       const txHash = String(payload?.txHash || '').trim();
       debugLog('event:room_swap_success', { txHash });
+      markRoomActivity('room_swap_success');
       setSwapTxHash(txHash);
       setLivePhase('success');
     });
@@ -972,7 +1046,8 @@ export default function LiveMakerClient({
       const expected = byRole === 'signer' ? roomBinding?.signer : (byRole === 'sender' ? roomBinding?.sender : '');
       if (!expected || String(payload?.playerId || '').trim().toLowerCase() !== expected) return;
       debugLog('event:room_close', { reason, byRole: payload?.byRole || '' });
-      if (reason === 'decline') {
+      markRoomActivity('room_close');
+      if (reason === 'decline' || reason === 'stale') {
         router.push(`/${initialChannel || 'worlds'}`);
       }
     });
@@ -1121,7 +1196,7 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
     };
-  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick]);
+  }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick, markRoomActivity]);
 
   const publishPatch = (next) => {
     const ch = channelRef.current;
@@ -2752,6 +2827,7 @@ export default function LiveMakerClient({
                     <div className="rs-loading-fill" />
                     <div className="rs-loading-label">{`waiting for ${otherDisplay}`}</div>
                   </div>
+                  {staleCloseAt ? <div style={{ fontSize: 14, marginTop: 8 }}>{`Closing room in ${Math.max(0, Math.ceil((staleCloseAt - nowMs) / 1000))}s`}</div> : null}
                 </div>
               ) : (
                 <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
@@ -2771,6 +2847,7 @@ export default function LiveMakerClient({
                   <div className="rs-loading-fill" />
                   <div className="rs-loading-label">{midText}</div>
                 </div>
+                {staleCloseAt ? <div style={{ fontSize: 14, marginTop: 8 }}>{`Closing room in ${Math.max(0, Math.ceil((staleCloseAt - nowMs) / 1000))}s`}</div> : null}
               </div>
             )
           ) : livePhase === 'await_signer' ? (
