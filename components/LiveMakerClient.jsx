@@ -1519,6 +1519,7 @@ export default function LiveMakerClient({
             setCustomTokenError('you do not own this token id');
             return;
           }
+          const c721 = new ethers.Contract(collectionAddr, ERC721_READ_ABI, provider);
           const sym = await c721.symbol().catch(() => selectedNftCollection?.symbol || 'NFT');
           const meta = await readNftMetaLite(collectionAddr, tokenId, KIND_ERC721, provider);
           row = {
