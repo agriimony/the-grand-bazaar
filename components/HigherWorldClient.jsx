@@ -375,6 +375,144 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     sendToZoneNeighborhood('player_state', basePayload);
   }, [worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, sendToZoneNeighborhood]);
 
+  const syncZoneSubscriptions = useCallback((cell) => {
+    const supabase = supabaseRef.current;
+    if (!supabase || !cell) return;
+    const wanted = new Set(neighborhoodZoneKeys(cell));
+    for (const [zoneKey, zoneCh] of Array.from(zoneChannelsRef.current.entries())) {
+      if (wanted.has(zoneKey)) continue;
+      try { supabase.removeChannel(zoneCh); } catch {}
+      zoneChannelsRef.current.delete(zoneKey);
+    }
+    for (const zoneKey of wanted) {
+      if (zoneChannelsRef.current.has(zoneKey)) continue;
+      const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
+      zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
+        console.log('[mp] recv zone player_state', zoneKey, payload);
+        const sessionId = String(payload?.sessionId || '').trim();
+        if (!sessionId || sessionId === playerIdentity.sessionId) return;
+        if (String(payload?.world || '') !== worldName) return;
+        const x = Number(payload?.x);
+        const y = Number(payload?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        setRemotePlayers((prev) => ({
+          ...prev,
+          [sessionId]: {
+            sessionId,
+            playerId: String(payload?.playerId || ''),
+            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+            pfp: String(payload?.pfp || '').trim(),
+            x,
+            y,
+            updatedAt: Number(payload?.ts || Date.now()),
+          },
+        }));
+      });
+      zoneChannel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+        const toSessionId = String(payload?.toSessionId || '').trim();
+        if (toSessionId !== playerIdentity.sessionId) return;
+        const fromSessionId = String(payload?.fromSessionId || '').trim();
+        const fromPlayerId = String(payload?.fromPlayerId || '').trim();
+        const fromFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+        if (!fromSessionId) return;
+        setIncomingTradeInvite({
+          fromSessionId,
+          fromPlayerId,
+          fromFname,
+          roomId: String(payload?.roomId || ''),
+          world: String(payload?.world || worldName),
+          at: Number(payload?.ts || Date.now()),
+          expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
+        });
+      });
+      zoneChannel.on('broadcast', { event: 'trade_placeholder' }, ({ payload }) => {
+        const sessionId = String(payload?.sessionId || '').trim();
+        if (!sessionId || sessionId === playerIdentity.sessionId) return;
+        if (String(payload?.world || '') !== worldName) return;
+        const x = Number(payload?.x);
+        const y = Number(payload?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        setTradePlaceholders((prev) => ({
+          ...prev,
+          [sessionId]: {
+            sessionId,
+            playerId: String(payload?.playerId || ''),
+            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+            pfp: String(payload?.pfp || '').trim(),
+            x,
+            y,
+            updatedAt: Number(payload?.ts || Date.now()),
+            expiresAt: Number(payload?.expiresAt || (Date.now() + 10 * 60 * 1000)),
+            trading: true,
+          },
+        }));
+      });
+      zoneChannel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+        const toSessionId = String(payload?.toSessionId || '').trim();
+        if (toSessionId !== playerIdentity.sessionId) return;
+        const decision = String(payload?.decision || '').trim().toLowerCase();
+        const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
+        setOutgoingTradeInvite(null);
+        if (decision === 'accept') {
+          setTradeToast(`${fromName} accepted your trade request`);
+          const roomId = String(payload?.roomId || '').trim();
+          if (roomId) {
+            const localCellNow = playerCellRef.current;
+            if (localCellNow) {
+              sendToZoneNeighborhood('trade_placeholder', {
+                world: worldName,
+                roomId,
+                sessionId: playerIdentity.sessionId,
+                playerId: playerIdentity.playerId,
+                fname: localFname,
+                pfp: localPfp,
+                x: localCellNow.x,
+                y: localCellNow.y,
+                ts: Date.now(),
+                expiresAt: Date.now() + 10 * 60 * 1000,
+              });
+            }
+            const senderPlayerId = String(payload?.fromPlayerId || '').trim();
+            const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+            const senderSessionId = String(payload?.fromSessionId || '').trim();
+            const qs = new URLSearchParams({
+              role: 'signer',
+              channel: worldName,
+              ...(senderPlayerId ? { senderPlayerId } : {}),
+              ...(senderFname ? { senderFname } : {}),
+              ...(senderSessionId ? { senderSessionId } : {}),
+            });
+            router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
+          }
+        }
+        if (decision === 'decline') {
+          const reason = String(payload?.reason || '').trim().toLowerCase();
+          if (reason === 'timeout') setTradeToast(`${fromName} did not respond in time`);
+          else setTradeToast(`${fromName} declined your trade request`);
+        }
+      });
+      zoneChannel.subscribe((status) => {
+        console.log('[mp] zone channel status', status, { world: worldName, zoneKey });
+        if (status === 'SUBSCRIBED') {
+          const localCellNow = playerCellRef.current;
+          if (!localCellNow) return;
+          sendExactPlayerState({
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            x: localCellNow.x,
+            y: localCellNow.y,
+            zone: zoneKeyForCell(localCellNow),
+            ts: Date.now(),
+          });
+        }
+      });
+      zoneChannelsRef.current.set(zoneKey, zoneChannel);
+    }
+  }, [playerIdentity.sessionId, playerIdentity.playerId, worldName, localFname, localPfp, router, sendExactPlayerState, sendToZoneNeighborhood]);
+
   useEffect(() => {
     if (!incomingTradeInvite) return;
     const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
