@@ -467,21 +467,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           setTradeToast(`${fromName} accepted your trade request`);
           const roomId = String(payload?.roomId || '').trim();
           if (roomId) {
-            const localCellNow = playerCellRef.current;
-            if (localCellNow) {
-              sendToZoneNeighborhood('trade_placeholder', {
-                world: worldName,
-                roomId,
-                sessionId: playerIdentity.sessionId,
-                playerId: playerIdentity.playerId,
-                fname: localFname,
-                pfp: localPfp,
-                x: localCellNow.x,
-                y: localCellNow.y,
-                ts: Date.now(),
-                expiresAt: Date.now() + 10 * 60 * 1000,
-              });
-            }
             const senderPlayerId = String(payload?.fromPlayerId || '').trim();
             const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
             const senderSessionId = String(payload?.fromSessionId || '').trim();
@@ -1555,21 +1540,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setTradeToast(`accepted trade with ${target || 'player'}`);
       const roomId = String(invite.roomId || '').trim();
       if (roomId) {
-        const localCell = playerCellRef.current;
-        if (localCell) {
-          sendToZoneNeighborhood('trade_placeholder', {
-            world: worldName,
-            roomId,
-            sessionId: playerIdentity.sessionId,
-            playerId: playerIdentity.playerId,
-            fname: localFname,
-            pfp: localPfp,
-            x: localCell.x,
-            y: localCell.y,
-            ts: Date.now(),
-            expiresAt: Date.now() + 10 * 60 * 1000,
-          });
-        }
         const signerPlayerId = String(invite.fromPlayerId || '').trim();
         const signerFname = String(invite.fromFname || '').replace(/^@/, '').trim();
         const signerSessionId = String(invite.fromSessionId || '').trim();
