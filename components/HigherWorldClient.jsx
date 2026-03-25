@@ -601,7 +601,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         decision: String(payload?.decision || '').trim().toLowerCase(),
         hasOutgoingTradeInvite: Boolean(outgoingTradeInvite),
       });
-      if (!outgoingTradeInvite) return;
       const toSessionId = String(payload?.toSessionId || '').trim();
       if (toSessionId !== playerIdentity.sessionId) return;
       const decision = String(payload?.decision || '').trim().toLowerCase();
