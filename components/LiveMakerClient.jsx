@@ -898,7 +898,27 @@ export default function LiveMakerClient({
       if (peerPresent) peerEverSeenRef.current = true;
       const now = Date.now();
       const graceActive = now < roomPresenceGraceUntilRef.current;
+      console.log('[live-maker] presence sync', {
+        roomId: liveRoomId,
+        mySessionId: identity.sessionId,
+        myPlayerId: identity.playerId,
+        expectedPeerId,
+        peerPresent,
+        peerEverSeen: peerEverSeenRef.current,
+        graceActive,
+        sessions: Object.values(next).map((p) => ({
+          sessionId: p.sessionId,
+          playerId: p.playerId,
+          role: p.role,
+          fname: p.fname,
+        })),
+      });
       if (channelSubscribedRef.current && expectedPeerId && !peerPresent && peerEverSeenRef.current && !graceActive) {
+        console.log('[live-maker] presence auto-close', {
+          roomId: liveRoomId,
+          mySessionId: identity.sessionId,
+          expectedPeerId,
+        });
         router.push(`/${initialChannel || 'worlds'}`);
       }
     });
@@ -1160,6 +1180,13 @@ export default function LiveMakerClient({
           return;
         }
         debugLog('live room connected', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
+        console.log('[live-maker] presence track', {
+          roomId: liveRoomId,
+          sessionId: identity.sessionId,
+          playerId: identity.playerId,
+          role,
+          fname: localFnameRef.current,
+        });
         try {
           ch.track({
             roomId: liveRoomId,
