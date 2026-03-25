@@ -347,15 +347,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return () => clearTimeout(t);
   }, [outgoingTradeInvite, nowMs]);
 
-  const sendToZoneNeighborhood = useCallback((event, payload) => {
+  const sendToZoneNeighborhood = (event, payload) => {
     for (const ch of zoneChannelsRef.current.values()) {
       try {
         ch.send({ type: 'broadcast', event, payload });
       } catch {}
     }
-  }, []);
+  };
 
-  const sendExactPlayerState = useCallback((payloadOverride = null) => {
+  const sendExactPlayerState = (payloadOverride = null) => {
     const basePayload = payloadOverride || (() => {
       const localCell = playerCellRef.current;
       if (!localCell) return null;
@@ -373,9 +373,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     })();
     if (!basePayload) return;
     sendToZoneNeighborhood('player_state', basePayload);
-  }, [worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, sendToZoneNeighborhood]);
+  };
 
-  const syncZoneSubscriptions = useCallback((cell) => {
+  const syncZoneSubscriptions = (cell) => {
     const supabase = supabaseRef.current;
     if (!supabase || !cell) return;
     const wanted = new Set(neighborhoodZoneKeys(cell));
@@ -511,7 +511,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       });
       zoneChannelsRef.current.set(zoneKey, zoneChannel);
     }
-  }, [playerIdentity.sessionId, playerIdentity.playerId, worldName, localFname, localPfp, router, sendExactPlayerState, sendToZoneNeighborhood]);
+  };
 
   useEffect(() => {
     if (!incomingTradeInvite) return;
