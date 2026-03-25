@@ -1676,8 +1676,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
       const isFountain = x >= fountainOrigin.x && x < fountainOrigin.x + 3 && y >= fountainOrigin.y && y < fountainOrigin.y + 3;
+      const isFountainAnchor = x === fountainOrigin.x + 1 && y === fountainOrigin.y + 1;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
       const isBank = x >= bankCell.x && x < bankCell.x + 3 && y >= bankCell.y && y < bankCell.y + 3;
+      const isBankAnchor = x === bankCell.x + 1 && y === bankCell.y + 1;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
@@ -1710,7 +1712,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           }}
         >
           {isFountain ? (
-            <span style={{ fontSize: `${Math.max(18, Math.min(44, 24 * zoom))}px`, filter: 'drop-shadow(0 0 8px rgba(157, 221, 255, 0.8))' }}>⛲</span>
+            isFountainAnchor ? (
+              <span
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: `${Math.max(58, Math.min(116, 72 * zoom))}px`,
+                  lineHeight: 1,
+                  filter: 'drop-shadow(0 0 16px rgba(157, 221, 255, 0.95))',
+                  zIndex: 1,
+                  pointerEvents: 'none',
+                }}
+              >
+                ⛲
+              </span>
+            ) : null
           ) : isBorder || isScatteredTree ? (
             <span
               style={{
@@ -1722,24 +1740,31 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               {tree}
             </span>
           ) : isBank ? (
-            <button
-              onClick={openBankMenu}
-              title="Bazaar Bank"
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'grid',
-                placeItems: 'center',
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
-                filter: 'drop-shadow(0 0 12px rgba(255, 219, 108, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
-              }}
-            >
-              🏦
-            </button>
+            isBankAnchor ? (
+              <button
+                onClick={openBankMenu}
+                title="Bazaar Bank"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '300%',
+                  height: '300%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontSize: `${Math.max(58, Math.min(116, 72 * zoom))}px`,
+                  filter: 'drop-shadow(0 0 18px rgba(255, 219, 108, 0.98)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+                  zIndex: 1,
+                }}
+              >
+                🏦
+              </button>
+            ) : null
           ) : npc ? (
             <>
               <button
