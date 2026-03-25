@@ -858,41 +858,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         ts: now,
       });
     } catch {}
-    const syncZoneSubscriptions = (cell) => {
-      const supabase = supabaseRef.current;
-      if (!supabase || !cell) return;
-      const wanted = new Set(neighborhoodZoneKeys(cell));
-      for (const [zoneKey, zoneCh] of Array.from(zoneChannelsRef.current.entries())) {
-        if (wanted.has(zoneKey)) continue;
-        try { supabase.removeChannel(zoneCh); } catch {}
-        zoneChannelsRef.current.delete(zoneKey);
-      }
-      for (const zoneKey of wanted) {
-        if (zoneChannelsRef.current.has(zoneKey)) continue;
-        const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
-        zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
-          console.log('[mp] recv zone player_state', zoneKey, payload);
-          upsertRemote(payload);
-        });
-        zoneChannel.subscribe((status) => {
-          console.log('[mp] zone channel status', status, { world: worldName, zoneKey });
-          if (status === 'SUBSCRIBED') {
-            sendExactPlayerState({
-              world: worldName,
-              sessionId: playerIdentity.sessionId,
-              playerId: playerIdentity.playerId,
-              fname: localFname,
-              pfp: localPfp,
-              x: playerCell.x,
-              y: playerCell.y,
-              zone: zoneKeyForCell(playerCell),
-              ts: Date.now(),
-            });
-          }
-        });
-        zoneChannelsRef.current.set(zoneKey, zoneChannel);
-      }
-    };
     syncZoneSubscriptions(playerCell);
     sendExactPlayerState({
       world: worldName,
