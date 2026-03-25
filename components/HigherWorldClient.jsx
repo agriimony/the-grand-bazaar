@@ -1759,7 +1759,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       cells.push(
         <div
           key={key}
-          onClick={(e) => openTileMenu(e, x, y)}
+          onClick={(e) => {
+            if (isBank) {
+              openBankMenu(e);
+              return;
+            }
+            openTileMenu(e, x, y);
+          }}
           style={{
             aspectRatio: '1 / 1',
             border: '1px solid rgba(220, 189, 116, 0.25)',
