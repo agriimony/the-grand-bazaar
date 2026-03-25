@@ -96,7 +96,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const size = 37;
   const maxWorldPlayers = 37;
   const center = Math.floor(size / 2);
-  const bankCell = { x: Math.min(size - 2, center + 2), y: center };
+  const fountainOrigin = { x: center - 1, y: center - 1 };
+  const bankCell = { x: center - 1, y: center - 6 };
   const [npcs, setNpcs] = useState([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -835,10 +836,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       b.add(cellKey(0, i));
       b.add(cellKey(size - 1, i));
     }
-    b.add(cellKey(center, center)); // fountain
-    b.add(cellKey(bankCell.x, bankCell.y)); // bank
+    for (let fy = fountainOrigin.y; fy < fountainOrigin.y + 3; fy += 1) {
+      for (let fx = fountainOrigin.x; fx < fountainOrigin.x + 3; fx += 1) {
+        b.add(cellKey(fx, fy));
+      }
+    }
+    for (let by = bankCell.y; by < bankCell.y + 3; by += 1) {
+      for (let bx = bankCell.x; bx < bankCell.x + 3; bx += 1) {
+        b.add(cellKey(bx, by));
+      }
+    }
     return b;
-  }, [size, center, bankCell.x, bankCell.y]);
+  }, [size, fountainOrigin.x, fountainOrigin.y, bankCell.x, bankCell.y]);
 
   useEffect(() => {
     if (playerCell) {
@@ -876,11 +885,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (!playerPosHydrated) return;
     if (playerCell) return;
     const candidates = [
-      { x: bankCell.x - 1, y: bankCell.y },
-      { x: bankCell.x - 2, y: bankCell.y },
-      { x: bankCell.x, y: bankCell.y - 1 },
-      { x: bankCell.x, y: bankCell.y + 1 },
-      { x: bankCell.x + 1, y: bankCell.y },
+      { x: bankCell.x + 1, y: bankCell.y + 3 },
+      { x: bankCell.x + 1, y: bankCell.y + 4 },
+      { x: bankCell.x - 1, y: bankCell.y + 1 },
+      { x: bankCell.x + 3, y: bankCell.y + 1 },
+      { x: bankCell.x + 1, y: bankCell.y - 1 },
     ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2);
 
     const spawn = candidates.find((c) => !blockedCells.has(cellKey(c.x, c.y))) || { x: center - 1, y: center };
@@ -1666,15 +1675,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const key = `${x}-${y}`;
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
-      const isCenter = x === center && y === center;
+      const isFountain = x >= fountainOrigin.x && x < fountainOrigin.x + 3 && y >= fountainOrigin.y && y < fountainOrigin.y + 3;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
-      const isBank = x === bankCell.x && y === bankCell.y;
+      const isBank = x >= bankCell.x && x < bankCell.x + 3 && y >= bankCell.y && y < bankCell.y + 3;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
       const primaryRemote = remotesAtCell[0] || null;
       const isScatteredTree = false;
-      if (!isCenter && !isBorder && !isBank && npc && current?.text) {
+      if (!isFountain && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
           x,
@@ -1692,16 +1701,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             border: '1px solid rgba(220, 189, 116, 0.25)',
             display: 'grid',
             placeItems: 'center',
-            fontSize: isCenter ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
-            background: isCenter ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
-            boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
-            color: isCenter ? '#dff2ff' : '#cbb68a',
+            fontSize: isFountain ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
+            background: isFountain ? 'rgba(157, 201, 255, 0.18)' : (isBank ? 'rgba(255, 214, 122, 0.12)' : 'rgba(31, 25, 16, 0.4)'),
+            boxShadow: isFountain ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : (isBank ? '0 0 16px rgba(255, 212, 94, 0.55), inset 0 0 12px rgba(255, 212, 94, 0.28)' : 'none'),
+            color: isFountain ? '#dff2ff' : '#cbb68a',
             position: 'relative',
             overflow: 'hidden',
           }}
         >
-          {isCenter ? (
-            '⛲'
+          {isFountain ? (
+            <span style={{ fontSize: `${Math.max(18, Math.min(44, 24 * zoom))}px`, filter: 'drop-shadow(0 0 8px rgba(157, 221, 255, 0.8))' }}>⛲</span>
           ) : isBorder || isScatteredTree ? (
             <span
               style={{
@@ -1726,7 +1735,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 padding: 0,
                 cursor: 'pointer',
                 fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
-                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+                filter: 'drop-shadow(0 0 12px rgba(255, 219, 108, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
               }}
             >
               🏦
@@ -1776,7 +1785,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                   src={primaryRemote.pfp}
                   alt={String(primaryRemote?.fname || primaryRemote?.playerId || 'player')}
                   draggable={false}
-                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(183,240,255,0.8)', userSelect: 'none', WebkitUserDrag: 'none' }}
+                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(183,240,255,0.8)', boxShadow: '0 0 12px rgba(124, 234, 255, 0.9)', userSelect: 'none', WebkitUserDrag: 'none' }}
                 />
               ) : (
                 <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
@@ -1809,6 +1818,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 fontSize: `${Math.max(18, Math.min(40, 26 * zoom))}px`,
                 pointerEvents: 'none',
                 textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                filter: 'drop-shadow(0 0 10px rgba(124, 234, 255, 0.95))',
                 zIndex: 2,
               }}
               title="You"
