@@ -915,6 +915,11 @@ export default function LiveMakerClient({
           mySessionId: identity.sessionId,
           expectedPeerId,
         });
+        try {
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('gbz:world-toast', 'The other player left the room');
+          }
+        } catch {}
         router.push(`/${initialChannel || 'worlds'}`);
       }
     });
