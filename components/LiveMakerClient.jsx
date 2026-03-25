@@ -1382,7 +1382,17 @@ export default function LiveMakerClient({
         setInventoryNfts([]);
         setInventoryError(String(d?.error || 'failed to load inventory'));
       } else {
-        const tokens = Array.isArray(d?.tokens) ? d.tokens : [];
+        const tokens = (Array.isArray(d?.tokens) ? d.tokens : []).map((t) => {
+          const token = String(t?.token || '').trim();
+          const symbol = String(t?.symbol || '').trim();
+          const byCatalog = catalogIconArt(token);
+          const byRoute = String(t?.imgUrl || '').trim();
+          const byTrust = /^0x[a-fA-F0-9]{40}$/.test(token) ? tokenIconUrl(token) : '';
+          return {
+            ...t,
+            imgUrl: byCatalog || byRoute || byTrust || '',
+          };
+        });
         const nftCollections = Array.isArray(d?.nftCollections) ? d.nftCollections : [];
         const nfts = nftCollections.flatMap((c) => (Array.isArray(c?.nfts) ? c.nfts : [])).slice(0, 120);
         setInventoryTokens(tokens);
