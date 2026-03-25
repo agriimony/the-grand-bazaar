@@ -493,21 +493,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       });
       zoneChannel.subscribe((status) => {
         zoneChannelStatusRef.current.set(zoneKey, status);
-        if (status === 'SUBSCRIBED') {
-          const localCellNow = playerCellRef.current;
-          if (!localCellNow) return;
-          sendExactPlayerState({
-            world: worldName,
-            sessionId: playerIdentity.sessionId,
-            playerId: playerIdentity.playerId,
-            fname: localFname,
-            pfp: localPfp,
-            x: localCellNow.x,
-            y: localCellNow.y,
-            zone: zoneKeyForCell(localCellNow),
-            ts: Date.now(),
-          });
-        }
       });
       zoneChannelsRef.current.set(zoneKey, zoneChannel);
     }
@@ -716,17 +701,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           ts: Date.now(),
         });
       } catch {}
-      sendExactPlayerState({
-        world: worldName,
-        sessionId: playerIdentity.sessionId,
-        playerId: playerIdentity.playerId,
-        fname: localFname,
-        pfp: localPfp,
-        x: localCell.x,
-        y: localCell.y,
-        zone: zoneKeyForCell(localCell),
-        ts: Date.now(),
-      });
     }, 20_000);
 
     return () => {
