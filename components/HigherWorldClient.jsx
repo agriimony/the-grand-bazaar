@@ -133,6 +133,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const lastBroadcastAtRef = useRef(0);
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
+  const currentZoneKeyRef = useRef('');
   const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
   const worldCapKickedRef = useRef(false);
 
@@ -654,6 +655,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           });
         } catch {}
         if (localCell) {
+          const zoneKey = zoneKeyForCell(localCell);
+          currentZoneKeyRef.current = zoneKey;
           syncZoneSubscriptions(localCell);
           sendExactPlayerState({
             world: worldName,
@@ -663,7 +666,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             pfp: localPfp,
             x: localCell.x,
             y: localCell.y,
-            zone: zoneKeyForCell(localCell),
+            zone: zoneKey,
             ts: Date.now(),
           });
         }
@@ -914,25 +917,23 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (now - lastBroadcastAtRef.current < 250) return;
     lastBroadcastAtRef.current = now;
 
-    console.log('[mp] send player_state', {
-      world: worldName,
-      sessionId: playerIdentity.sessionId,
-      x: playerCell.x,
-      y: playerCell.y,
-      zone: zoneKeyForCell(playerCell),
-    });
-    try {
-      ch.track({
-        sessionId: playerIdentity.sessionId,
-        playerId: playerIdentity.playerId,
-        fname: localFname,
-        pfp: localPfp,
-        world: worldName,
-        zone: zoneKeyForCell(playerCell),
-        ts: now,
-      });
-    } catch {}
-    syncZoneSubscriptions(playerCell);
+    const zoneKey = zoneKeyForCell(playerCell);
+    const prevZoneKey = currentZoneKeyRef.current;
+    if (zoneKey !== prevZoneKey) {
+      currentZoneKeyRef.current = zoneKey;
+      try {
+        ch.track({
+          sessionId: playerIdentity.sessionId,
+          playerId: playerIdentity.playerId,
+          fname: localFname,
+          pfp: localPfp,
+          world: worldName,
+          zone: zoneKey,
+          ts: now,
+        });
+      } catch {}
+      syncZoneSubscriptions(playerCell);
+    }
     sendExactPlayerState({
       world: worldName,
       sessionId: playerIdentity.sessionId,
@@ -941,7 +942,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       pfp: localPfp,
       x: playerCell.x,
       y: playerCell.y,
-      zone: zoneKeyForCell(playerCell),
+      zone: zoneKey,
       ts: now,
     });
   }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell, sendExactPlayerState]);
