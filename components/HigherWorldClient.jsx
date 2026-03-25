@@ -396,20 +396,28 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         const x = Number(payload?.x);
         const y = Number(payload?.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-        setRemotePlayers((prev) => ({
-          ...prev,
-          [sessionId]: {
-            sessionId,
-            playerId: String(payload?.playerId || ''),
-            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
-            pfp: String(payload?.pfp || '').trim(),
-            x,
-            y,
-            updatedAt: Number(payload?.ts || Date.now()),
-          },
-        }));
+        setRemotePlayers((prev) => {
+          const hadPlayer = Boolean(prev[sessionId]);
+          if (!hadPlayer) {
+            const enteredName = shortPlayer(String(payload?.fname || payload?.playerId || 'player').replace(/^@/, '').trim() || 'player');
+            pushWorldLog(`${enteredName} entered the world`);
+          }
+          return {
+            ...prev,
+            [sessionId]: {
+              sessionId,
+              playerId: String(payload?.playerId || ''),
+              fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+              pfp: String(payload?.pfp || '').trim(),
+              x,
+              y,
+              updatedAt: Number(payload?.ts || Date.now()),
+            },
+          };
+        });
       });
       zoneChannel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+        if (incomingTradeInvite) return;
         const toSessionId = String(payload?.toSessionId || '').trim();
         if (toSessionId !== playerIdentity.sessionId) return;
         const fromSessionId = String(payload?.fromSessionId || '').trim();
@@ -449,6 +457,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }));
       });
       zoneChannel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+        if (!outgoingTradeInvite) return;
         const toSessionId = String(payload?.toSessionId || '').trim();
         if (toSessionId !== playerIdentity.sessionId) return;
         const decision = String(payload?.decision || '').trim().toLowerCase();
@@ -540,19 +549,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   useEffect(() => {
     if (!multiplayerEnabled) {
-      console.log('[mp] disabled', {
-        enabledFlag: process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED,
-        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-        hasKey: Boolean(supabasePublicKey),
-      });
       return;
     }
 
     if (!/^0x[a-f0-9]{40}$/.test(String(playerIdentity.playerId || '').toLowerCase())) {
-      console.log('[mp] waiting for authed playerId before realtime init', {
-        sessionId: playerIdentity.sessionId,
-        playerId: playerIdentity.playerId,
-      });
       return;
     }
 
