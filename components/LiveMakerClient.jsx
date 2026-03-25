@@ -976,6 +976,13 @@ export default function LiveMakerClient({
     });
 
     ch.on('broadcast', { event: 'room_leave' }, ({ payload }) => {
+      console.log('[live-maker] recv room_leave', {
+        mySessionId: identity.sessionId,
+        fromSessionId: String(payload?.sessionId || '').trim(),
+        fromPlayerId: String(payload?.playerId || '').trim(),
+        role: String(payload?.role || '').trim(),
+        roomId: String(payload?.roomId || '').trim(),
+      });
       const sid = String(payload?.sessionId || '').trim();
       if (!sid || sid === identity.sessionId) return;
       const leaver = String(payload?.fname || payload?.playerId || 'player').trim();
@@ -1153,6 +1160,12 @@ export default function LiveMakerClient({
     channelRef.current = ch;
 
     const announceLeave = () => {
+      console.log('[live-maker] send room_leave', {
+        roomId: liveRoomId,
+        sessionId: identity.sessionId,
+        playerId: identity.playerId,
+        role,
+      });
       try {
         safeRoomBroadcast('room_leave', {
           roomId: liveRoomId,
