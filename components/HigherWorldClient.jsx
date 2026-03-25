@@ -134,6 +134,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
   const currentZoneKeyRef = useRef('');
+  const cleanupDoneRef = useRef(false);
   const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
   const worldCapKickedRef = useRef(false);
 
@@ -558,6 +559,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
+    cleanupDoneRef.current = false;
     let reconnectTimer = null;
     let unmounted = false;
     const channel = supabase.channel(`world:${worldName}`, {
@@ -566,21 +568,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         presence: { key: playerIdentity.sessionId },
       },
     });
-
-    channel.on('broadcast', { event: 'player_leave' }, ({ payload }) => {
-      const sid = String(payload?.sessionId || '').trim();
-      if (!sid) return;
-      setRemotePlayers((prev) => {
-        const player = prev[sid];
-        if (!player) return prev;
-        const leaveName = shortPlayer(player.fname || player.playerId || payload?.fname || payload?.playerId || 'player');
-        pushWorldLog(`${leaveName} left the world`);
-        const next = { ...prev };
-        delete next[sid];
-        return next;
-      });
-    });
-
 
     channel.on('presence', { event: 'sync' }, () => {
       if (worldCapKickedRef.current) return;
@@ -604,7 +591,24 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           present: true,
         };
       }
-      setWorldPresence(nextPresence);
+      setWorldPresence((prev) => {
+        for (const sid of Object.keys(prev || {})) {
+          if (nextPresence[sid]) continue;
+          setRemotePlayers((rp) => {
+            if (!rp[sid]) return rp;
+            const next = { ...rp };
+            delete next[sid];
+            return next;
+          });
+          setTradePlaceholders((tp) => {
+            if (!tp[sid]) return tp;
+            const next = { ...tp };
+            delete next[sid];
+            return next;
+          });
+        }
+        return nextPresence;
+      });
       const count = ids.length;
       if (count <= maxWorldPlayers) return;
       const admitted = ids.slice().sort().slice(0, maxWorldPlayers);
@@ -735,20 +739,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }, 20_000);
 
     return () => {
+      if (cleanupDoneRef.current) return;
+      cleanupDoneRef.current = true;
       unmounted = true;
       clearInterval(staleSweep);
       clearInterval(heartbeat);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (skipLeaveOnceRef.current) {
         skipLeaveOnceRef.current = false;
-      } else {
-        try {
-          channel.send({
-            type: 'broadcast',
-            event: 'player_leave',
-            payload: { world: worldName, sessionId: playerIdentity.sessionId, ts: Date.now() },
-          });
-        } catch {}
       }
       try {
         supabase.removeChannel(channel);
@@ -757,10 +755,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         try { supabase.removeChannel(ch); } catch {}
       }
       zoneChannelsRef.current.clear();
+      currentZoneKeyRef.current = '';
       channelRef.current = null;
       supabaseRef.current = null;
       setRemotePlayers({});
       setTradePlaceholders({});
+      setWorldPresence({});
     };
   }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick, sendExactPlayerState, sendToZoneNeighborhood]);
 
