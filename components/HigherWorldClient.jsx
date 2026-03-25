@@ -360,6 +360,17 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
   };
 
+  const sendToWorldChannel = (event, payload) => {
+    const ch = channelRef.current;
+    if (!ch || !worldChannelSubscribedRef.current) return false;
+    try {
+      ch.send({ type: 'broadcast', event, payload });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const sendExactPlayerState = (payloadOverride = null) => {
     const basePayload = payloadOverride || (() => {
       const localCell = playerCellRef.current;
@@ -421,24 +432,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           };
         });
       });
-      zoneChannel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
-        if (incomingTradeInvite) return;
-        const toSessionId = String(payload?.toSessionId || '').trim();
-        if (toSessionId !== playerIdentity.sessionId) return;
-        const fromSessionId = String(payload?.fromSessionId || '').trim();
-        const fromPlayerId = String(payload?.fromPlayerId || '').trim();
-        const fromFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
-        if (!fromSessionId) return;
-        setIncomingTradeInvite({
-          fromSessionId,
-          fromPlayerId,
-          fromFname,
-          roomId: String(payload?.roomId || ''),
-          world: String(payload?.world || worldName),
-          at: Number(payload?.ts || Date.now()),
-          expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
-        });
-      });
       zoneChannel.on('broadcast', { event: 'trade_placeholder' }, ({ payload }) => {
         const sessionId = String(payload?.sessionId || '').trim();
         if (!sessionId || sessionId === playerIdentity.sessionId) return;
@@ -461,36 +454,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           },
         }));
       });
-      zoneChannel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
-        if (!outgoingTradeInvite) return;
-        const toSessionId = String(payload?.toSessionId || '').trim();
-        if (toSessionId !== playerIdentity.sessionId) return;
-        const decision = String(payload?.decision || '').trim().toLowerCase();
-        const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
-        setOutgoingTradeInvite(null);
-        if (decision === 'accept') {
-          setTradeToast(`${fromName} accepted your trade request`);
-          const roomId = String(payload?.roomId || '').trim();
-          if (roomId) {
-            const senderPlayerId = String(payload?.fromPlayerId || '').trim();
-            const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
-            const senderSessionId = String(payload?.fromSessionId || '').trim();
-            const qs = new URLSearchParams({
-              role: 'signer',
-              channel: worldName,
-              ...(senderPlayerId ? { senderPlayerId } : {}),
-              ...(senderFname ? { senderFname } : {}),
-              ...(senderSessionId ? { senderSessionId } : {}),
-            });
-            router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
-          }
-        }
-        if (decision === 'decline') {
-          const reason = String(payload?.reason || '').trim().toLowerCase();
-          if (reason === 'timeout') setTradeToast(`${fromName} did not respond in time`);
-          else setTradeToast(`${fromName} declined your trade request`);
-        }
-      });
       zoneChannel.subscribe((status) => {
         zoneChannelStatusRef.current.set(zoneKey, status);
       });
@@ -504,7 +467,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (msLeft <= 0) {
       const invite = incomingTradeInvite;
       if (invite?.fromSessionId) {
-        sendToZoneNeighborhood('trade_invite_response', {
+        sendToWorldChannel('trade_invite_response', {
           world: worldName,
           toSessionId: invite.fromSessionId,
           fromSessionId: playerIdentity.sessionId,
@@ -598,7 +561,58 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       router.replace('/worlds');
     });
 
+    channel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+      if (incomingTradeInvite) return;
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const fromSessionId = String(payload?.fromSessionId || '').trim();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim();
+      const fromFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+      if (!fromSessionId) return;
+      setIncomingTradeInvite({
+        fromSessionId,
+        fromPlayerId,
+        fromFname,
+        roomId: String(payload?.roomId || ''),
+        world: String(payload?.world || worldName),
+        at: Number(payload?.ts || Date.now()),
+        expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
+      });
+    });
+
+    channel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+      if (!outgoingTradeInvite) return;
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const decision = String(payload?.decision || '').trim().toLowerCase();
+      const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
+      setOutgoingTradeInvite(null);
+      if (decision === 'accept') {
+        setTradeToast(`${fromName} accepted your trade request`);
+        const roomId = String(payload?.roomId || '').trim();
+        if (roomId) {
+          const senderPlayerId = String(payload?.fromPlayerId || '').trim();
+          const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+          const senderSessionId = String(payload?.fromSessionId || '').trim();
+          const qs = new URLSearchParams({
+            role: 'signer',
+            channel: worldName,
+            ...(senderPlayerId ? { senderPlayerId } : {}),
+            ...(senderFname ? { senderFname } : {}),
+            ...(senderSessionId ? { senderSessionId } : {}),
+          });
+          router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
+        }
+      }
+      if (decision === 'decline') {
+        const reason = String(payload?.reason || '').trim().toLowerCase();
+        if (reason === 'timeout') setTradeToast(`${fromName} did not respond in time`);
+        else setTradeToast(`${fromName} declined your trade request`);
+      }
+    });
+
     channel.subscribe((status) => {
+      worldChannelSubscribedRef.current = status === 'SUBSCRIBED';
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         if (unmounted) return;
         if (status === 'CLOSED') {
@@ -1476,7 +1490,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         return;
       }
       const roomId = createRoomId(signerAddr, senderAddr);
-      sendToZoneNeighborhood('trade_invite', {
+      sendToWorldChannel('trade_invite', {
         world: worldName,
         toSessionId: targetSessionId,
         fromSessionId: playerIdentity.sessionId,
@@ -1502,7 +1516,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const ch = channelRef.current;
     if (!ch) return;
 
-    sendToZoneNeighborhood('trade_invite_response', {
+    sendToWorldChannel('trade_invite_response', {
       world: worldName,
       toSessionId: invite.fromSessionId,
       fromSessionId: playerIdentity.sessionId,
