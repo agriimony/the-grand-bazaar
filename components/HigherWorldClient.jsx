@@ -127,7 +127,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [worldPresence, setWorldPresence] = useState({});
   const zoneChannelsRef = useRef(new Map());
   const zoneChannelStatusRef = useRef(new Map());
-  const zoneSendWarnedRef = useRef(new Set());
   const worldChannelSubscribedRef = useRef(false);
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
@@ -354,14 +353,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
   const sendToZoneNeighborhood = (event, payload) => {
     for (const [zoneKey, ch] of zoneChannelsRef.current.entries()) {
-      if (zoneChannelStatusRef.current.get(zoneKey) !== 'SUBSCRIBED') {
-        const warnKey = `${zoneKey}:${event}`;
-        if (!zoneSendWarnedRef.current.has(warnKey)) {
-          zoneSendWarnedRef.current.add(warnKey);
-          console.warn('[world] skipped zone send before subscribe', { world: worldName, zoneKey, event });
-        }
-        continue;
-      }
+      if (zoneChannelStatusRef.current.get(zoneKey) !== 'SUBSCRIBED') continue;
       try {
         ch.send({ type: 'broadcast', event, payload });
       } catch {}
@@ -755,7 +747,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
       zoneChannelsRef.current.clear();
       zoneChannelStatusRef.current.clear();
-      zoneSendWarnedRef.current.clear();
       currentZoneKeyRef.current = '';
       channelRef.current = null;
       supabaseRef.current = null;
