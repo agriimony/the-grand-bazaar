@@ -627,6 +627,7 @@ export default function LiveMakerClient({
   const [inventoryView, setInventoryView] = useState('tokens');
   const [selectionPreflightBusy, setSelectionPreflightBusy] = useState(false);
   const [selectionSource, setSelectionSource] = useState('inventory');
+  const [roomPresence, setRoomPresence] = useState({});
   const channelSubscribedRef = useRef(false);
   const sendWarnedRef = useRef(new Set());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
@@ -851,7 +852,7 @@ export default function LiveMakerClient({
     if (!supabase) return;
     setChannelSubscribed(false);
     let reconnectTimer = null;
-    const ch = supabase.channel(liveTopic, { config: { broadcast: { self: false } } });
+    const ch = supabase.channel(liveTopic, { config: { broadcast: { self: false }, presence: { key: identity.sessionId } } });
     let unmounted = false;
 
     const sendRoomSnapshot = (toSessionId = '') => {
@@ -871,6 +872,31 @@ export default function LiveMakerClient({
         ts: Date.now(),
       });
     };
+
+    ch.on('presence', { event: 'sync' }, () => {
+      let state = {};
+      try {
+        state = ch.presenceState() || {};
+      } catch {}
+      const next = {};
+      for (const [sid, metas] of Object.entries(state || {})) {
+        if (!sid) continue;
+        const meta = Array.isArray(metas) ? (metas[metas.length - 1] || {}) : (metas || {});
+        next[sid] = {
+          sessionId: sid,
+          playerId: String(meta?.playerId || '').trim().toLowerCase(),
+          role: String(meta?.role || '').trim().toLowerCase(),
+          fname: String(meta?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+          ts: Number(meta?.ts || Date.now()),
+        };
+      }
+      setRoomPresence(next);
+      const expectedPeerId = role === 'signer' ? roomBinding?.sender : roomBinding?.signer;
+      const peerPresent = Object.values(next).some((p) => p?.sessionId !== identity.sessionId && p?.playerId === expectedPeerId);
+      if (channelSubscribedRef.current && expectedPeerId && !peerPresent) {
+        router.push(`/${initialChannel || 'worlds'}`);
+      }
+    });
 
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
       const sid = String(payload?.sessionId || '').trim();
@@ -1127,6 +1153,16 @@ export default function LiveMakerClient({
           return;
         }
         debugLog('live room connected', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
+        try {
+          ch.track({
+            roomId: liveRoomId,
+            sessionId: identity.sessionId,
+            playerId: identity.playerId,
+            role,
+            fname: localFnameRef.current,
+            ts: Date.now(),
+          });
+        } catch {}
         debugLog('event:room_join:send', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
         safeRoomBroadcast('room_join', {
           roomId: liveRoomId,
@@ -1198,6 +1234,7 @@ export default function LiveMakerClient({
         supabase.removeChannel(ch);
       } catch {}
       channelRef.current = null;
+      setRoomPresence({});
     };
   }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick, markRoomActivity]);
 
