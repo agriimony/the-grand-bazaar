@@ -629,7 +629,6 @@ export default function LiveMakerClient({
   const [selectionSource, setSelectionSource] = useState('inventory');
   const [roomPresence, setRoomPresence] = useState({});
   const peerEverSeenRef = useRef(false);
-  const roomPresenceGraceUntilRef = useRef(0);
   const channelSubscribedRef = useRef(false);
   const sendWarnedRef = useRef(new Set());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
@@ -896,8 +895,6 @@ export default function LiveMakerClient({
       const expectedPeerId = role === 'signer' ? roomBinding?.sender : roomBinding?.signer;
       const peerPresent = Object.values(next).some((p) => p?.sessionId !== identity.sessionId && p?.playerId === expectedPeerId);
       if (peerPresent) peerEverSeenRef.current = true;
-      const now = Date.now();
-      const graceActive = now < roomPresenceGraceUntilRef.current;
       console.log('[live-maker] presence sync', {
         roomId: liveRoomId,
         mySessionId: identity.sessionId,
@@ -905,7 +902,6 @@ export default function LiveMakerClient({
         expectedPeerId,
         peerPresent,
         peerEverSeen: peerEverSeenRef.current,
-        graceActive,
         sessions: Object.values(next).map((p) => ({
           sessionId: p.sessionId,
           playerId: p.playerId,
@@ -913,7 +909,7 @@ export default function LiveMakerClient({
           fname: p.fname,
         })),
       });
-      if (channelSubscribedRef.current && expectedPeerId && !peerPresent && peerEverSeenRef.current && !graceActive) {
+      if (channelSubscribedRef.current && expectedPeerId && !peerPresent && peerEverSeenRef.current) {
         console.log('[live-maker] presence auto-close', {
           roomId: liveRoomId,
           mySessionId: identity.sessionId,
@@ -1166,7 +1162,6 @@ export default function LiveMakerClient({
         }
         setChannelSubscribed(true);
         channelSubscribedRef.current = true;
-        roomPresenceGraceUntilRef.current = Date.now() + 10000;
         peerEverSeenRef.current = false;
         sendWarnedRef.current.clear();
         if (!identity.playerId) {
@@ -1269,7 +1264,6 @@ export default function LiveMakerClient({
       } catch {}
       channelRef.current = null;
       peerEverSeenRef.current = false;
-      roomPresenceGraceUntilRef.current = 0;
       setRoomPresence({});
     };
   }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick, markRoomActivity]);
