@@ -467,6 +467,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (msLeft <= 0) {
       const invite = incomingTradeInvite;
       if (invite?.fromSessionId) {
+        console.log('[trade] send invite_response timeout', {
+          mySessionId: playerIdentity.sessionId,
+          toSessionId: invite.fromSessionId,
+          roomId: invite.roomId,
+        });
         sendToWorldChannel('trade_invite_response', {
           world: worldName,
           toSessionId: invite.fromSessionId,
@@ -562,6 +567,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     channel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+      console.log('[trade] recv invite', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: String(payload?.toSessionId || '').trim(),
+        fromSessionId: String(payload?.fromSessionId || '').trim(),
+        roomId: String(payload?.roomId || '').trim(),
+        hasIncomingTradeInvite: Boolean(incomingTradeInvite),
+      });
       if (incomingTradeInvite) return;
       const toSessionId = String(payload?.toSessionId || '').trim();
       if (toSessionId !== playerIdentity.sessionId) return;
@@ -581,6 +593,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     channel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+      console.log('[trade] recv invite_response', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: String(payload?.toSessionId || '').trim(),
+        fromSessionId: String(payload?.fromSessionId || '').trim(),
+        roomId: String(payload?.roomId || '').trim(),
+        decision: String(payload?.decision || '').trim().toLowerCase(),
+        hasOutgoingTradeInvite: Boolean(outgoingTradeInvite),
+      });
       if (!outgoingTradeInvite) return;
       const toSessionId = String(payload?.toSessionId || '').trim();
       if (toSessionId !== playerIdentity.sessionId) return;
@@ -1490,6 +1510,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         return;
       }
       const roomId = createRoomId(signerAddr, senderAddr);
+      console.log('[trade] send invite', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: targetSessionId,
+        roomId,
+      });
       sendToWorldChannel('trade_invite', {
         world: worldName,
         toSessionId: targetSessionId,
@@ -1516,6 +1541,12 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     const ch = channelRef.current;
     if (!ch) return;
 
+    console.log('[trade] send invite_response', {
+      mySessionId: playerIdentity.sessionId,
+      toSessionId: invite.fromSessionId,
+      roomId: invite.roomId,
+      decision,
+    });
     sendToWorldChannel('trade_invite_response', {
       world: worldName,
       toSessionId: invite.fromSessionId,
