@@ -1813,7 +1813,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                   style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(183,240,255,0.8)', boxShadow: '0 0 12px rgba(124, 234, 255, 0.9)', userSelect: 'none', WebkitUserDrag: 'none' }}
                 />
               ) : (
-                <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
+                <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 0 10px rgba(124, 234, 255, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
               )}
               {primaryRemote?.trading ? (
                 <span
