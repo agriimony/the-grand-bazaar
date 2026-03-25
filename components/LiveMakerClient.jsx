@@ -1360,7 +1360,7 @@ export default function LiveMakerClient({
     setInventoryError('');
 
     const cacheKey = `gbz:zapper:${String(owner).toLowerCase()}`;
-    const cacheTtlMs = 24 * 60 * 60 * 1000;
+    const cacheTtlMs = 60 * 60 * 1000;
 
     try {
       if (typeof window !== 'undefined') {
