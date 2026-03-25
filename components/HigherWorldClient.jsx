@@ -388,7 +388,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       if (zoneChannelsRef.current.has(zoneKey)) continue;
       const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
       zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
-        console.log('[mp] recv zone player_state', zoneKey, payload);
         const sessionId = String(payload?.sessionId || '').trim();
         if (!sessionId || sessionId === playerIdentity.sessionId) return;
         if (String(payload?.world || '') !== worldName) return;
@@ -492,7 +491,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }
       });
       zoneChannel.subscribe((status) => {
-        console.log('[mp] zone channel status', status, { world: worldName, zoneKey });
         if (status === 'SUBSCRIBED') {
           const localCellNow = playerCellRef.current;
           if (!localCellNow) return;
@@ -556,13 +554,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
 
-    console.log('[mp] init', {
-      world: worldName,
-      sessionId: playerIdentity.sessionId,
-      playerId: playerIdentity.playerId,
-      hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      hasKey: Boolean(supabasePublicKey),
-    });
 
     const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
     if (!supabase) return;
@@ -575,45 +566,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       },
     });
 
-    const upsertRemote = (payload) => {
-      const sessionId = String(payload?.sessionId || '').trim();
-      if (!sessionId || sessionId === playerIdentity.sessionId) return;
-      if (String(payload?.world || '') !== worldName) return;
-      const x = Number(payload?.x);
-      const y = Number(payload?.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-
-      setRemotePlayers((prev) => {
-        const hadPlayer = Boolean(prev[sessionId]);
-        if (!hadPlayer) {
-          const enteredName = shortPlayer(String(payload?.fname || payload?.playerId || 'player').replace(/^@/, '').trim() || 'player');
-          pushWorldLog(`${enteredName} entered the world`);
-        }
-
-        return {
-          ...prev,
-          [sessionId]: {
-            sessionId,
-            playerId: String(payload?.playerId || ''),
-            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
-            pfp: String(payload?.pfp || '').trim(),
-            x,
-            y,
-            updatedAt: Number(payload?.ts || Date.now()),
-          },
-        };
-      });
-      setTradePlaceholders((prev) => {
-        if (!prev[sessionId]) return prev;
-        const next = { ...prev };
-        delete next[sessionId];
-        return next;
-      });
-    };
-
     channel.on('broadcast', { event: 'player_leave' }, ({ payload }) => {
-      console.log('[mp] recv player_leave', payload);
-
       const sid = String(payload?.sessionId || '').trim();
       if (!sid) return;
       setRemotePlayers((prev) => {
@@ -665,28 +618,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     });
 
     channel.subscribe((status) => {
-      console.log('[mp] channel status', status, {
-        world: worldName,
-        online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
-        visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      });
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         if (unmounted) return;
         if (status === 'CLOSED') {
-          console.warn('[mp] channel closed', {
-            world: worldName,
-            sessionId: playerIdentity.sessionId,
-            playerId: playerIdentity.playerId,
-          });
           return;
         }
-        console.error('[mp] realtime subscription problem', {
-          status,
-          world: worldName,
-          sessionId: playerIdentity.sessionId,
-          playerId: playerIdentity.playerId,
-        });
         const attempt = reconnectAttemptRef.current + 1;
         reconnectAttemptRef.current = attempt;
         const delay = Math.min(8000, 800 * attempt);
@@ -793,7 +729,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         zone: zoneKeyForCell(localCell),
         ts: Date.now(),
       });
-    }, 8_000);
+    }, 20_000);
 
     return () => {
       unmounted = true;
