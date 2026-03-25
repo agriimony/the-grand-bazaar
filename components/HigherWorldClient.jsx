@@ -126,6 +126,9 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const [worldLogs, setWorldLogs] = useState([]);
   const [worldPresence, setWorldPresence] = useState({});
   const zoneChannelsRef = useRef(new Map());
+  const zoneChannelStatusRef = useRef(new Map());
+  const zoneSendWarnedRef = useRef(new Set());
+  const worldChannelSubscribedRef = useRef(false);
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
   const supabaseRef = useRef(null);
@@ -350,7 +353,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [outgoingTradeInvite, nowMs]);
 
   const sendToZoneNeighborhood = (event, payload) => {
-    for (const ch of zoneChannelsRef.current.values()) {
+    for (const [zoneKey, ch] of zoneChannelsRef.current.entries()) {
+      if (zoneChannelStatusRef.current.get(zoneKey) !== 'SUBSCRIBED') {
+        const warnKey = `${zoneKey}:${event}`;
+        if (!zoneSendWarnedRef.current.has(warnKey)) {
+          zoneSendWarnedRef.current.add(warnKey);
+          console.warn('[world] skipped zone send before subscribe', { world: worldName, zoneKey, event });
+        }
+        continue;
+      }
       try {
         ch.send({ type: 'broadcast', event, payload });
       } catch {}
@@ -384,11 +395,13 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     for (const [zoneKey, zoneCh] of Array.from(zoneChannelsRef.current.entries())) {
       if (wanted.has(zoneKey)) continue;
       try { supabase.removeChannel(zoneCh); } catch {}
+      zoneChannelStatusRef.current.delete(zoneKey);
       zoneChannelsRef.current.delete(zoneKey);
     }
     for (const zoneKey of wanted) {
       if (zoneChannelsRef.current.has(zoneKey)) continue;
       const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
+      zoneChannelStatusRef.current.set(zoneKey, 'JOINING');
       zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
         const sessionId = String(payload?.sessionId || '').trim();
         if (!sessionId || sessionId === playerIdentity.sessionId) return;
@@ -487,6 +500,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }
       });
       zoneChannel.subscribe((status) => {
+        zoneChannelStatusRef.current.set(zoneKey, status);
         if (status === 'SUBSCRIBED') {
           const localCellNow = playerCellRef.current;
           if (!localCellNow) return;
@@ -740,6 +754,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         try { supabase.removeChannel(ch); } catch {}
       }
       zoneChannelsRef.current.clear();
+      zoneChannelStatusRef.current.clear();
+      zoneSendWarnedRef.current.clear();
       currentZoneKeyRef.current = '';
       channelRef.current = null;
       supabaseRef.current = null;
@@ -1472,19 +1488,16 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           const nudged = { x: nx, y: ny };
           setPlayerCell(nudged);
           playerCellRef.current = nudged;
-          ch.send({
-            type: 'broadcast',
-            event: 'player_state',
-            payload: {
-              world: worldName,
-              sessionId: playerIdentity.sessionId,
-              playerId: playerIdentity.playerId,
-              fname: localFname,
-              pfp: localPfp,
-              x: nudged.x,
-              y: nudged.y,
-              ts: Date.now(),
-            },
+          sendExactPlayerState({
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            x: nudged.x,
+            y: nudged.y,
+            zone: zoneKeyForCell(nudged),
+            ts: Date.now(),
           });
           break;
         }

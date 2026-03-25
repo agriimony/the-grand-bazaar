@@ -627,6 +627,8 @@ export default function LiveMakerClient({
   const [inventoryView, setInventoryView] = useState('tokens');
   const [selectionPreflightBusy, setSelectionPreflightBusy] = useState(false);
   const [selectionSource, setSelectionSource] = useState('inventory');
+  const channelSubscribedRef = useRef(false);
+  const sendWarnedRef = useRef(new Set());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
   const reconnectAttemptRef = useRef(0);
   const skipLeaveOnceRef = useRef(false);
@@ -703,6 +705,23 @@ export default function LiveMakerClient({
     return () => clearInterval(t);
   }, []);
 
+  const safeRoomBroadcast = useCallback((event, payload) => {
+    const ch = channelRef.current;
+    if (!ch || !channelSubscribedRef.current) {
+      if (!sendWarnedRef.current.has(event)) {
+        sendWarnedRef.current.add(event);
+        console.warn('[live-maker] skipped room send before subscribe', { roomId: liveRoomId, event });
+      }
+      return false;
+    }
+    try {
+      ch.send({ type: 'broadcast', event, payload });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [liveRoomId]);
+
   const markRoomActivity = useCallback((reason = '') => {
     const ts = Date.now();
     setLastRoomActivityAt(ts);
@@ -740,20 +759,15 @@ export default function LiveMakerClient({
     if (!ch || !channelSubscribed || livePhase === 'success' || livePhase === 'swapping') return;
     if ((nowMs - lastRoomActivityAt) < 10000) return;
     debugLog('room:heartbeat:sync-request', { idleMs: nowMs - lastRoomActivityAt, roomId: liveRoomId });
-    try {
-      ch.send({
-        type: 'broadcast',
-        event: 'room_sync_request',
-        payload: {
-          roomId: liveRoomId,
-          fromSessionId: identity.sessionId,
-          fromRole: role,
-          fromPlayerId: identity.playerId,
-          ts: Date.now(),
-        },
-      });
+    if (safeRoomBroadcast('room_sync_request', {
+      roomId: liveRoomId,
+      fromSessionId: identity.sessionId,
+      fromRole: role,
+      fromPlayerId: identity.playerId,
+      ts: Date.now(),
+    })) {
       setLastRoomActivityAt(Date.now());
-    } catch {}
+    }
   }, [nowMs, lastRoomActivityAt, channelSubscribed, livePhase, liveRoomId, identity.sessionId, identity.playerId, role]);
 
   useEffect(() => {
@@ -774,20 +788,14 @@ export default function LiveMakerClient({
     }
     if (nowMs >= staleCloseAt) {
       debugLog('room:stale:close', { idleMs, roomId: liveRoomId });
-      try {
-        channelRef.current?.send({
-          type: 'broadcast',
-          event: 'room_close',
-          payload: {
-            roomId: liveRoomId,
-            byRole: role,
-            reason: 'stale',
-            sessionId: identity.sessionId,
-            playerId: identity.playerId,
-            ts: Date.now(),
-          },
-        });
-      } catch {}
+      safeRoomBroadcast('room_close', {
+        roomId: liveRoomId,
+        byRole: role,
+        reason: 'stale',
+        sessionId: identity.sessionId,
+        playerId: identity.playerId,
+        ts: Date.now(),
+      });
       router.push(`/${initialChannel || 'worlds'}`);
     }
   }, [nowMs, lastRoomActivityAt, staleCloseAt, channelSubscribed, livePhase, liveRoomId, role, identity.sessionId, identity.playerId, router, initialChannel]);
@@ -847,27 +855,21 @@ export default function LiveMakerClient({
     let unmounted = false;
 
     const sendRoomSnapshot = (toSessionId = '') => {
-      try {
-        ch.send({
-          type: 'broadcast',
-          event: 'room_snapshot',
-          payload: {
-            roomId: liveRoomId,
-            toSessionId,
-            fromSessionId: identity.sessionId,
-            fromRole: role,
-            fromPlayerId: identity.playerId,
-            fromFname: localFnameRef.current,
-            stateVersion: versionRef.current,
-            tradeState: tradeStateRef.current,
-            approved: approvedRef.current,
-            approvedHash: approvedHashRef.current,
-            livePhase: livePhaseRef.current,
-            signedOrderState: signedOrderRef.current,
-            ts: Date.now(),
-          },
-        });
-      } catch {}
+      safeRoomBroadcast('room_snapshot', {
+        roomId: liveRoomId,
+        toSessionId,
+        fromSessionId: identity.sessionId,
+        fromRole: role,
+        fromPlayerId: identity.playerId,
+        fromFname: localFnameRef.current,
+        stateVersion: versionRef.current,
+        tradeState: tradeStateRef.current,
+        approved: approvedRef.current,
+        approvedHash: approvedHashRef.current,
+        livePhase: livePhaseRef.current,
+        signedOrderState: signedOrderRef.current,
+        ts: Date.now(),
+      });
     };
 
     ch.on('broadcast', { event: 'room_join' }, ({ payload }) => {
@@ -1082,6 +1084,7 @@ export default function LiveMakerClient({
           sessionId: identity.sessionId,
         });
         setChannelSubscribed(false);
+        channelSubscribedRef.current = false;
         const attempt = reconnectAttemptRef.current + 1;
         reconnectAttemptRef.current = attempt;
         const delay = (s === 'TIMED_OUT' && attempt === 1)
@@ -1104,6 +1107,8 @@ export default function LiveMakerClient({
           reconnectTimer = null;
         }
         setChannelSubscribed(true);
+        channelSubscribedRef.current = true;
+        sendWarnedRef.current.clear();
         if (!identity.playerId) {
           setStatus('');
           debugLog('auth pending');
@@ -1116,41 +1121,29 @@ export default function LiveMakerClient({
         }
         debugLog('live room connected', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
         debugLog('event:room_join:send', { roomId: liveRoomId, role, sessionId: identity.sessionId, playerId: identity.playerId, fname: localFnameRef.current });
-        ch.send({
-          type: 'broadcast',
-          event: 'room_join',
-          payload: {
-            roomId: liveRoomId,
-            role,
-            sessionId: identity.sessionId,
-            playerId: identity.playerId,
-            fname: localFnameRef.current,
-            ts: Date.now(),
-          },
+        safeRoomBroadcast('room_join', {
+          roomId: liveRoomId,
+          role,
+          sessionId: identity.sessionId,
+          playerId: identity.playerId,
+          fname: localFnameRef.current,
+          ts: Date.now(),
         });
-        ch.send({
-          type: 'broadcast',
-          event: 'room_sync_request',
-          payload: {
-            roomId: liveRoomId,
-            fromSessionId: identity.sessionId,
-            fromRole: role,
-            fromPlayerId: identity.playerId,
-            ts: Date.now(),
-          },
+        safeRoomBroadcast('room_sync_request', {
+          roomId: liveRoomId,
+          fromSessionId: identity.sessionId,
+          fromRole: role,
+          fromPlayerId: identity.playerId,
+          ts: Date.now(),
         });
         setTimeout(() => {
           try {
-            ch.send({
-              type: 'broadcast',
-              event: 'room_sync_request',
-              payload: {
-                roomId: liveRoomId,
-                fromSessionId: identity.sessionId,
-                fromRole: role,
-                fromPlayerId: identity.playerId,
-                ts: Date.now(),
-              },
+            safeRoomBroadcast('room_sync_request', {
+              roomId: liveRoomId,
+              fromSessionId: identity.sessionId,
+              fromRole: role,
+              fromPlayerId: identity.playerId,
+              ts: Date.now(),
             });
           } catch {}
         }, 1000);
@@ -1161,17 +1154,13 @@ export default function LiveMakerClient({
 
     const announceLeave = () => {
       try {
-        ch.send({
-          type: 'broadcast',
-          event: 'room_leave',
-          payload: {
-            roomId: liveRoomId,
-            sessionId: identity.sessionId,
-            playerId: identity.playerId,
-            fname: localFnameRef.current,
-            role,
-            ts: Date.now(),
-          },
+        safeRoomBroadcast('room_leave', {
+          roomId: liveRoomId,
+          sessionId: identity.sessionId,
+          playerId: identity.playerId,
+          fname: localFnameRef.current,
+          role,
+          ts: Date.now(),
         });
       } catch {}
     };
@@ -1182,6 +1171,7 @@ export default function LiveMakerClient({
 
     return () => {
       unmounted = true;
+      channelSubscribedRef.current = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', announceLeave);
@@ -1213,19 +1203,15 @@ export default function LiveMakerClient({
     setStateVersion(nextVersion);
     setTradeState(normalized);
 
-    ch.send({
-      type: 'broadcast',
-      event: 'room_state_patch',
-      payload: {
-        roomId: liveRoomId,
-        stateVersion: nextVersion,
-        signerSelection: normalized.signerSelection,
-        senderSelection: normalized.senderSelection,
-        fromSessionId: identity.sessionId,
-        fromRole: role,
-        fromPlayerId: identity.playerId,
-        ts: Date.now(),
-      },
+    safeRoomBroadcast('room_state_patch', {
+      roomId: liveRoomId,
+      stateVersion: nextVersion,
+      signerSelection: normalized.signerSelection,
+      senderSelection: normalized.senderSelection,
+      fromSessionId: identity.sessionId,
+      fromRole: role,
+      fromPlayerId: identity.playerId,
+      ts: Date.now(),
     });
   };
 
@@ -2200,11 +2186,7 @@ export default function LiveMakerClient({
       setApprovedHash((prev) => ({ ...prev, signer: '' }));
       const ch = channelRef.current;
       if (ch) {
-        ch.send({
-          type: 'broadcast',
-          event: 'room_approve',
-          payload: { roomId: liveRoomId, role: 'signer', decision: 'decline', selectionHash: '', playerId: identity.playerId, ts: Date.now() },
-        });
+        safeRoomBroadcast('room_approve', { roomId: liveRoomId, role: 'signer', decision: 'decline', selectionHash: '', playerId: identity.playerId, ts: Date.now() });
       }
       return;
     }
@@ -2337,18 +2319,14 @@ export default function LiveMakerClient({
       setApprovedHash(nextHashes);
       setPeerSnapshotAtApprove(peerSelectionHash);
 
-      ch.send({
-        type: 'broadcast',
-        event: 'room_approve',
-        payload: {
-          roomId: liveRoomId,
-          role: myRole,
-          decision: 'approve',
-          selectionHash: localHash,
-          sessionId: identity.sessionId,
-          playerId: identity.playerId,
-          ts: Date.now(),
-        },
+      safeRoomBroadcast('room_approve', {
+        roomId: liveRoomId,
+        role: myRole,
+        decision: 'approve',
+        selectionHash: localHash,
+        sessionId: identity.sessionId,
+        playerId: identity.playerId,
+        ts: Date.now(),
       });
 
       if (nextApproved.signer && nextApproved.sender) {
@@ -2542,7 +2520,7 @@ export default function LiveMakerClient({
       setSignedOrderState({ byRole: 'signer', byName: localFname || identity.playerId, expiresAt, payload: signedOrder });
       setLivePhase('await_sender');
       debugLog('sign:success', { nonce, expirySec, expiresAt, senderWallet, signerWallet });
-      ch.send({ type: 'broadcast', event: 'room_signed_order', payload });
+      safeRoomBroadcast('room_signed_order', payload);
     } catch (e) {
       setStatus(`sign failed: ${shortErr(e?.message || 'unknown')}`);
     }
@@ -2559,7 +2537,7 @@ export default function LiveMakerClient({
 
     try {
       setLivePhase('swapping');
-      ch.send({ type: 'broadcast', event: 'room_swapping', payload: { roomId: liveRoomId, playerId: identity.playerId, ts: Date.now() } });
+      safeRoomBroadcast('room_swapping', { roomId: liveRoomId, playerId: identity.playerId, ts: Date.now() });
 
       const o = signedOrderState.payload;
       const isSwapErc20 = IS_SWAP_ERC20(o.swapContract);
@@ -2693,7 +2671,7 @@ export default function LiveMakerClient({
       const txHash = String(rec?.hash || tx?.hash || '');
       setSwapTxHash(txHash);
       setLivePhase('success');
-      ch.send({ type: 'broadcast', event: 'room_swap_success', payload: { roomId: liveRoomId, txHash, playerId: identity.playerId, ts: Date.now() } });
+      safeRoomBroadcast('room_swap_success', { roomId: liveRoomId, txHash, playerId: identity.playerId, ts: Date.now() });
     } catch (e) {
       const known = decodeKnownRevert(e);
       if (known) setStatus(`swap failed: ${known} ${shortErr(e?.message || '')}`);
@@ -2744,17 +2722,13 @@ export default function LiveMakerClient({
     if (!revokeOk) return;
 
     if (!localApproved) {
-      ch.send({
-        type: 'broadcast',
-        event: 'room_close',
-        payload: {
-          roomId: liveRoomId,
-          byRole: myRole,
-          reason: 'decline',
-          sessionId: identity.sessionId,
-          playerId: identity.playerId,
-          ts: Date.now(),
-        },
+      safeRoomBroadcast('room_close', {
+        roomId: liveRoomId,
+        byRole: myRole,
+        reason: 'decline',
+        sessionId: identity.sessionId,
+        playerId: identity.playerId,
+        ts: Date.now(),
       });
       router.push(`/${initialChannel || 'worlds'}`);
       return;
@@ -2763,18 +2737,14 @@ export default function LiveMakerClient({
     setApproved((prev) => ({ ...prev, [myRole]: false }));
     setApprovedHash((prev) => ({ ...prev, [myRole]: '' }));
     setPeerSnapshotAtApprove('');
-    ch.send({
-      type: 'broadcast',
-      event: 'room_approve',
-      payload: {
-        roomId: liveRoomId,
-        role: myRole,
-        decision: 'decline',
-        selectionHash: '',
-        sessionId: identity.sessionId,
-        playerId: identity.playerId,
-        ts: Date.now(),
-      },
+    safeRoomBroadcast('room_approve', {
+      roomId: liveRoomId,
+      role: myRole,
+      decision: 'decline',
+      selectionHash: '',
+      sessionId: identity.sessionId,
+      playerId: identity.playerId,
+      ts: Date.now(),
     });
   };
 
