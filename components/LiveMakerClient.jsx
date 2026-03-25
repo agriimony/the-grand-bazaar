@@ -628,6 +628,8 @@ export default function LiveMakerClient({
   const [selectionPreflightBusy, setSelectionPreflightBusy] = useState(false);
   const [selectionSource, setSelectionSource] = useState('inventory');
   const [roomPresence, setRoomPresence] = useState({});
+  const peerEverSeenRef = useRef(false);
+  const roomPresenceGraceUntilRef = useRef(0);
   const channelSubscribedRef = useRef(false);
   const sendWarnedRef = useRef(new Set());
   const [authedPlayerId, setAuthedPlayerId] = useState('');
@@ -893,7 +895,10 @@ export default function LiveMakerClient({
       setRoomPresence(next);
       const expectedPeerId = role === 'signer' ? roomBinding?.sender : roomBinding?.signer;
       const peerPresent = Object.values(next).some((p) => p?.sessionId !== identity.sessionId && p?.playerId === expectedPeerId);
-      if (channelSubscribedRef.current && expectedPeerId && !peerPresent) {
+      if (peerPresent) peerEverSeenRef.current = true;
+      const now = Date.now();
+      const graceActive = now < roomPresenceGraceUntilRef.current;
+      if (channelSubscribedRef.current && expectedPeerId && !peerPresent && peerEverSeenRef.current && !graceActive) {
         router.push(`/${initialChannel || 'worlds'}`);
       }
     });
@@ -1141,6 +1146,8 @@ export default function LiveMakerClient({
         }
         setChannelSubscribed(true);
         channelSubscribedRef.current = true;
+        roomPresenceGraceUntilRef.current = Date.now() + 10000;
+        peerEverSeenRef.current = false;
         sendWarnedRef.current.clear();
         if (!identity.playerId) {
           setStatus('');
@@ -1234,6 +1241,8 @@ export default function LiveMakerClient({
         supabase.removeChannel(ch);
       } catch {}
       channelRef.current = null;
+      peerEverSeenRef.current = false;
+      roomPresenceGraceUntilRef.current = 0;
       setRoomPresence({});
     };
   }, [enabled, liveRoomId, liveTopic, role, identity.sessionId, identity.playerId, supabasePublicKey, router, initialChannel, roomBinding, realtimeRetryTick, markRoomActivity]);
