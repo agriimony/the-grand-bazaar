@@ -1670,6 +1670,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
+  const landmarkOverlays = [];
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const key = `${x}-${y}`;
@@ -1694,6 +1695,69 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           isValidPublicOffer: Boolean(current?.isPublicSwapOffer || current?.publicOfferViable),
         });
       }
+      if (isFountainAnchor) {
+        landmarkOverlays.push(
+          <div
+            key="landmark-fountain"
+            style={{
+              position: 'absolute',
+              left: `${((fountainOrigin.x + 1.5) / size) * 100}%`,
+              top: `${((fountainOrigin.y + 1.5) / size) * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: `${(3 / size) * 100}%`,
+              height: `${(3 / size) * 100}%`,
+              display: 'grid',
+              placeItems: 'center',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }}
+          >
+            <span
+              style={{
+                fontSize: `${Math.max(64, Math.min(140, 88 * zoom))}px`,
+                lineHeight: 1,
+                filter: 'drop-shadow(0 0 18px rgba(157, 221, 255, 0.98))',
+              }}
+            >
+              ⛲
+            </span>
+          </div>
+        );
+      }
+      if (isBankAnchor) {
+        landmarkOverlays.push(
+          <button
+            key="landmark-bank"
+            onClick={openBankMenu}
+            title="Bazaar Bank"
+            style={{
+              position: 'absolute',
+              left: `${((bankCell.x + 1.5) / size) * 100}%`,
+              top: `${((bankCell.y + 1.5) / size) * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: `${(3 / size) * 100}%`,
+              height: `${(3 / size) * 100}%`,
+              display: 'grid',
+              placeItems: 'center',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              zIndex: 4,
+            }}
+          >
+            <span
+              style={{
+                fontSize: `${Math.max(64, Math.min(140, 88 * zoom))}px`,
+                lineHeight: 1,
+                filter: 'drop-shadow(0 0 22px rgba(255, 219, 108, 0.99)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              🏦
+            </span>
+          </button>
+        );
+      }
       cells.push(
         <div
           key={key}
@@ -1711,25 +1775,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             overflow: 'hidden',
           }}
         >
-          {isFountain ? (
-            isFountainAnchor ? (
-              <span
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  fontSize: `${Math.max(58, Math.min(116, 72 * zoom))}px`,
-                  lineHeight: 1,
-                  filter: 'drop-shadow(0 0 16px rgba(157, 221, 255, 0.95))',
-                  zIndex: 1,
-                  pointerEvents: 'none',
-                }}
-              >
-                ⛲
-              </span>
-            ) : null
-          ) : isBorder || isScatteredTree ? (
+          {isFountain ? null : isBorder || isScatteredTree ? (
             <span
               style={{
                 fontSize: isScatteredTree ? 18 : 22,
@@ -1739,33 +1785,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             >
               {tree}
             </span>
-          ) : isBank ? (
-            isBankAnchor ? (
-              <button
-                onClick={openBankMenu}
-                title="Bazaar Bank"
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: '300%',
-                  height: '300%',
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontSize: `${Math.max(58, Math.min(116, 72 * zoom))}px`,
-                  filter: 'drop-shadow(0 0 18px rgba(255, 219, 108, 0.98)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
-                  zIndex: 1,
-                }}
-              >
-                🏦
-              </button>
-            ) : null
-          ) : npc ? (
+          ) : isBank ? null : npc ? (
             <>
               <button
                 onClick={(e) => openNpcMenu(e, npc)}
@@ -2012,6 +2032,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               {cells}
             </div>
             <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
+              {landmarkOverlays}
               {labels.map((l) => (
                 <div
                   key={l.key}
