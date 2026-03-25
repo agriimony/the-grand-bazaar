@@ -1726,10 +1726,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       }
       if (isBankAnchor) {
         landmarkOverlays.push(
-          <button
+          <div
             key="landmark-bank"
-            onClick={openBankMenu}
-            title="Bazaar Bank"
             style={{
               position: 'absolute',
               left: `${((bankCell.x + 1.5) / size) * 100}%`,
@@ -1742,7 +1740,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               background: 'transparent',
               border: 'none',
               padding: 0,
-              cursor: 'pointer',
+              pointerEvents: 'none',
               zIndex: 4,
             }}
           >
@@ -1755,7 +1753,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             >
               🏦
             </span>
-          </button>
+          </div>
         );
       }
       cells.push(
