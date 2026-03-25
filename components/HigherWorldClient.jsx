@@ -728,7 +728,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       setTradePlaceholders({});
       setWorldPresence({});
     };
-  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick, sendExactPlayerState, sendToZoneNeighborhood]);
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
