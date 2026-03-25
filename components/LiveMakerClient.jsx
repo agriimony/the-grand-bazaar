@@ -147,12 +147,6 @@ const TOKEN_CATALOG = [
   { token: '0x4ed4e862860bed51a9570b96d89af5e1b0efefed', iconArt: '' },
 ];
 
-const CATALOG_ICON_BY_SYMBOL = {
-  higher: '/higher-icon.png',
-  eth: '/eth-icon.png',
-  weth: '/weth-icon.png',
-};
-
 function canonAddr(addr = '') {
   const a = String(addr || '').trim().toLowerCase();
   if (!a) return '';
@@ -189,9 +183,6 @@ function fallbackTokenArt(token = '', symbol = '') {
   const addrOnly = String(token || '').split(':')[0].trim();
   const byCatalog = catalogIconArt(addrOnly);
   if (byCatalog) return byCatalog;
-
-  const bySymbol = CATALOG_ICON_BY_SYMBOL[String(symbol || '').trim().toLowerCase()];
-  if (bySymbol) return bySymbol;
 
   if (/^0x[a-fA-F0-9]{40}$/.test(addrOnly)) return tokenIconUrl(addrOnly);
 
