@@ -336,31 +336,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, []);
 
   useEffect(() => {
-    if (!incomingTradeInvite) return;
-    const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
-    if (msLeft <= 0) {
-      const invite = incomingTradeInvite;
-      if (invite?.fromSessionId) {
-        sendToZoneNeighborhood('trade_invite_response', {
-          world: worldName,
-          toSessionId: invite.fromSessionId,
-          fromSessionId: playerIdentity.sessionId,
-          fromPlayerId: playerIdentity.playerId,
-          fromFname: localFname,
-          decision: 'decline',
-          reason: 'timeout',
-          ts: Date.now(),
-        });
-      }
-      setIncomingTradeInvite(null);
-      setTradeToast('trade request timed out');
-      return;
-    }
-    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
-    return () => clearTimeout(t);
-  }, [incomingTradeInvite, nowMs, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, sendToZoneNeighborhood]);
-
-  useEffect(() => {
     if (!outgoingTradeInvite) return;
     const msLeft = Number(outgoingTradeInvite?.expiresAt || 0) - Date.now();
     if (msLeft <= 0) {
@@ -399,6 +374,31 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (!basePayload) return;
     sendToZoneNeighborhood('player_state', basePayload);
   }, [worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, sendToZoneNeighborhood]);
+
+  useEffect(() => {
+    if (!incomingTradeInvite) return;
+    const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
+    if (msLeft <= 0) {
+      const invite = incomingTradeInvite;
+      if (invite?.fromSessionId) {
+        sendToZoneNeighborhood('trade_invite_response', {
+          world: worldName,
+          toSessionId: invite.fromSessionId,
+          fromSessionId: playerIdentity.sessionId,
+          fromPlayerId: playerIdentity.playerId,
+          fromFname: localFname,
+          decision: 'decline',
+          reason: 'timeout',
+          ts: Date.now(),
+        });
+      }
+      setIncomingTradeInvite(null);
+      setTradeToast('trade request timed out');
+      return;
+    }
+    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [incomingTradeInvite, nowMs, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, sendToZoneNeighborhood]);
 
   useEffect(() => {
     if (!multiplayerEnabled) {
