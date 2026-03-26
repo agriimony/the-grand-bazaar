@@ -96,8 +96,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const size = 37;
   const maxWorldPlayers = 37;
   const center = Math.floor(size / 2);
-  const fountainOrigin = { x: center - 1, y: center - 1 };
-  const bankCell = { x: center - 1, y: center - 6 };
+  const fountainOrigin = { x: center, y: center };
+  const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -836,18 +836,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       b.add(cellKey(0, i));
       b.add(cellKey(size - 1, i));
     }
-    for (let fy = fountainOrigin.y; fy < fountainOrigin.y + 3; fy += 1) {
-      for (let fx = fountainOrigin.x; fx < fountainOrigin.x + 3; fx += 1) {
-        b.add(cellKey(fx, fy));
-      }
-    }
-    for (let by = bankCell.y; by < bankCell.y + 3; by += 1) {
-      for (let bx = bankCell.x; bx < bankCell.x + 3; bx += 1) {
-        b.add(cellKey(bx, by));
-      }
-    }
+    b.add(cellKey(center, center));
+    b.add(cellKey(bankCell.x, bankCell.y));
     return b;
-  }, [size, fountainOrigin.x, fountainOrigin.y, bankCell.x, bankCell.y]);
+  }, [size, center, bankCell.x, bankCell.y]);
 
   useEffect(() => {
     if (playerCell) {
@@ -885,11 +877,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     if (!playerPosHydrated) return;
     if (playerCell) return;
     const candidates = [
-      { x: bankCell.x + 1, y: bankCell.y + 3 },
-      { x: bankCell.x + 1, y: bankCell.y + 4 },
-      { x: bankCell.x - 1, y: bankCell.y + 1 },
-      { x: bankCell.x + 3, y: bankCell.y + 1 },
-      { x: bankCell.x + 1, y: bankCell.y - 1 },
+      { x: bankCell.x - 1, y: bankCell.y },
+      { x: bankCell.x - 2, y: bankCell.y },
+      { x: bankCell.x, y: bankCell.y - 1 },
+      { x: bankCell.x, y: bankCell.y + 1 },
+      { x: bankCell.x + 1, y: bankCell.y },
     ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2);
 
     const spawn = candidates.find((c) => !blockedCells.has(cellKey(c.x, c.y))) || { x: center - 1, y: center };
@@ -1670,17 +1662,14 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
-  const landmarkOverlays = [];
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const key = `${x}-${y}`;
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
-      const isFountain = x >= fountainOrigin.x && x < fountainOrigin.x + 3 && y >= fountainOrigin.y && y < fountainOrigin.y + 3;
-      const isFountainAnchor = x === fountainOrigin.x + 1 && y === fountainOrigin.y + 1;
+      const isFountain = x === fountainOrigin.x && y === fountainOrigin.y;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
-      const isBank = x >= bankCell.x && x < bankCell.x + 3 && y >= bankCell.y && y < bankCell.y + 3;
-      const isBankAnchor = x === bankCell.x + 1 && y === bankCell.y + 1;
+      const isBank = x === bankCell.x && y === bankCell.y;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
       const remotesAtCell = nearbyRemoteByCell.get(key) || [];
@@ -1695,91 +1684,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
           isValidPublicOffer: Boolean(current?.isPublicSwapOffer || current?.publicOfferViable),
         });
       }
-      if (isFountainAnchor) {
-        landmarkOverlays.push(
-          <div
-            key="landmark-fountain"
-            style={{
-              position: 'absolute',
-              left: `${((fountainOrigin.x + 1.5) / size) * 100}%`,
-              top: `${((fountainOrigin.y + 1.5) / size) * 100}%`,
-              transform: 'translate(-50%, -50%)',
-              width: `${(3 / size) * 100}%`,
-              height: `${(3 / size) * 100}%`,
-              display: 'grid',
-              placeItems: 'center',
-              pointerEvents: 'none',
-              zIndex: 3,
-            }}
-          >
-            <span
-              style={{
-                fontSize: `${Math.max(64, Math.min(140, 88 * zoom))}px`,
-                lineHeight: 1,
-                filter: 'drop-shadow(0 0 18px rgba(157, 221, 255, 0.98))',
-              }}
-            >
-              ⛲
-            </span>
-          </div>
-        );
-      }
-      if (isBankAnchor) {
-        landmarkOverlays.push(
-          <div
-            key="landmark-bank"
-            style={{
-              position: 'absolute',
-              left: `${((bankCell.x + 1.5) / size) * 100}%`,
-              top: `${((bankCell.y + 1.5) / size) * 100}%`,
-              transform: 'translate(-50%, -50%)',
-              width: `${(3 / size) * 100}%`,
-              height: `${(3 / size) * 100}%`,
-              display: 'grid',
-              placeItems: 'center',
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              pointerEvents: 'none',
-              zIndex: 4,
-            }}
-          >
-            <span
-              style={{
-                fontSize: `${Math.max(64, Math.min(140, 88 * zoom))}px`,
-                lineHeight: 1,
-                filter: 'drop-shadow(0 0 22px rgba(255, 219, 108, 0.99)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
-              }}
-            >
-              🏦
-            </span>
-          </div>
-        );
-      }
       cells.push(
         <div
           key={key}
-          onClick={(e) => {
-            if (isBank) {
-              openBankMenu(e);
-              return;
-            }
-            openTileMenu(e, x, y);
-          }}
+          onClick={(e) => openTileMenu(e, x, y)}
           style={{
             aspectRatio: '1 / 1',
             border: '1px solid rgba(220, 189, 116, 0.25)',
             display: 'grid',
             placeItems: 'center',
             fontSize: isFountain ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
-            background: isFountain ? 'rgba(157, 201, 255, 0.18)' : (isBank ? 'rgba(255, 214, 122, 0.12)' : 'rgba(31, 25, 16, 0.4)'),
-            boxShadow: isFountain ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : (isBank ? '0 0 16px rgba(255, 212, 94, 0.55), inset 0 0 12px rgba(255, 212, 94, 0.28)' : 'none'),
+            background: isFountain ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
+            boxShadow: isFountain ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
             color: isFountain ? '#dff2ff' : '#cbb68a',
             position: 'relative',
             overflow: 'hidden',
           }}
         >
-          {isFountain ? null : isBorder || isScatteredTree ? (
+          {isFountain ? (
+            <span style={{ fontSize: `${Math.max(18, Math.min(44, 24 * zoom))}px`, filter: 'drop-shadow(0 0 8px rgba(157, 221, 255, 0.8))' }}>⛲</span>
+          ) : isBorder || isScatteredTree ? (
             <span
               style={{
                 fontSize: isScatteredTree ? 18 : 22,
@@ -1789,7 +1713,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             >
               {tree}
             </span>
-          ) : isBank ? null : npc ? (
+          ) : isBank ? (
+            <button
+              onClick={openBankMenu}
+              title="Bazaar Bank"
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
+                filter: 'drop-shadow(0 0 12px rgba(255, 219, 108, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              🏦
+            </button>
+          ) : npc ? (
             <>
               <button
                 onClick={(e) => openNpcMenu(e, npc)}
@@ -2036,7 +1979,6 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               {cells}
             </div>
             <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
-              {landmarkOverlays}
               {labels.map((l) => (
                 <div
                   key={l.key}
