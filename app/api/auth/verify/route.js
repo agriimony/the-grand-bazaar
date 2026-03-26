@@ -33,7 +33,7 @@ export async function POST(req) {
     }
 
     const now = Date.now();
-    const exp = now + (60 * 60 * 1000);
+    const exp = now + (24 * 60 * 60 * 1000);
     const sessionToken = signToken({
       t: 'session',
       sub: address,
