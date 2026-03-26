@@ -3,59 +3,190 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
+import { setStoredAuthToken } from '../lib/client-auth';
+
+function storePreferredWallet(connector) {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload = {
+      id: String(connector?.id || ''),
+      name: String(connector?.name || ''),
+      rdns: String(connector?.rdns || ''),
+      uuid: String(connector?.uuid || ''),
+      authMethod: String(connector?.authMethod || ''),
+    };
+    window.sessionStorage.setItem('gbz:wallet-preferred', JSON.stringify(payload));
+  } catch {}
+}
 
 export default function LandingConnect() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [connectors, setConnectors] = useState([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState('');
 
   useEffect(() => {
     let mounted = true;
-    async function signalReady() {
+    const eip6963 = new Map();
+
+    const normalizeAnnounced = (detail) => {
+      const info = detail?.info || {};
+      const provider = detail?.provider;
+      const uuid = String(info?.uuid || '').trim();
+      if (!provider || !uuid) return null;
+      const rdns = String(info?.rdns || '').toLowerCase();
+      const rawName = String(info?.name || '').trim();
+      let name = rawName || 'Injected Wallet';
+      if (rdns.includes('metamask')) name = 'MetaMask';
+      else if (rdns.includes('rabby')) name = 'Rabby';
+      else if (rdns.includes('coinbase')) name = 'Coinbase Wallet';
+      return {
+        id: `eip6963:${uuid}`,
+        name,
+        provider,
+        authMethod: 'siwe',
+        rdns,
+        uuid,
+      };
+    };
+
+    const applyConnectors = async () => {
+      const found = [];
+
       try {
         const mod = await import('@farcaster/miniapp-sdk');
         const sdk = mod?.sdk || mod?.default || mod;
         await sdk?.actions?.ready?.();
-      } catch {
-        // no-op outside farcaster clients
-      }
-    }
-    if (mounted) signalReady();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function onConnect() {
-    if (busy) return;
-    setBusy(true);
-    setErr('');
-    try {
-      let connected = false;
-      try {
-        const mod = await import('@farcaster/miniapp-sdk');
-        const sdk = mod?.sdk || mod?.default || mod;
         const inMiniApp = Boolean(await sdk?.isInMiniApp?.());
         if (inMiniApp) {
           const getter = sdk?.wallet?.getEthereumProvider || sdk?.actions?.getEthereumProvider;
-          const eip1193 = getter ? await getter() : null;
-          if (eip1193) {
-            const bp = new ethers.BrowserProvider(eip1193);
-            const signer = await bp.getSigner();
-            await signer.getAddress();
-            connected = true;
-          }
+          const p = getter ? await getter() : null;
+          if (p) found.push({ id: 'farcaster', name: 'Farcaster Wallet', provider: p, authMethod: 'farcaster' });
+        }
+      } catch {}
+
+      const announced = Array.from(eip6963.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      for (const a of announced) found.push(a);
+
+      if (!announced.length && typeof window !== 'undefined' && window.ethereum) {
+        const providers = Array.isArray(window.ethereum.providers) && window.ethereum.providers.length
+          ? window.ethereum.providers
+          : [window.ethereum];
+        for (const p of providers) {
+          const isMetaMask = Boolean(p?.isMetaMask);
+          const isCoinbase = Boolean(p?.isCoinbaseWallet);
+          const isRabby = Boolean(p?.isRabby);
+          const name = isRabby ? 'Rabby' : (isMetaMask ? 'MetaMask' : (isCoinbase ? 'Coinbase Wallet' : 'Injected Wallet'));
+          const id = isRabby ? 'rabby' : (isMetaMask ? 'metamask' : (isCoinbase ? 'coinbase' : `injected-${found.length}`));
+          if (!found.some((x) => x.id === id)) found.push({ id, name, provider: p, authMethod: 'siwe' });
+        }
+      }
+
+      if (mounted) {
+        setConnectors(found);
+        setSelectedConnectorId((prev) => {
+          if (prev && found.some((x) => x.id === prev)) return prev;
+          const fc = found.find((x) => x.authMethod === 'farcaster');
+          if (fc) return fc.id;
+          const metamask = found.find((x) => String(x.name || '').toLowerCase().includes('metamask') || String(x.rdns || '').includes('metamask'));
+          if (metamask) return metamask.id;
+          return found[0]?.id || '';
+        });
+      }
+    };
+
+    const onAnnounce = (event) => {
+      const c = normalizeAnnounced(event?.detail);
+      if (!c) return;
+      eip6963.set(c.uuid, c);
+      applyConnectors();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('eip6963:announceProvider', onAnnounce);
+      window.dispatchEvent(new Event('eip6963:requestProvider'));
+    }
+
+    applyConnectors();
+
+    return () => {
+      mounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('eip6963:announceProvider', onAnnounce);
+      }
+    };
+  }, []);
+
+  const selectedConnector = connectors.find((x) => x.id === selectedConnectorId) || connectors[0] || null;
+
+  async function onConnect(connector = selectedConnector) {
+    if (busy || !connector?.provider) return;
+    setBusy(true);
+    setErr('');
+    try {
+      storePreferredWallet(connector);
+      const provider = new ethers.BrowserProvider(connector.provider);
+      try {
+        await connector.provider.request?.({ method: 'eth_requestAccounts' });
+      } catch {}
+      try {
+        const raw = await connector.provider.request?.({ method: 'eth_chainId' });
+        const chain = String(raw || '').toLowerCase().startsWith('0x') ? BigInt(String(raw)) : BigInt(parseInt(String(raw || '0'), 10));
+        if (chain !== 8453n) {
+          await connector.provider.request?.({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
         }
       } catch {
-        // ignore and try injected wallets
+        throw new Error('Please switch wallet network to Base');
+      }
+      const signer = await provider.getSigner();
+      const address = String(await signer.getAddress()).toLowerCase();
+
+      const authMethod = String(connector.authMethod || 'siwe');
+      let fid = '';
+      if (authMethod === 'farcaster') {
+        try {
+          const mod = await import('@farcaster/miniapp-sdk');
+          const sdk = mod?.sdk || mod?.default || mod;
+          let ctx = null;
+          try {
+            if (typeof sdk?.context === 'function') ctx = await sdk.context();
+            else ctx = sdk?.context || null;
+          } catch {}
+          fid = String(ctx?.user?.fid || '').trim();
+        } catch {}
       }
 
-      if (!connected && typeof window !== 'undefined' && window.ethereum?.request) {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        connected = true;
+      const c = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ address, fid }),
+      });
+      const cd = await c.json();
+      if (!c.ok || !cd?.ok || !cd?.message || !cd?.challengeToken) {
+        throw new Error(cd?.error || 'Auth challenge failed');
       }
 
-      if (!connected) throw new Error('No wallet provider found');
+      const signature = await signer.signMessage(cd.message);
+
+      const v = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          fid,
+          authMethod,
+          message: cd.message,
+          signature,
+          challengeToken: cd.challengeToken,
+        }),
+      });
+      const vd = await v.json();
+      if (!v.ok || !vd?.ok || !vd?.sessionToken) {
+        throw new Error(vd?.error || 'Auth verify failed');
+      }
+
+      setStoredAuthToken(vd.sessionToken);
       router.push('/worlds');
     } catch (e) {
       setErr(e?.message || 'Connect failed');
@@ -126,24 +257,53 @@ export default function LandingConnect() {
             background: 'linear-gradient(180deg, #3a3225 0%, #2c251b 100%)',
             padding: 10,
           }}>
-            <button
-              onClick={onConnect}
-              disabled={busy}
-              style={{
-                width: '100%',
-                padding: '11px 14px',
-                borderRadius: 4,
-                border: '2px solid #8f7a49',
-                boxShadow: '0 0 0 1px #2a2216 inset',
-                background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
-                color: '#17120b',
-                fontWeight: 800,
-                fontSize: 20,
-                cursor: busy ? 'default' : 'pointer',
-              }}
-            >
-              {busy ? 'Connecting...' : 'Connect'}
-            </button>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <button
+                onClick={() => onConnect()}
+                disabled={busy || !selectedConnector}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 4,
+                  border: '2px solid #8f7a49',
+                  boxShadow: '0 0 0 1px #2a2216 inset',
+                  background: busy ? '#6d6248' : 'linear-gradient(180deg, #a89160 0%, #7d6940 100%)',
+                  color: '#17120b',
+                  fontWeight: 800,
+                  fontSize: 20,
+                  cursor: busy ? 'default' : 'pointer',
+                }}
+              >
+                {busy ? 'Connecting...' : `Connect${selectedConnector ? ` ${selectedConnector.name}` : ''}`}
+              </button>
+
+              {connectors.length > 1 ? (
+                <select
+                  value={selectedConnectorId}
+                  onChange={(e) => setSelectedConnectorId(String(e.target.value || ''))}
+                  disabled={busy}
+                  style={{
+                    width: '100%',
+                    padding: '9px 10px',
+                    borderRadius: 4,
+                    border: '2px solid #8f7a49',
+                    background: 'rgba(28,22,14,0.75)',
+                    color: '#f4e3b8',
+                    fontSize: 14,
+                  }}
+                >
+                  {connectors.map((connector) => (
+                    <option key={connector.id} value={connector.id}>
+                      {connector.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+
+              {!connectors.length ? (
+                <div style={{ color: '#ffb4a8', fontSize: 12 }}>No wallet provider found</div>
+              ) : null}
+            </div>
           </div>
           {err ? <p style={{ marginTop: 10, color: '#ffb4a8' }}>{err}</p> : null}
         </div>

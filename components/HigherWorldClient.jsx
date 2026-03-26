@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getSupabaseBrowserClient } from '../lib/supabase-browser';
+import { useAccount, useDisconnect } from 'wagmi';
+import { fetchSession, getStoredAuthToken, setStoredAuthToken } from '../lib/client-auth';
 
 function hashToUnit(str) {
   let h = 2166136261;
@@ -20,6 +23,30 @@ function trimText(s, max = 62) {
 
 function cellKey(x, y) {
   return `${x}-${y}`;
+}
+
+function randomId(prefix = 'id') {
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `${prefix}_${Date.now().toString(36)}_${rand}`;
+}
+
+function createRoomId(signer = '', sender = '') {
+  const s = String(signer || '').trim().toLowerCase();
+  const t = String(sender || '').trim().toLowerCase();
+  const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `r:8453:${s}:${t}:${nonce}`;
+}
+
+function shortAddr(v = '') {
+  const s = String(v || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(s)) return s;
+  return `${s.slice(0, 6)}...${s.slice(-4)}`;
+}
+
+function shortPlayer(v = '', max = 14) {
+  const s = shortAddr(String(v || '').trim());
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
 }
 
 function findPath({ size, blocked, start, goal }) {
@@ -66,14 +93,20 @@ function findPath({ size, blocked, start, goal }) {
 
 export default function HigherWorldClient({ worldName = 'higher', apiPath = '/api/worlds/higher/npcs' }) {
   const router = useRouter();
-  const size = 15;
+  const size = 37;
+  const maxWorldPlayers = 37;
   const center = Math.floor(size / 2);
+  const fountainOrigin = { x: center, y: center };
   const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [localFname, setLocalFname] = useState('');
+  const [localPfp, setLocalPfp] = useState('');
+  const { address: connectedAddress, isConnected, status: walletStatus } = useAccount();
+  const { disconnect } = useDisconnect();
   const [menu, setMenu] = useState(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom] = useState(1);
   const [playerCell, setPlayerCell] = useState(null);
   const [playerPath, setPlayerPath] = useState([]);
   const [pendingAction, setPendingAction] = useState(null);
@@ -83,15 +116,175 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const worldScrollRef = useRef(null);
   const dragRef = useRef({ active: false, moved: false, suppressClick: false, x: 0, y: 0, left: 0, top: 0 });
   const zoomRef = useRef(1);
-  const pinchRef = useRef({ startDist: 0, startZoom: 1, active: false });
   const touchPointsRef = useRef(new Map());
   const nonTouchInputRef = useRef(false);
+  const playerCellRef = useRef(null);
+  const [remotePlayers, setRemotePlayers] = useState({});
+  const [tradePlaceholders, setTradePlaceholders] = useState({});
+  const [incomingTradeInvite, setIncomingTradeInvite] = useState(null);
+  const [outgoingTradeInvite, setOutgoingTradeInvite] = useState(null);
+  const [tradeToast, setTradeToast] = useState('');
+  const [worldLogs, setWorldLogs] = useState([]);
+  const [worldPresence, setWorldPresence] = useState({});
+  const zoneChannelsRef = useRef(new Map());
+  const zoneChannelStatusRef = useRef(new Map());
+  const worldChannelSubscribedRef = useRef(false);
+  const [authedPlayerId, setAuthedPlayerId] = useState('');
+  const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
+  const supabaseRef = useRef(null);
+  const channelRef = useRef(null);
+  const lastBroadcastAtRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const skipLeaveOnceRef = useRef(false);
+  const currentZoneKeyRef = useRef('');
+  const cleanupDoneRef = useRef(false);
+  const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
+  const worldCapKickedRef = useRef(false);
+
+  const pushWorldLog = (text) => {
+    const label = String(text || '').trim();
+    if (!label) return;
+    const entry = { id: randomId('wlog'), text: label, ts: Date.now() };
+    setWorldLogs((prev) => [...prev.slice(-4), entry]);
+  };
+
+  const supabasePublicKey = useMemo(
+    () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    []
+  );
+
+  const multiplayerEnabled = useMemo(
+    () =>
+      String(process.env.NEXT_PUBLIC_MULTIPLAYER_ENABLED || '').toLowerCase() === 'true' &&
+      Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+      Boolean(supabasePublicKey),
+    [supabasePublicKey]
+  );
+
+  const playerIdentity = useMemo(() => {
+    if (typeof window === 'undefined') return { playerId: '', sessionId: randomId('session') };
+
+    const playerId = String(authedPlayerId || '').trim().toLowerCase();
+    let sessionId = window.sessionStorage.getItem('gbz:session-id');
+    if (!sessionId) {
+      sessionId = randomId('session');
+      window.sessionStorage.setItem('gbz:session-id', sessionId);
+    }
+
+    return { playerId, sessionId };
+  }, [authedPlayerId]);
 
   const tileSize = 58;
+  const zoneSize = 12;
+  const zoneKeyForCell = (cell) => {
+    if (!cell) return '';
+    const zx = Math.max(0, Math.floor(Number(cell.x) / zoneSize));
+    const zy = Math.max(0, Math.floor(Number(cell.y) / zoneSize));
+    return `${zx}:${zy}`;
+  };
+  const neighborhoodZoneKeys = (cell) => {
+    if (!cell) return [];
+    const zx = Math.max(0, Math.floor(Number(cell.x) / zoneSize));
+    const zy = Math.max(0, Math.floor(Number(cell.y) / zoneSize));
+    const maxZone = Math.max(0, Math.floor((size - 1) / zoneSize));
+    const out = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const nx = zx + dx;
+        const ny = zy + dy;
+        if (nx < 0 || ny < 0 || nx > maxZone || ny > maxZone) continue;
+        out.push(`${nx}:${ny}`);
+      }
+    }
+    return out;
+  };
+  const zoneChannelName = (zoneKey) => `world:${worldName}:zone:${zoneKey}`;
   const boardSidePx = Math.round(size * tileSize * zoom);
   const boardSide = `${boardSidePx}px`;
   const frameWidth = `min(calc(${boardSide} + 20px), calc(100vw - 32px))`;
   const frameHeight = `min(calc(${boardSide} + 20px), calc(100dvh - 96px))`;
+
+  useEffect(() => {
+    if (walletStatus === 'connecting') return;
+    if (!isConnected || !connectedAddress) {
+      router.replace('/');
+    }
+  }, [walletStatus, isConnected, connectedAddress, router]);
+
+  useEffect(() => {
+    let dead = false;
+    async function loadAuth() {
+      if (!connectedAddress) return;
+      const token = getStoredAuthToken();
+      if (!token) {
+        router.replace('/');
+        return;
+      }
+      const r = await fetchSession(token);
+      const player = String(r?.session?.playerId || '').trim().toLowerCase();
+      if (!r?.ok || !/^0x[a-f0-9]{40}$/.test(player) || player !== String(connectedAddress).toLowerCase()) {
+        if (!dead) router.replace('/');
+        return;
+      }
+      if (!dead) setAuthedPlayerId(player);
+    }
+    loadAuth();
+    return () => { dead = true; };
+  }, [connectedAddress, router]);
+
+  useEffect(() => {
+    if (!playerMenuOpen) return undefined;
+    const onDocClick = () => setPlayerMenuOpen(false);
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [playerMenuOpen]);
+
+  useEffect(() => {
+    let dead = false;
+    async function loadFnameFromSdk() {
+      try {
+        const mod = await import('@farcaster/miniapp-sdk');
+        const sdk = mod?.sdk || mod?.default || mod;
+
+        let ctx = null;
+        try {
+          if (typeof sdk?.context === 'function') ctx = await sdk.context();
+          else ctx = sdk?.context || null;
+        } catch {}
+
+        const name = String(
+          ctx?.user?.username
+          || ctx?.user?.fname
+          || ctx?.user?.displayName
+          || ctx?.user?.display_name
+          || ''
+        )
+          .replace(/^@/, '')
+          .trim()
+          .toLowerCase();
+        const pfp = String(
+          ctx?.user?.pfpUrl
+          || ctx?.user?.pfp_url
+          || ctx?.user?.pfp?.url
+          || ''
+        ).trim();
+
+        if (!dead) {
+          setLocalFname(name);
+          setLocalPfp(pfp);
+        }
+      } catch {
+        if (!dead) {
+          setLocalFname('');
+          setLocalPfp('');
+        }
+      }
+    }
+    loadFnameFromSdk();
+    return () => {
+      dead = true;
+    };
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -114,9 +307,462 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   }, [apiPath]);
 
   useEffect(() => {
+    playerCellRef.current = playerCell;
+  }, [playerCell]);
+
+  useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!tradeToast) return;
+    const t = setTimeout(() => setTradeToast(''), 2600);
+    return () => clearTimeout(t);
+  }, [tradeToast]);
+
+  useEffect(() => {
+    if (!worldLogs.length) return;
+    const t = setTimeout(() => {
+      const now = Date.now();
+      setWorldLogs((prev) => prev.filter((item) => now - Number(item?.ts || 0) < 5000));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [worldLogs]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const toast = window.sessionStorage.getItem('gbz:world-toast');
+      if (!toast) return;
+      window.sessionStorage.removeItem('gbz:world-toast');
+      setTradeToast(toast);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!outgoingTradeInvite) return;
+    const msLeft = Number(outgoingTradeInvite?.expiresAt || 0) - Date.now();
+    if (msLeft <= 0) {
+      setOutgoingTradeInvite(null);
+      setTradeToast(`no response from ${outgoingTradeInvite.toName || 'player'}`);
+      return;
+    }
+    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [outgoingTradeInvite, nowMs]);
+
+  const sendToZoneNeighborhood = (event, payload) => {
+    for (const [zoneKey, ch] of zoneChannelsRef.current.entries()) {
+      if (zoneChannelStatusRef.current.get(zoneKey) !== 'SUBSCRIBED') continue;
+      try {
+        ch.send({ type: 'broadcast', event, payload });
+      } catch {}
+    }
+  };
+
+  const sendToWorldChannel = (event, payload) => {
+    const ch = channelRef.current;
+    if (!ch || !worldChannelSubscribedRef.current) return false;
+    try {
+      ch.send({ type: 'broadcast', event, payload });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const sendExactPlayerState = (payloadOverride = null) => {
+    const basePayload = payloadOverride || (() => {
+      const localCell = playerCellRef.current;
+      if (!localCell) return null;
+      return {
+        world: worldName,
+        sessionId: playerIdentity.sessionId,
+        playerId: playerIdentity.playerId,
+        fname: localFname,
+        pfp: localPfp,
+        x: localCell.x,
+        y: localCell.y,
+        zone: zoneKeyForCell(localCell),
+        ts: Date.now(),
+      };
+    })();
+    if (!basePayload) return;
+    sendToZoneNeighborhood('player_state', basePayload);
+  };
+
+  const syncZoneSubscriptions = (cell) => {
+    const supabase = supabaseRef.current;
+    if (!supabase || !cell) return;
+    const wanted = new Set(neighborhoodZoneKeys(cell));
+    for (const [zoneKey, zoneCh] of Array.from(zoneChannelsRef.current.entries())) {
+      if (wanted.has(zoneKey)) continue;
+      try { supabase.removeChannel(zoneCh); } catch {}
+      zoneChannelStatusRef.current.delete(zoneKey);
+      zoneChannelsRef.current.delete(zoneKey);
+    }
+    for (const zoneKey of wanted) {
+      if (zoneChannelsRef.current.has(zoneKey)) continue;
+      const zoneChannel = supabase.channel(zoneChannelName(zoneKey), { config: { broadcast: { self: false } } });
+      zoneChannelStatusRef.current.set(zoneKey, 'JOINING');
+      zoneChannel.on('broadcast', { event: 'player_state' }, ({ payload }) => {
+        const sessionId = String(payload?.sessionId || '').trim();
+        if (!sessionId || sessionId === playerIdentity.sessionId) return;
+        if (String(payload?.world || '') !== worldName) return;
+        const x = Number(payload?.x);
+        const y = Number(payload?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        setRemotePlayers((prev) => {
+          const hadPlayer = Boolean(prev[sessionId]);
+          if (!hadPlayer) {
+            const enteredName = shortPlayer(String(payload?.fname || payload?.playerId || 'player').replace(/^@/, '').trim() || 'player');
+            pushWorldLog(`${enteredName} entered the world`);
+          }
+          return {
+            ...prev,
+            [sessionId]: {
+              sessionId,
+              playerId: String(payload?.playerId || ''),
+              fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+              pfp: String(payload?.pfp || '').trim(),
+              x,
+              y,
+              updatedAt: Number(payload?.ts || Date.now()),
+            },
+          };
+        });
+      });
+      zoneChannel.on('broadcast', { event: 'trade_placeholder' }, ({ payload }) => {
+        const sessionId = String(payload?.sessionId || '').trim();
+        if (!sessionId || sessionId === playerIdentity.sessionId) return;
+        if (String(payload?.world || '') !== worldName) return;
+        const x = Number(payload?.x);
+        const y = Number(payload?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        setTradePlaceholders((prev) => ({
+          ...prev,
+          [sessionId]: {
+            sessionId,
+            playerId: String(payload?.playerId || ''),
+            fname: String(payload?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+            pfp: String(payload?.pfp || '').trim(),
+            x,
+            y,
+            updatedAt: Number(payload?.ts || Date.now()),
+            expiresAt: Number(payload?.expiresAt || (Date.now() + 10 * 60 * 1000)),
+            trading: true,
+          },
+        }));
+      });
+      zoneChannel.subscribe((status) => {
+        zoneChannelStatusRef.current.set(zoneKey, status);
+      });
+      zoneChannelsRef.current.set(zoneKey, zoneChannel);
+    }
+  };
+
+  useEffect(() => {
+    if (!incomingTradeInvite) return;
+    const msLeft = Number(incomingTradeInvite?.expiresAt || 0) - Date.now();
+    if (msLeft <= 0) {
+      const invite = incomingTradeInvite;
+      if (invite?.fromSessionId) {
+        console.log('[trade] send invite_response timeout', {
+          mySessionId: playerIdentity.sessionId,
+          toSessionId: invite.fromSessionId,
+          roomId: invite.roomId,
+        });
+        sendToWorldChannel('trade_invite_response', {
+          world: worldName,
+          toSessionId: invite.fromSessionId,
+          fromSessionId: playerIdentity.sessionId,
+          fromPlayerId: playerIdentity.playerId,
+          fromFname: localFname,
+          decision: 'decline',
+          reason: 'timeout',
+          ts: Date.now(),
+        });
+      }
+      setIncomingTradeInvite(null);
+      setTradeToast('trade request timed out');
+      return;
+    }
+    const t = setTimeout(() => setNowMs(Date.now()), Math.min(msLeft, 1000));
+    return () => clearTimeout(t);
+  }, [incomingTradeInvite, nowMs, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, sendToZoneNeighborhood]);
+
+  useEffect(() => {
+    if (!multiplayerEnabled) {
+      return;
+    }
+
+    if (!/^0x[a-f0-9]{40}$/.test(String(playerIdentity.playerId || '').toLowerCase())) {
+      return;
+    }
+
+
+    const supabase = getSupabaseBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, supabasePublicKey);
+    if (!supabase) return;
+    cleanupDoneRef.current = false;
+    let reconnectTimer = null;
+    let unmounted = false;
+    const channel = supabase.channel(`world:${worldName}`, {
+      config: {
+        broadcast: { self: false },
+        presence: { key: playerIdentity.sessionId },
+      },
+    });
+
+    channel.on('presence', { event: 'sync' }, () => {
+      if (worldCapKickedRef.current) return;
+      let ids = [];
+      let state = {};
+      try {
+        state = channel.presenceState() || {};
+        ids = Object.keys(state || {}).filter(Boolean);
+      } catch {}
+      const nextPresence = {};
+      for (const [sid, metas] of Object.entries(state || {})) {
+        if (!sid || sid === playerIdentity.sessionId) continue;
+        const meta = Array.isArray(metas) ? (metas[metas.length - 1] || {}) : (metas || {});
+        nextPresence[sid] = {
+          sessionId: sid,
+          playerId: String(meta?.playerId || ''),
+          fname: String(meta?.fname || '').replace(/^@/, '').trim().toLowerCase(),
+          pfp: String(meta?.pfp || '').trim(),
+          zone: String(meta?.zone || ''),
+          updatedAt: Number(meta?.ts || Date.now()),
+          present: true,
+        };
+      }
+      setWorldPresence((prev) => {
+        for (const sid of Object.keys(prev || {})) {
+          if (nextPresence[sid]) continue;
+          setRemotePlayers((rp) => {
+            if (!rp[sid]) return rp;
+            const next = { ...rp };
+            delete next[sid];
+            return next;
+          });
+          setTradePlaceholders((tp) => {
+            if (!tp[sid]) return tp;
+            const next = { ...tp };
+            delete next[sid];
+            return next;
+          });
+        }
+        return nextPresence;
+      });
+      const count = ids.length;
+      if (count <= maxWorldPlayers) return;
+      const admitted = ids.slice().sort().slice(0, maxWorldPlayers);
+      if (admitted.includes(playerIdentity.sessionId)) return;
+      worldCapKickedRef.current = true;
+      try {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('gbz:world-toast', `${worldName} is full (${maxWorldPlayers}/${maxWorldPlayers})`);
+        }
+      } catch {}
+      router.replace('/worlds');
+    });
+
+    channel.on('broadcast', { event: 'trade_invite' }, ({ payload }) => {
+      console.log('[trade] recv invite', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: String(payload?.toSessionId || '').trim(),
+        fromSessionId: String(payload?.fromSessionId || '').trim(),
+        roomId: String(payload?.roomId || '').trim(),
+        hasIncomingTradeInvite: Boolean(incomingTradeInvite),
+      });
+      if (incomingTradeInvite) return;
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const fromSessionId = String(payload?.fromSessionId || '').trim();
+      const fromPlayerId = String(payload?.fromPlayerId || '').trim();
+      const fromFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+      if (!fromSessionId) return;
+      setIncomingTradeInvite({
+        fromSessionId,
+        fromPlayerId,
+        fromFname,
+        roomId: String(payload?.roomId || ''),
+        world: String(payload?.world || worldName),
+        at: Number(payload?.ts || Date.now()),
+        expiresAt: Number(payload?.expiresAt || Date.now() + 60_000),
+      });
+    });
+
+    channel.on('broadcast', { event: 'trade_invite_response' }, ({ payload }) => {
+      console.log('[trade] recv invite_response', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: String(payload?.toSessionId || '').trim(),
+        fromSessionId: String(payload?.fromSessionId || '').trim(),
+        roomId: String(payload?.roomId || '').trim(),
+        decision: String(payload?.decision || '').trim().toLowerCase(),
+        hasOutgoingTradeInvite: Boolean(outgoingTradeInvite),
+      });
+      const toSessionId = String(payload?.toSessionId || '').trim();
+      if (toSessionId !== playerIdentity.sessionId) return;
+      const decision = String(payload?.decision || '').trim().toLowerCase();
+      const fromName = String(payload?.fromFname || payload?.fromPlayerId || 'player').trim();
+      setOutgoingTradeInvite(null);
+      if (decision === 'accept') {
+        setTradeToast(`${fromName} accepted your trade request`);
+        const roomId = String(payload?.roomId || '').trim();
+        if (roomId) {
+          const senderPlayerId = String(payload?.fromPlayerId || '').trim();
+          const senderFname = String(payload?.fromFname || '').replace(/^@/, '').trim();
+          const senderSessionId = String(payload?.fromSessionId || '').trim();
+          const qs = new URLSearchParams({
+            role: 'signer',
+            channel: worldName,
+            ...(senderPlayerId ? { senderPlayerId } : {}),
+            ...(senderFname ? { senderFname } : {}),
+            ...(senderSessionId ? { senderSessionId } : {}),
+          });
+          router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
+        }
+      }
+      if (decision === 'decline') {
+        const reason = String(payload?.reason || '').trim().toLowerCase();
+        if (reason === 'timeout') setTradeToast(`${fromName} did not respond in time`);
+        else setTradeToast(`${fromName} declined your trade request`);
+      }
+    });
+
+    channel.subscribe((status) => {
+      worldChannelSubscribedRef.current = status === 'SUBSCRIBED';
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (unmounted) return;
+        if (status === 'CLOSED') {
+          return;
+        }
+        const attempt = reconnectAttemptRef.current + 1;
+        reconnectAttemptRef.current = attempt;
+        const delay = Math.min(8000, 800 * attempt);
+        setTradeToast(`realtime reconnecting... (${attempt})`);
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            skipLeaveOnceRef.current = true;
+            setRealtimeRetryTick((v) => v + 1);
+          }, delay);
+        }
+      }
+      const localCell = playerCellRef.current;
+      if (status === 'SUBSCRIBED') {
+        reconnectAttemptRef.current = 0;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        try {
+          channel.track({
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            world: worldName,
+            zone: zoneKeyForCell(playerCellRef.current),
+            ts: Date.now(),
+          });
+        } catch {}
+        if (localCell) {
+          const zoneKey = zoneKeyForCell(localCell);
+          currentZoneKeyRef.current = zoneKey;
+          syncZoneSubscriptions(localCell);
+          sendExactPlayerState({
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            x: localCell.x,
+            y: localCell.y,
+            zone: zoneKey,
+            ts: Date.now(),
+          });
+        }
+      }
+    });
+
+    supabaseRef.current = supabase;
+    channelRef.current = channel;
+
+    const staleSweep = setInterval(() => {
+      const cutoff = Date.now() - 20_000;
+      setRemotePlayers((prev) => {
+        let dirty = false;
+        const next = { ...prev };
+        for (const [sid, p] of Object.entries(prev)) {
+          if (Number(p?.updatedAt || 0) < cutoff) {
+            const leaveName = shortPlayer(p?.fname || p?.playerId || 'player');
+            pushWorldLog(`${leaveName} left the world`);
+            delete next[sid];
+            dirty = true;
+          }
+        }
+        return dirty ? next : prev;
+      });
+      setTradePlaceholders((prev) => {
+        let dirty = false;
+        const now = Date.now();
+        const next = { ...prev };
+        for (const [sid, p] of Object.entries(prev)) {
+          const exp = Number(p?.expiresAt || 0);
+          if ((exp && now > exp) || Number(p?.updatedAt || 0) < now - (15 * 60 * 1000)) {
+            delete next[sid];
+            dirty = true;
+          }
+        }
+        return dirty ? next : prev;
+      });
+    }, 10_000);
+
+    const heartbeat = setInterval(() => {
+      const ch = channelRef.current;
+      const localCell = playerCellRef.current;
+      if (!ch || !localCell) return;
+      try {
+        ch.track({
+          sessionId: playerIdentity.sessionId,
+          playerId: playerIdentity.playerId,
+          fname: localFname,
+          pfp: localPfp,
+          world: worldName,
+          zone: zoneKeyForCell(localCell),
+          ts: Date.now(),
+        });
+      } catch {}
+    }, 20_000);
+
+    return () => {
+      if (cleanupDoneRef.current) return;
+      cleanupDoneRef.current = true;
+      unmounted = true;
+      clearInterval(staleSweep);
+      clearInterval(heartbeat);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (skipLeaveOnceRef.current) {
+        skipLeaveOnceRef.current = false;
+      }
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+      for (const ch of zoneChannelsRef.current.values()) {
+        try { supabase.removeChannel(ch); } catch {}
+      }
+      zoneChannelsRef.current.clear();
+      zoneChannelStatusRef.current.clear();
+      currentZoneKeyRef.current = '';
+      channelRef.current = null;
+      supabaseRef.current = null;
+      setRemotePlayers({});
+      setTradePlaceholders({});
+      setWorldPresence({});
+    };
+  }, [multiplayerEnabled, worldName, supabasePublicKey, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, router, realtimeRetryTick]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -190,8 +836,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       b.add(cellKey(0, i));
       b.add(cellKey(size - 1, i));
     }
-    b.add(cellKey(center, center)); // fountain
-    b.add(cellKey(bankCell.x, bankCell.y)); // bank
+    b.add(cellKey(center, center));
+    b.add(cellKey(bankCell.x, bankCell.y));
     return b;
   }, [size, center, bankCell.x, bankCell.y]);
 
@@ -263,31 +909,44 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     fn();
   }, [playerPath.length, pendingAction]);
 
-  const clampZoom = (z) => Math.max(0.65, Math.min(2.2, z));
+  useEffect(() => {
+    if (!multiplayerEnabled || !playerCell) return;
+    const ch = channelRef.current;
+    if (!ch) return;
+    const now = Date.now();
+    if (now - lastBroadcastAtRef.current < 250) return;
+    lastBroadcastAtRef.current = now;
 
-  const applyZoomAtPoint = (nextZoom, clientX, clientY) => {
-    const el = worldScrollRef.current;
-    const prevZoom = zoomRef.current;
-    const z = clampZoom(nextZoom);
-    if (!el || !Number.isFinite(z) || Math.abs(z - prevZoom) < 0.001) return;
-
-    const rect = el.getBoundingClientRect();
-    const px = clientX - rect.left;
-    const py = clientY - rect.top;
-    const worldX = el.scrollLeft + px;
-    const worldY = el.scrollTop + py;
-    const ratio = z / prevZoom;
-
-    zoomRef.current = z;
-    setZoom(z);
-
-    requestAnimationFrame(() => {
-      const left = worldX * ratio - px;
-      const top = worldY * ratio - py;
-      el.scrollLeft = Math.max(0, left);
-      el.scrollTop = Math.max(0, top);
+    const zoneKey = zoneKeyForCell(playerCell);
+    const prevZoneKey = currentZoneKeyRef.current;
+    if (zoneKey !== prevZoneKey) {
+      currentZoneKeyRef.current = zoneKey;
+      try {
+        ch.track({
+          sessionId: playerIdentity.sessionId,
+          playerId: playerIdentity.playerId,
+          fname: localFname,
+          pfp: localPfp,
+          world: worldName,
+          zone: zoneKey,
+          ts: now,
+        });
+      } catch {}
+      syncZoneSubscriptions(playerCell);
+    }
+    sendExactPlayerState({
+      world: worldName,
+      sessionId: playerIdentity.sessionId,
+      playerId: playerIdentity.playerId,
+      fname: localFname,
+      pfp: localPfp,
+      x: playerCell.x,
+      y: playerCell.y,
+      zone: zoneKey,
+      ts: now,
     });
-  };
+  }, [multiplayerEnabled, worldName, playerIdentity.sessionId, playerIdentity.playerId, localFname, localPfp, playerCell, sendExactPlayerState]);
+
 
   const npcsWithCurrentCast = useMemo(() => {
     const allCasts = (npcs || [])
@@ -414,7 +1073,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
     const keyToUser = new Map(users.map((u) => [u._key, u]));
     const maxScore = Math.max(1, ...users.map((u) => u._score));
-    const baseRadius = Math.max(2, Math.floor(size / 2) - 1);
+    const minClusterRadius = Math.max(4, Math.floor(size * 0.22));
+    const maxClusterRadius = Math.max(minClusterRadius + 2, Math.floor(size * 0.46));
 
     const compSorted = components
       .map((comp) => ({
@@ -424,12 +1084,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       .sort((a, b) => b.score - a.score);
 
     const targets = [];
-    let seededFirstNearFountain = false;
     for (let ci = 0; ci < compSorted.length; ci += 1) {
       const comp = compSorted[ci];
       const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
       const clusterScoreNorm = Math.min(1, comp.score / Math.max(1, comp.keys.length * maxScore));
-      const clusterR = Math.max(1, Math.round(baseRadius * (1 - 0.55 * clusterScoreNorm)));
+      const radialJitter = hashToUnit(`cluster:${ci}:r`);
+      const spreadBias = 0.35 + 0.65 * radialJitter;
+      const clusterR = Math.round(
+        minClusterRadius + (maxClusterRadius - minClusterRadius) * (1 - 0.45 * clusterScoreNorm) * spreadBias
+      );
       const cx = center + Math.cos(clusterAngle) * clusterR;
       const cy = center + Math.sin(clusterAngle) * clusterR;
 
@@ -447,26 +1110,8 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
         const scoreNorm = Math.min(1, u._score / maxScore);
 
-        // Seed the very first NPC near the fountain, nudged 1-2 cells.
-        if (!seededFirstNearFountain) {
-          const r = 1 + Math.round(hashToUnit(`${k}:first-around-fountain-r`)); // 1 or 2
-          const cardinals = [
-            { dx: 1, dy: 0 },
-            { dx: -1, dy: 0 },
-            { dx: 0, dy: 1 },
-            { dx: 0, dy: -1 },
-          ];
-          const ci = Math.floor(hashToUnit(`${k}:first-around-fountain-cardinal`) * cardinals.length) % cardinals.length;
-          const c = cardinals[ci];
-          const tx = center + c.dx * r;
-          const ty = center + c.dy * r;
-          targets.push({ u, tx, ty, scoreNorm: 1.1 });
-          seededFirstNearFountain = true;
-          continue;
-        }
-
-        const localR = Math.max(0.6, 2.4 - Math.min(1.8, linkedWeight * 0.25) - scoreNorm * 0.9);
-        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.35;
+        const localR = Math.max(1.4, 3.8 - Math.min(2.3, linkedWeight * 0.22) - scoreNorm * 1.1);
+        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.7;
         const tx = cx + Math.cos(localAngle) * localR;
         const ty = cy + Math.sin(localAngle) * localR;
         targets.push({ u, tx, ty, scoreNorm });
@@ -501,6 +1146,35 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     return placed;
   }, [npcsWithCurrentCast]);
 
+  const nearbyRemoteByCell = useMemo(() => {
+    const out = new Map();
+    const here = playerCell;
+    if (!here) return out;
+    const radius = 8;
+    const all = [
+      ...Object.values(remotePlayers || {}),
+      ...Object.values(tradePlaceholders || {}),
+    ];
+    for (const p of all) {
+      const x = Number(p?.x);
+      const y = Number(p?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (Math.abs(x - here.x) > radius || Math.abs(y - here.y) > radius) continue;
+      const k = cellKey(x, y);
+      if (!out.has(k)) out.set(k, []);
+      out.get(k).push(p);
+    }
+    return out;
+  }, [remotePlayers, tradePlaceholders, playerCell]);
+
+  const presentElsewhereCount = useMemo(() => {
+    const nearbyIds = new Set([
+      ...Object.keys(remotePlayers || {}),
+      ...Object.keys(tradePlaceholders || {}),
+    ]);
+    return Object.keys(worldPresence || {}).filter((sid) => sid && !nearbyIds.has(sid)).length;
+  }, [worldPresence, remotePlayers, tradePlaceholders]);
+
   const openNpcMenu = (e, npc) => {
     e.preventDefault();
     e.stopPropagation();
@@ -533,6 +1207,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       return;
     }
     e.preventDefault();
+
+    const remotes = nearbyRemoteByCell.get(cellKey(x, y)) || [];
+    if (remotes.length) {
+      const remote = remotes[0];
+      const displayId = String(remote?.fname || remote?.playerId || remote?.sessionId || 'player').trim();
+      setMenu({
+        x: e.clientX,
+        y: e.clientY,
+        type: 'remote',
+        remote,
+        name: displayId,
+      });
+      return;
+    }
+
     if (blockedCells.has(cellKey(x, y))) return;
     setMenu({
       x: e.clientX,
@@ -586,61 +1275,21 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const onWorldPointerDown = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
     if (t !== 'touch') return;
-
     touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touchPointsRef.current.size === 2) {
-      const [a, b] = Array.from(touchPointsRef.current.values());
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      pinchRef.current = {
-        startDist: Math.hypot(dx, dy),
-        startZoom: zoomRef.current,
-        active: false,
-      };
-    }
   };
 
   const onWorldPointerMove = (e) => {
     const t = String(e?.pointerType || '').toLowerCase();
     if (t !== 'touch') return;
     if (!touchPointsRef.current.has(e.pointerId)) return;
-
     touchPointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touchPointsRef.current.size !== 2) {
-      pinchRef.current.active = false;
-      return;
-    }
-
-    const [a, b] = Array.from(touchPointsRef.current.values());
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const dist = Math.hypot(dx, dy);
-    const midX = (a.x + b.x) / 2;
-    const midY = (a.y + b.y) / 2;
-    const base = pinchRef.current.startDist || dist;
-    const delta = Math.abs(dist - base);
-
-    if (!pinchRef.current.active && delta < 10) return;
-    pinchRef.current.active = true;
-
-    e.preventDefault();
-    const startZoom = pinchRef.current.startZoom || zoomRef.current;
-    const next = startZoom * (dist / Math.max(1, base));
-    applyZoomAtPoint(next, midX, midY);
   };
 
   const onWorldPointerUp = (e) => {
     touchPointsRef.current.delete(e.pointerId);
-    if (touchPointsRef.current.size < 2) pinchRef.current.active = false;
   };
 
-  const onWorldWheel = (e) => {
-    if (!nonTouchInputRef.current) return;
-    if (dragRef.current.active) return;
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.08 : 0.92;
-    applyZoomAtPoint(zoomRef.current * factor, e.clientX, e.clientY);
-  };
+  const onWorldWheel = () => {};
 
   const runTalk = (npc) => {
     if (!npc) return;
@@ -737,6 +1386,201 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     moveToNpcAdjacentThen(npc, () => runTrade(npc));
   };
 
+  const moveToRemoteAdjacentThen = (remote, action) => {
+    if (!remote || !playerCell) {
+      action?.();
+      return;
+    }
+
+    const rx = Number(remote?.x);
+    const ry = Number(remote?.y);
+    if (!Number.isFinite(rx) || !Number.isFinite(ry)) {
+      action?.();
+      return;
+    }
+
+    const adjacent = [
+      { x: rx + 1, y: ry },
+      { x: rx - 1, y: ry },
+      { x: rx, y: ry + 1 },
+      { x: rx, y: ry - 1 },
+    ].filter((c) => c.x >= 1 && c.y >= 1 && c.x <= size - 2 && c.y <= size - 2 && !blockedCells.has(cellKey(c.x, c.y)));
+
+    if (!adjacent.length) {
+      action?.();
+      return;
+    }
+
+    const isAlreadyAdjacent = adjacent.some((c) => c.x === playerCell.x && c.y === playerCell.y);
+    if (isAlreadyAdjacent) {
+      action?.();
+      return;
+    }
+
+    const targetRemoteKey = cellKey(rx, ry);
+    const blockedPreferAvoid = new Set(blockedCells);
+    for (const [k] of byCell.entries()) blockedPreferAvoid.add(k);
+    for (const p of Object.values(remotePlayers || {})) {
+      const px = Number(p?.x);
+      const py = Number(p?.y);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      blockedPreferAvoid.add(cellKey(px, py));
+    }
+    blockedPreferAvoid.delete(targetRemoteKey);
+
+    const getCandidates = (blockedSet) => adjacent
+      .map((goal) => ({ goal, path: findPath({ size, blocked: blockedSet, start: playerCell, goal }) }))
+      .filter((x) => x.path.length > 1)
+      .sort((a, b) => a.path.length - b.path.length);
+
+    let candidates = getCandidates(blockedPreferAvoid);
+    if (!candidates.length) candidates = getCandidates(blockedCells);
+
+    if (!candidates.length) {
+      action?.();
+      return;
+    }
+
+    const best = candidates[0];
+    setPendingAction(() => action);
+    setPlayerPath(best.path.slice(1));
+  };
+
+  const onTradeRemote = () => {
+    if (!menu?.remote) return;
+    const remote = menu.remote;
+    const targetSessionId = String(remote?.sessionId || '').trim();
+    const targetName = String(remote?.fname || remote?.playerId || 'player').replace(/^@/, '').trim();
+    setMenu(null);
+    if (!targetSessionId) return;
+
+    moveToRemoteAdjacentThen(remote, () => {
+      const ch = channelRef.current;
+      if (!ch) {
+        setTradeToast('multiplayer channel not ready');
+        return;
+      }
+
+      // Safety: never finalize invite from overlapping tile.
+      // If overlap is detected, nudge initiator one tile aside before broadcasting.
+      const localCell = playerCellRef.current;
+      const rx = Number(remote?.x);
+      const ry = Number(remote?.y);
+      if (localCell && Number.isFinite(rx) && Number.isFinite(ry) && localCell.x === rx && localCell.y === ry) {
+        const occupied = new Set();
+        for (const [k] of byCell.entries()) occupied.add(k);
+        for (const p of Object.values(remotePlayers || {})) {
+          const px = Number(p?.x);
+          const py = Number(p?.y);
+          if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+          occupied.add(cellKey(px, py));
+        }
+        // allow target tile check separately; we want a different tile anyway
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (const [dx, dy] of dirs) {
+          const nx = localCell.x + dx;
+          const ny = localCell.y + dy;
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+          if (nx === rx && ny === ry) continue;
+          const k = cellKey(nx, ny);
+          if (occupied.has(k)) continue;
+          const nudged = { x: nx, y: ny };
+          setPlayerCell(nudged);
+          playerCellRef.current = nudged;
+          sendExactPlayerState({
+            world: worldName,
+            sessionId: playerIdentity.sessionId,
+            playerId: playerIdentity.playerId,
+            fname: localFname,
+            pfp: localPfp,
+            x: nudged.x,
+            y: nudged.y,
+            zone: zoneKeyForCell(nudged),
+            ts: Date.now(),
+          });
+          break;
+        }
+      }
+
+      const expiresAt = Date.now() + 60_000;
+      const signerAddr = String(playerIdentity.playerId || '').toLowerCase();
+      const senderAddr = String(remote?.playerId || '').toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(signerAddr) || !/^0x[a-f0-9]{40}$/.test(senderAddr)) {
+        setTradeToast('trade requires verified wallet addresses');
+        return;
+      }
+      const roomId = createRoomId(signerAddr, senderAddr);
+      console.log('[trade] send invite', {
+        mySessionId: playerIdentity.sessionId,
+        toSessionId: targetSessionId,
+        roomId,
+      });
+      sendToWorldChannel('trade_invite', {
+        world: worldName,
+        toSessionId: targetSessionId,
+        fromSessionId: playerIdentity.sessionId,
+        fromPlayerId: playerIdentity.playerId,
+        fromFname: localFname,
+        roomId,
+        ts: Date.now(),
+        expiresAt,
+      });
+      setOutgoingTradeInvite({
+        toSessionId: targetSessionId,
+        toName: targetName,
+        roomId,
+        expiresAt,
+      });
+    });
+  };
+
+  const onRespondTradeInvite = (decision) => {
+    const invite = incomingTradeInvite;
+    setIncomingTradeInvite(null);
+    if (!invite) return;
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    console.log('[trade] send invite_response', {
+      mySessionId: playerIdentity.sessionId,
+      toSessionId: invite.fromSessionId,
+      roomId: invite.roomId,
+      decision,
+    });
+    sendToWorldChannel('trade_invite_response', {
+      world: worldName,
+      toSessionId: invite.fromSessionId,
+      fromSessionId: playerIdentity.sessionId,
+      fromPlayerId: playerIdentity.playerId,
+      fromFname: localFname,
+      roomId: invite.roomId,
+      decision,
+      ts: Date.now(),
+    });
+
+    if (decision === 'accept') {
+      const target = String(invite.fromFname || invite.fromPlayerId || '').replace(/^@/, '').trim();
+      setTradeToast(`accepted trade with ${target || 'player'}`);
+      const roomId = String(invite.roomId || '').trim();
+      if (roomId) {
+        const signerPlayerId = String(invite.fromPlayerId || '').trim();
+        const signerFname = String(invite.fromFname || '').replace(/^@/, '').trim();
+        const signerSessionId = String(invite.fromSessionId || '').trim();
+        const qs = new URLSearchParams({
+          role: 'sender',
+          channel: worldName,
+          ...(signerPlayerId ? { signerPlayerId } : {}),
+          ...(signerFname ? { signerFname } : {}),
+          ...(signerSessionId ? { signerSessionId } : {}),
+        });
+        router.push(`/maker/live/${encodeURIComponent(roomId)}?${qs.toString()}`);
+      }
+    }
+    if (decision === 'decline') {
+      setTradeToast('trade request declined');
+    }
+  };
+
   const moveToBankAdjacentThen = (action) => {
     if (!playerCell) {
       action?.();
@@ -803,6 +1647,18 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     setMenu(null);
   };
 
+  const playerTag = localFname ? `@${localFname}` : shortAddr(playerIdentity.playerId || connectedAddress || '');
+
+  const onDisconnectPlayer = async () => {
+    try {
+      setStoredAuthToken('');
+      try { disconnect?.(); } catch {}
+      router.replace('/');
+    } catch {
+      router.replace('/');
+    }
+  };
+
   const trees = ['🌲', '🌳', '🌴'];
   const cells = [];
   const labels = [];
@@ -811,12 +1667,15 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       const key = `${x}-${y}`;
       const npc = byCell.get(key);
       const current = npc?.currentCast || null;
-      const isCenter = x === center && y === center;
+      const isFountain = x === fountainOrigin.x && y === fountainOrigin.y;
       const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
       const isBank = x === bankCell.x && y === bankCell.y;
       const isPlayer = playerCell && x === playerCell.x && y === playerCell.y;
       const tree = trees[Math.floor(hashToUnit(`tree:${key}`) * trees.length) % trees.length];
-      if (!isCenter && !isBorder && !isBank && npc && current?.text) {
+      const remotesAtCell = nearbyRemoteByCell.get(key) || [];
+      const primaryRemote = remotesAtCell[0] || null;
+      const isScatteredTree = false;
+      if (!isFountain && !isBorder && !isBank && npc && current?.text) {
         labels.push({
           key: `lbl-${key}`,
           x,
@@ -834,18 +1693,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             border: '1px solid rgba(220, 189, 116, 0.25)',
             display: 'grid',
             placeItems: 'center',
-            fontSize: isCenter ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
-            background: isCenter ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
-            boxShadow: isCenter ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
-            color: isCenter ? '#dff2ff' : '#cbb68a',
+            fontSize: isFountain ? Math.max(20, Math.min(48, 30 * zoom)) : 12,
+            background: isFountain ? 'rgba(157, 201, 255, 0.18)' : 'rgba(31, 25, 16, 0.4)',
+            boxShadow: isFountain ? '0 0 14px rgba(126, 192, 255, 0.45) inset' : 'none',
+            color: isFountain ? '#dff2ff' : '#cbb68a',
             position: 'relative',
             overflow: 'hidden',
           }}
         >
-          {isCenter ? (
-            '⛲'
-          ) : isBorder ? (
-            <span style={{ fontSize: 22, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>{tree}</span>
+          {isFountain ? (
+            <span style={{ fontSize: `${Math.max(18, Math.min(44, 24 * zoom))}px`, filter: 'drop-shadow(0 0 8px rgba(157, 221, 255, 0.8))' }}>⛲</span>
+          ) : isBorder || isScatteredTree ? (
+            <span
+              style={{
+                fontSize: isScatteredTree ? 18 : 22,
+                opacity: isScatteredTree ? 0.9 : 1,
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+              }}
+            >
+              {tree}
+            </span>
           ) : isBank ? (
             <button
               onClick={openBankMenu}
@@ -860,7 +1727,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 padding: 0,
                 cursor: 'pointer',
                 fontSize: `${Math.max(20, Math.min(48, 29 * zoom))}px`,
-                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+                filter: 'drop-shadow(0 0 12px rgba(255, 219, 108, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
               }}
             >
               🏦
@@ -889,6 +1756,49 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 />
               </button>
             </>
+          ) : primaryRemote ? (
+            <button
+              onClick={(e) => openTileMenu(e, x, y)}
+              title={String(primaryRemote?.fname || primaryRemote?.playerId || 'player')}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+            >
+              {String(primaryRemote?.pfp || '').trim() ? (
+                <img
+                  src={primaryRemote.pfp}
+                  alt={String(primaryRemote?.fname || primaryRemote?.playerId || 'player')}
+                  draggable={false}
+                  style={{ width: '84%', height: '84%', borderRadius: '999px', objectFit: 'cover', border: '1px solid rgba(183,240,255,0.8)', boxShadow: '0 0 12px rgba(124, 234, 255, 0.9)', userSelect: 'none', WebkitUserDrag: 'none' }}
+                />
+              ) : (
+                <span style={{ fontSize: `${Math.max(20, Math.min(48, 26 * zoom))}px`, filter: 'drop-shadow(0 0 10px rgba(124, 234, 255, 0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>🧍‍♂️</span>
+              )}
+              {primaryRemote?.trading ? (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontSize: 16,
+                    filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.9))',
+                    pointerEvents: 'none',
+                  }}
+                  title="Trading"
+                >
+                  💰
+                </span>
+              ) : null}
+            </button>
           ) : null}
           {isPlayer ? (
             <span
@@ -900,6 +1810,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
                 fontSize: `${Math.max(18, Math.min(40, 26 * zoom))}px`,
                 pointerEvents: 'none',
                 textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                filter: 'drop-shadow(0 0 10px rgba(124, 234, 255, 0.95))',
                 zIndex: 2,
               }}
               title="You"
@@ -955,37 +1866,98 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             ← Back
           </button>
           <div style={{ flex: 1, textAlign: 'center' }}>/{worldName}</div>
-          <div style={{ width: 82 }} aria-hidden />
+          <div style={{ position: 'relative', minWidth: 82, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setPlayerMenuOpen((v) => !v);
+              }}
+              style={{
+                border: '1px solid rgba(236,200,120,0.55)',
+                background: 'rgba(28,22,14,0.75)',
+                color: '#f4e3b8',
+                borderRadius: 6,
+                padding: '5px 8px',
+                fontSize: 12,
+                cursor: 'pointer',
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={String(playerIdentity.playerId || connectedAddress || '')}
+            >
+              {playerTag}
+            </button>
+            {playerMenuOpen ? (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  zIndex: 30,
+                  minWidth: 250,
+                  border: '1px solid rgba(236,200,120,0.45)',
+                  background: 'rgba(20, 16, 10, 0.95)',
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                }}
+              >
+                <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 4 }}>Connected as</div>
+                <div style={{ fontSize: 12, marginBottom: 2 }}>{playerTag}</div>
+                <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 8 }}>{shortAddr(playerIdentity.playerId || connectedAddress || '')}</div>
+                <button
+                  onClick={onDisconnectPlayer}
+                  style={{
+                    width: '100%',
+                    border: '1px solid rgba(236,120,120,0.6)',
+                    background: 'rgba(60, 24, 24, 0.92)',
+                    color: '#ffd8d8',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <section
-          ref={worldScrollRef}
-          className="rs-hide-scrollbar"
-          onMouseDown={onWorldMouseDown}
-          onMouseMove={onWorldMouseMove}
-          onMouseUp={onWorldMouseUp}
-          onMouseLeave={onWorldMouseUp}
-          onDragStart={onWorldDragStart}
-          onPointerDown={onWorldPointerDown}
-          onPointerMove={onWorldPointerMove}
-          onPointerUp={onWorldPointerUp}
-          onPointerCancel={onWorldPointerUp}
-          onWheel={onWorldWheel}
-          style={{
-            border: '2px solid #7f6a3b',
-            boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
-            background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
-            borderRadius: 12,
-            padding: 10,
-            overflow: 'auto',
-            height: frameHeight,
-            boxSizing: 'border-box',
-            cursor: 'grab',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            touchAction: 'pan-x pan-y',
-          }}
-        >
+        <div style={{ position: 'relative' }}>
+          <section
+            ref={worldScrollRef}
+            className="rs-hide-scrollbar"
+            onMouseDown={onWorldMouseDown}
+            onMouseMove={onWorldMouseMove}
+            onMouseUp={onWorldMouseUp}
+            onMouseLeave={onWorldMouseUp}
+            onDragStart={onWorldDragStart}
+            onPointerDown={onWorldPointerDown}
+            onPointerMove={onWorldPointerMove}
+            onPointerUp={onWorldPointerUp}
+            onPointerCancel={onWorldPointerUp}
+            onWheel={onWorldWheel}
+            style={{
+              border: '2px solid #7f6a3b',
+              boxShadow: '0 0 0 2px #221b11 inset, 0 0 0 4px #9a8247 inset, 0 16px 40px rgba(0,0,0,0.65)',
+              background: 'linear-gradient(180deg, rgba(74,66,49,0.95) 0%, rgba(59,51,38,0.95) 55%, rgba(48,41,31,0.95) 100%)',
+              borderRadius: 12,
+              padding: 10,
+              overflow: 'auto',
+              height: frameHeight,
+              boxSizing: 'border-box',
+              cursor: 'grab',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              touchAction: 'pan-x pan-y',
+              position: 'relative',
+            }}
+          >
           <div
             style={{
               width: boardSide,
@@ -1037,6 +2009,57 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
             </div>
           </div>
         </section>
+          {(worldLogs.length || presentElsewhereCount > 0) ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: 14,
+                left: 14,
+                zIndex: 20,
+                pointerEvents: 'none',
+                width: 'min(340px, calc(100% - 28px))',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              {presentElsewhereCount > 0 ? (
+                <div
+                  style={{
+                    background: 'rgba(13, 11, 8, 0.46)',
+                    border: '1px solid rgba(236,200,120,0.28)',
+                    color: '#f6e3ad',
+                    borderRadius: 6,
+                    padding: '5px 7px',
+                    fontSize: 12,
+                    lineHeight: 1.2,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                    backdropFilter: 'blur(1px)',
+                  }}
+                >
+                  {presentElsewhereCount === 1 ? '1 player elsewhere in world' : `${presentElsewhereCount} players elsewhere in world`}
+                </div>
+              ) : null}
+              {worldLogs.map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    background: 'rgba(13, 11, 8, 0.46)',
+                    border: '1px solid rgba(236,200,120,0.28)',
+                    color: '#f6e3ad',
+                    borderRadius: 6,
+                    padding: '5px 7px',
+                    fontSize: 12,
+                    lineHeight: 1.2,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                    backdropFilter: 'blur(1px)',
+                  }}
+                >
+                  {log.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {loadingCasts ? (
@@ -1055,6 +2078,84 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               <div className="rs-loading-track">
                 <div className="rs-loading-fill" />
                 <div className="rs-loading-label">loading casts</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tradeToast ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 22,
+            transform: 'translateX(-50%)',
+            zIndex: 85,
+            border: '2px solid #6d5a34',
+            background: 'linear-gradient(180deg, #3c3324 0%, #2d261b 100%)',
+            color: '#f6e3ad',
+            padding: '8px 12px',
+            borderRadius: 6,
+            boxShadow: '0 8px 20px rgba(0,0,0,0.6)',
+            fontSize: 14,
+            whiteSpace: 'nowrap',
+            maxWidth: '92vw',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {tradeToast}
+        </div>
+      ) : null}
+
+      {incomingTradeInvite ? (
+        <div className="rs-modal-backdrop" style={{ zIndex: 90 }}>
+          <div
+            style={{
+              width: 'min(420px, 92vw)',
+              border: '3px solid #2f271d',
+              background: 'linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%)',
+              boxShadow: 'inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912',
+              padding: 14,
+            }}
+          >
+            <div style={{ color: '#f6e3ad', fontSize: 20, marginBottom: 8, fontWeight: 800, textAlign: 'center' }}>
+              {`${shortPlayer(incomingTradeInvite.fromFname || incomingTradeInvite.fromPlayerId || 'A player')} wishes to trade`}
+            </div>
+            <div style={{ color: '#f6e3ad', opacity: 0.9, fontSize: 16, marginBottom: 14, textAlign: 'center' }}>
+              {`auto-declines in ${Math.max(0, Math.ceil((Number(incomingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s`}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <button className="rs-btn rs-btn-positive" onClick={() => onRespondTradeInvite('accept')}>
+                Accept
+              </button>
+              <button className="rs-btn rs-btn-error" onClick={() => onRespondTradeInvite('decline')}>
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {outgoingTradeInvite ? (
+        <div className="rs-modal-backdrop" style={{ zIndex: 88 }}>
+          <div
+            className="rs-panel"
+            style={{
+              width: 'min(560px, 92vw)',
+              border: '3px solid #2f271d',
+              background: 'linear-gradient(180deg, #6d5f4d 0%, #5e5345 100%)',
+              boxShadow: 'inset 0 0 0 2px #8b785c, 0 8px 0 #1f1912',
+              padding: 14,
+            }}
+          >
+            <div style={{ color: '#f6e3ad', fontSize: 20, fontWeight: 800, marginBottom: 12, textAlign: 'center' }}>
+              {`waiting for ${shortPlayer(outgoingTradeInvite.toName || 'player')} (${Math.max(0, Math.ceil((Number(outgoingTradeInvite.expiresAt || 0) - nowMs) / 1000))}s)`}
+            </div>
+            <div className="rs-loading-wrap" style={{ maxWidth: '100%' }}>
+              <div className="rs-loading-track">
+                <div className="rs-loading-fill" />
               </div>
             </div>
           </div>
@@ -1099,6 +2200,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
               title="Trade with anyone"
             >
               Trade with anyone
+            </button>
+          ) : menu.type === 'remote' ? (
+            <button
+              onClick={onTradeRemote}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                color: '#b7f0ff',
+                border: 'none',
+                padding: '9px 11px',
+                cursor: 'pointer',
+                fontSize: 17,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={`Trade with ${menu.name}`}
+            >
+              {`Trade with ${menu.name}`}
             </button>
           ) : menu.type === 'tile' ? (
             <button
