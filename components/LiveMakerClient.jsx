@@ -581,6 +581,7 @@ export default function LiveMakerClient({
   const [signedOrderState, setSignedOrderState] = useState(null); // { byRole, byName, expiresAt, payload }
   const [swapTxHash, setSwapTxHash] = useState('');
   const [successCloseAt, setSuccessCloseAt] = useState(0);
+  const [signingBusy, setSigningBusy] = useState(false);
   const [lastRoomActivityAt, setLastRoomActivityAt] = useState(() => Date.now());
   const [staleCloseAt, setStaleCloseAt] = useState(0);
 
@@ -2484,6 +2485,7 @@ export default function LiveMakerClient({
     const ch = channelRef.current;
     if (!ch) return;
 
+    setSigningBusy(true);
     try {
       const signerWallet = String(identity.playerId || '').trim();
       const senderWallet = String(otherPeer?.playerId || peerWalletFallback || '').trim();
@@ -2609,6 +2611,8 @@ export default function LiveMakerClient({
       safeRoomBroadcast('room_signed_order', payload);
     } catch (e) {
       setStatus(`sign failed: ${shortErr(e?.message || 'unknown')}`);
+    } finally {
+      setSigningBusy(false);
     }
   };
 
@@ -2908,10 +2912,19 @@ export default function LiveMakerClient({
             )
           ) : livePhase === 'await_signer' ? (
             myRole === 'signer' ? (
-              <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
-                <button className="rs-btn rs-btn-positive" onClick={onSignerSign}>Sign</button>
-                <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
-              </div>
+              signingBusy ? (
+                <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
+                  <div className="rs-loading-track">
+                    <div className="rs-loading-fill" />
+                    <div className="rs-loading-label">signing...</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rs-btn-stack" style={{ width: 'min(360px, 92vw)' }}>
+                  <button className="rs-btn rs-btn-positive" onClick={onSignerSign}>Sign</button>
+                  <button className="rs-btn rs-btn-error" onClick={onDecline}>Decline</button>
+                </div>
+              )
             ) : (
               <div className="rs-loading-wrap" style={{ width: 'min(420px, 92vw)' }}>
                 <div className="rs-loading-track"><div className="rs-loading-fill" /><div className="rs-loading-label">{`waiting for ${otherDisplay}`}</div></div>
