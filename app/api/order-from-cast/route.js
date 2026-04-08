@@ -3,11 +3,13 @@ import os from 'os';
 import path from 'path';
 
 function extractCompressedOrder(text = '') {
-  // Accept full token after GBZ1: and trim common trailing quote/punctuation artifacts.
-  const m = String(text || '').match(/(?:^|\s)GBZ1:([^\s]+)/i);
+  // Accept GBZ1 payloads split across whitespace/newlines and trim trailing punctuation.
+  const m = String(text || '').match(/(?:^|\s)GBZ1:\s*(([A-Za-z0-9+\-$]+(?:\s+[A-Za-z0-9+\-$]+)*))/i);
   if (!m) return null;
-  const raw = String(m[1] || '').trim();
-  const cleaned = raw.replace(/["'`’”.,;:!?\])}>]+$/g, '');
+  const cleaned = String(m[1] || '')
+    .trim()
+    .replace(/["'`’”.,;:!?\])}>]+$/g, '')
+    .replace(/\s+/g, '');
   return cleaned || null;
 }
 
