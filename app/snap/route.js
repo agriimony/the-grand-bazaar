@@ -1,50 +1,96 @@
-export async function GET() {
-  return Response.json(
+const SNAP_MEDIA_TYPE = 'application/vnd.farcaster.snap+json';
+const BAZAAR_URL = 'https://bazaar.agrimonys.com/';
+
+function wantsSnap(req) {
+  const accept = req.headers.get('accept') || '';
+  return accept
+    .split(',')
+    .map((part) => part.split(';')[0].trim().toLowerCase())
+    .includes(SNAP_MEDIA_TYPE);
+}
+
+function snapHeaders() {
+  return {
+    'content-type': SNAP_MEDIA_TYPE,
+    'cache-control': 'no-store',
+    vary: 'Accept',
+  };
+}
+
+function fallbackHeaders() {
+  return {
+    'content-type': 'text/plain; charset=utf-8',
+    'cache-control': 'no-store',
+    vary: 'Accept',
+  };
+}
+
+function fallbackResponse(status = 200) {
+  return new Response(
+    `This endpoint serves a Farcaster Snap. Send Accept: ${SNAP_MEDIA_TYPE} or open ${BAZAAR_URL}`,
     {
-      version: '1',
-      title: 'Grand Bazaar',
-      description: 'Decode GBZ1 swap orders and open Grand Bazaar',
-      ui: {
-        root: 'screen',
-        elements: {
-          screen: {
-            type: 'container',
-            props: { direction: 'vertical', gap: 12 },
-            children: ['title', 'desc', 'cta'],
-          },
-          title: {
-            type: 'text',
-            props: { text: 'Grand Bazaar Snap', weight: 'bold', size: 'lg' },
-          },
-          desc: {
-            type: 'text',
-            props: {
-              text: 'Launch Grand Bazaar and parse GBZ1 order blobs from casts.',
-            },
-          },
-          cta: {
-            type: 'button',
-            props: { label: 'Open Grand Bazaar', variant: 'primary' },
-            on: {
-              press: {
-                action: 'open_url',
-                params: { url: 'https://bazaar.agrimonys.com/' },
-              },
+      status,
+      headers: fallbackHeaders(),
+    }
+  );
+}
+
+function buildSnap({ title, description, target }) {
+  return {
+    version: '1.0',
+    theme: { accent: 'purple' },
+    ui: {
+      root: 'page',
+      elements: {
+        page: {
+          type: 'stack',
+          props: {},
+          children: ['title', 'desc', 'cta'],
+        },
+        title: {
+          type: 'text',
+          props: { content: title, weight: 'bold' },
+        },
+        desc: {
+          type: 'text',
+          props: { content: description, size: 'sm' },
+        },
+        cta: {
+          type: 'button',
+          props: { label: 'Open Grand Bazaar', variant: 'primary' },
+          on: {
+            press: {
+              action: 'open_url',
+              params: { target },
             },
           },
         },
       },
     },
+  };
+}
+
+export async function GET(req) {
+  if (!wantsSnap(req)) {
+    return fallbackResponse();
+  }
+
+  return Response.json(
+    buildSnap({
+      title: 'Grand Bazaar Snap',
+      description: 'Launch Grand Bazaar and parse GBZ1 order blobs from casts.',
+      target: BAZAAR_URL,
+    }),
     {
-      headers: {
-        'content-type': 'application/vnd.farcaster.snap+json',
-        'cache-control': 'no-store',
-      },
+      headers: snapHeaders(),
     }
   );
 }
 
 export async function POST(req) {
+  if (!wantsSnap(req)) {
+    return fallbackResponse(406);
+  }
   let castHash = null;
 
   try {
@@ -63,54 +109,18 @@ export async function POST(req) {
     // ignore malformed body for MVP
   }
 
-  const openUrl = castHash
-    ? `https://bazaar.agrimonys.com/c/${castHash}`
-    : 'https://bazaar.agrimonys.com/';
+  const target = castHash ? `https://bazaar.agrimonys.com/c/${castHash}` : BAZAAR_URL;
 
   return Response.json(
+    buildSnap({
+      title: 'Grand Bazaar Order',
+      description: castHash
+        ? `Cast: ${castHash.slice(0, 10)}...${castHash.slice(-6)}`
+        : 'No cast hash detected in payload',
+      target,
+    }),
     {
-      version: '1',
-      title: 'Grand Bazaar',
-      description: 'Open the order in Grand Bazaar',
-      ui: {
-        root: 'screen',
-        elements: {
-          screen: {
-            type: 'container',
-            props: { direction: 'vertical', gap: 12 },
-            children: ['title', 'meta', 'cta'],
-          },
-          title: {
-            type: 'text',
-            props: { text: 'Grand Bazaar Order', weight: 'bold', size: 'lg' },
-          },
-          meta: {
-            type: 'text',
-            props: {
-              text: castHash
-                ? `Cast: ${castHash.slice(0, 10)}...${castHash.slice(-6)}`
-                : 'No cast hash detected in payload',
-              size: 'sm',
-            },
-          },
-          cta: {
-            type: 'button',
-            props: { label: 'Open in Grand Bazaar', variant: 'primary' },
-            on: {
-              press: {
-                action: 'open_url',
-                params: { url: openUrl },
-              },
-            },
-          },
-        },
-      },
-    },
-    {
-      headers: {
-        'content-type': 'application/vnd.farcaster.snap+json',
-        'cache-control': 'no-store',
-      },
+      headers: snapHeaders(),
     }
   );
 }
