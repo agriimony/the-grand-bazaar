@@ -1,6 +1,15 @@
 const SNAP_MEDIA_TYPE = 'application/vnd.farcaster.snap+json';
 const BAZAAR_URL = 'https://bazaar.agrimonys.com/';
 
+function corsHeaders() {
+  return {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'Accept, Content-Type',
+    'access-control-max-age': '86400',
+  };
+}
+
 function wantsSnap(req) {
   const accept = req.headers.get('accept') || '';
   return accept
@@ -11,6 +20,7 @@ function wantsSnap(req) {
 
 function snapHeaders() {
   return {
+    ...corsHeaders(),
     'content-type': SNAP_MEDIA_TYPE,
     'cache-control': 'no-store',
     vary: 'Accept',
@@ -19,6 +29,7 @@ function snapHeaders() {
 
 function fallbackHeaders() {
   return {
+    ...corsHeaders(),
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
     vary: 'Accept',
@@ -68,6 +79,13 @@ function buildSnap({ title, description, target }) {
       },
     },
   };
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(),
+  });
 }
 
 export async function GET(req) {
