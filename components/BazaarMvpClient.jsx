@@ -2697,7 +2697,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
         : makerCastText;
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://bazaar.agrimonys.com/snap/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
 
         let step2Hash = '';
@@ -2847,7 +2847,7 @@ export default function BazaarMvpClient({ initialCompressed = '', initialCastHas
       ].join('\n');
 
       const publishEmbedStep = async (offerCastHash) => {
-        const deeplink = `https://bazaar.agrimonys.com/c/${encodeURIComponent(offerCastHash)}`;
+        const deeplink = `https://bazaar.agrimonys.com/snap/c/${encodeURIComponent(offerCastHash)}`;
         const embedText = `🛒 Take this offer in the Grand Bazaar\n${deeplink}`;
         try {
           await compose(withComposeChannel({
