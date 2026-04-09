@@ -1,8 +1,4 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-
-const FARCASTER_API_BASE_URL = 'https://haatz.quilibrium.com';
+import { FARCASTER_API_BASE_URL, fetchFarcasterJsonWithFallback } from '../../../lib/farcaster.js';
 
 function truncateAddress(addr = '') {
   return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
@@ -17,24 +13,6 @@ function getPrimaryAddress(u) {
   );
 }
 
-function getFarcasterApiKey() {
-  const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
-  let apiKey = process.env.NEYNAR_API_KEY || '';
-  if (!apiKey && fs.existsSync(credPath)) {
-    const raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    apiKey = raw?.apiKey || '';
-  }
-  return apiKey;
-}
-
-async function fetchFarcasterJson(url) {
-  const apiKey = getFarcasterApiKey();
-  const headers = { accept: 'application/json' };
-  if (apiKey) headers.api_key = apiKey;
-  const r = await fetch(url, { headers, cache: 'no-store' });
-  if (!r.ok) throw new Error(`Farcaster API request failed with ${r.status}`);
-  return r.json();
-}
 
 export async function GET(req) {
   try {
@@ -48,7 +26,11 @@ export async function GET(req) {
 
     if (Number.isFinite(fid) && fid > 0 && !address && !query) {
       const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/bulk?fids=${encodeURIComponent(String(fid))}`;
-      const data = await fetchFarcasterJson(url).catch(() => null);
+      const data = await fetchFarcasterJsonWithFallback(url, {
+        namespace: `farcaster-name:fid:${fid}`,
+        ttlSeconds: 300,
+        isMissing: (payload) => !((payload?.users || payload?.result?.users || []).length),
+      }).catch(() => null);
       if (!data) return Response.json({ name: '', fallback: String(fid), profileUrl: '', address: '', pfpUrl: '' });
       const users = data?.users || data?.result?.users || [];
       const u = users[0] || null;
@@ -59,7 +41,11 @@ export async function GET(req) {
 
     if (query && !address) {
       const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/search?q=${encodeURIComponent(query)}&limit=8`;
-      const data = await fetchFarcasterJson(url).catch(() => null);
+      const data = await fetchFarcasterJsonWithFallback(url, {
+        namespace: `farcaster-name:search:${query.toLowerCase()}`,
+        ttlSeconds: 300,
+        isMissing: (payload) => !((payload?.result?.users || payload?.users || []).length),
+      }).catch(() => null);
       if (!data) return Response.json({ name: '', fallback: query, profileUrl: '', address: '', users: [] });
       const usersRaw = data?.result?.users || data?.users || [];
       const users = usersRaw.map((u) => {
@@ -82,7 +68,11 @@ export async function GET(req) {
 
     for (const t of addrTypes) {
       const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=${t}`;
-      const data = await fetchFarcasterJson(url).catch(() => null);
+      const data = await fetchFarcasterJsonWithFallback(url, {
+        namespace: `farcaster-name:address:${address.toLowerCase()}:${t}`,
+        ttlSeconds: 1800,
+        isMissing: (payload) => !((payload?.[address.toLowerCase()] || payload?.[address] || []).length),
+      }).catch(() => null);
       if (!data) continue;
       const users = data?.[address.toLowerCase()] || data?.[address] || [];
       const u = users?.[0];
