@@ -24,7 +24,7 @@ export async function GET(req) {
 
   return Response.json(
     buildSnap(
-      getSnapContent(null, {
+      await getSnapContent(null, {
         submitTarget: `${BAZAAR_URL}snap`,
       })
     ),
@@ -55,7 +55,7 @@ export async function POST(req) {
   const envelope = parseJfsEnvelope(requestBody);
   const context = getContextFromEnvelope(envelope);
 
-  return Response.json(buildSnap(getSnapContent(context, {
+  return Response.json(buildSnap(await getSnapContent(context, {
     submitTarget: `${BAZAAR_URL}snap`,
   })), {
     headers: snapHeaders(),

@@ -23,7 +23,7 @@ export async function GET(req, { params }) {
 
   const context = await getContextFromCastHash(params?.castHash || '');
 
-  return Response.json(buildSnap(getSnapContent(context, {
+  return Response.json(buildSnap(await getSnapContent(context, {
     submitTarget: `${BAZAAR_URL}snap`,
   })), {
     headers: snapHeaders(),

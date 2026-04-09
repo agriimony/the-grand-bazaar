@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+const FARCASTER_API_BASE_URL = 'https://haatz.quilibrium.com';
+
 function truncateAddress(addr = '') {
   return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 }
@@ -15,6 +17,25 @@ function getPrimaryAddress(u) {
   );
 }
 
+function getFarcasterApiKey() {
+  const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
+  let apiKey = process.env.NEYNAR_API_KEY || '';
+  if (!apiKey && fs.existsSync(credPath)) {
+    const raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    apiKey = raw?.apiKey || '';
+  }
+  return apiKey;
+}
+
+async function fetchFarcasterJson(url) {
+  const apiKey = getFarcasterApiKey();
+  const headers = { accept: 'application/json' };
+  if (apiKey) headers.api_key = apiKey;
+  const r = await fetch(url, { headers, cache: 'no-store' });
+  if (!r.ok) throw new Error(`Farcaster API request failed with ${r.status}`);
+  return r.json();
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -25,25 +46,10 @@ export async function GET(req) {
     const query = queryRaw.replace(/^@+/, '').trim();
     if (!address && !query && !Number.isFinite(fid)) return Response.json({ name: '', fallback: '', profileUrl: '', address: '' });
 
-    const credPath = path.join(os.homedir(), '.openclaw', 'credentials', 'neynar.json');
-    let apiKey = process.env.NEYNAR_API_KEY || '';
-    if (!apiKey && fs.existsSync(credPath)) {
-      const raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-      apiKey = raw?.apiKey || '';
-    }
-
-    if (!apiKey) {
-      return Response.json({ name: '', fallback: truncateAddress(address), profileUrl: '', address: address || '' });
-    }
-
     if (Number.isFinite(fid) && fid > 0 && !address && !query) {
-      const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(String(fid))}`;
-      const r = await fetch(url, {
-        headers: { accept: 'application/json', api_key: apiKey },
-        cache: 'no-store',
-      });
-      if (!r.ok) return Response.json({ name: '', fallback: String(fid), profileUrl: '', address: '', pfpUrl: '' });
-      const data = await r.json();
+      const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/bulk?fids=${encodeURIComponent(String(fid))}`;
+      const data = await fetchFarcasterJson(url).catch(() => null);
+      if (!data) return Response.json({ name: '', fallback: String(fid), profileUrl: '', address: '', pfpUrl: '' });
       const users = data?.users || data?.result?.users || [];
       const u = users[0] || null;
       const username = u?.username || u?.display_name || '';
@@ -52,13 +58,9 @@ export async function GET(req) {
     }
 
     if (query && !address) {
-      const url = `https://api.neynar.com/v2/farcaster/user/search?q=${encodeURIComponent(query)}&limit=8`;
-      const r = await fetch(url, {
-        headers: { accept: 'application/json', api_key: apiKey },
-        cache: 'no-store',
-      });
-      if (!r.ok) return Response.json({ name: '', fallback: query, profileUrl: '', address: '', users: [] });
-      const data = await r.json();
+      const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/search?q=${encodeURIComponent(query)}&limit=8`;
+      const data = await fetchFarcasterJson(url).catch(() => null);
+      if (!data) return Response.json({ name: '', fallback: query, profileUrl: '', address: '', users: [] });
       const usersRaw = data?.result?.users || data?.users || [];
       const users = usersRaw.map((u) => {
         const username = u?.username || u?.display_name || '';
@@ -79,17 +81,9 @@ export async function GET(req) {
     let pfpUrl = '';
 
     for (const t of addrTypes) {
-      const url = `https://api.neynar.com/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=${t}`;
-      const r = await fetch(url, {
-        headers: {
-          accept: 'application/json',
-          api_key: apiKey,
-        },
-        cache: 'no-store',
-      });
-
-      if (!r.ok) continue;
-      const data = await r.json();
+      const url = `${FARCASTER_API_BASE_URL}/v2/farcaster/user/bulk-by-address?addresses=${encodeURIComponent(address)}&address_types=${t}`;
+      const data = await fetchFarcasterJson(url).catch(() => null);
+      if (!data) continue;
       const users = data?.[address.toLowerCase()] || data?.[address] || [];
       const u = users?.[0];
       name = u?.username || u?.display_name || '';
