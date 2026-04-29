@@ -99,6 +99,10 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
   const fountainOrigin = { x: center, y: center };
   const bankCell = { x: Math.min(size - 2, center + 2), y: center };
   const [npcs, setNpcs] = useState([]);
+  const [threadsById, setThreadsById] = useState({});
+  const [segments, setSegments] = useState([]);
+  const [schedule, setSchedule] = useState(null);
+  const [motionConfig, setMotionConfig] = useState({ stepMs: 350, neighborOrder: ['right', 'left', 'down', 'up'] });
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [localFname, setLocalFname] = useState('');
@@ -294,7 +298,26 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         const join = apiPath.includes('?') ? '&' : '?';
         const r = await fetch(`${apiPath}${join}v=2`, { cache: 'no-store' });
         const d = await r.json();
-        if (!dead && d?.ok && Array.isArray(d?.npcs)) setNpcs(d.npcs);
+        if (!dead && d?.ok) {
+          const npcMap = d?.npcs && typeof d.npcs === 'object' ? d.npcs : {};
+          const threadMap = d?.threads && typeof d.threads === 'object' ? d.threads : {};
+          const segs = Array.isArray(d?.segments) ? d.segments : [];
+          setNpcs(Object.values(npcMap));
+          setThreadsById(threadMap);
+          setSegments(segs);
+          const fetchedAt = Date.now();
+          setSchedule({
+            scheduleVersion: String(d?.scheduleVersion || ''),
+            serverNow: Number(d?.serverNow || fetchedAt),
+            syncedAt: fetchedAt,
+            loopStartsAt: Number(d?.loopStartsAt || fetchedAt),
+            loopDurationMs: Number(d?.loopDurationMs || 1),
+          });
+          setMotionConfig({
+            stepMs: Number(d?.motion?.stepMs || 350),
+            neighborOrder: Array.isArray(d?.motion?.neighborOrder) ? d.motion.neighborOrder : ['right', 'left', 'down', 'up'],
+          });
+        }
       } catch {}
       finally {
         if (!dead) setLoadingCasts(false);
@@ -949,202 +972,187 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
 
 
   const npcsWithCurrentCast = useMemo(() => {
-    const allCasts = (npcs || [])
-      .flatMap((n) => (Array.isArray(n?.casts) ? n.casts : []))
-      .map((c) => Number(c?.graphIndex))
-      .filter((v) => Number.isFinite(v) && v >= 0 && v < Number.MAX_SAFE_INTEGER)
-      .sort((a, b) => a - b);
+    const loopStartsAt = Number(schedule?.loopStartsAt || 0);
+    const loopDurationMs = Number(schedule?.loopDurationMs || 0);
+    const serverNow = Number(schedule?.serverNow || 0);
+    const syncedAt = Number(schedule?.syncedAt || serverNow || 0);
+    const syncedNow = schedule ? (serverNow + Math.max(0, nowMs - syncedAt)) : nowMs;
+    const loopOffset = loopDurationMs > 0
+      ? ((((syncedNow - loopStartsAt) % loopDurationMs) + loopDurationMs) % loopDurationMs)
+      : 0;
 
-    const maxGraphIndex = allCasts.length ? allCasts[allCasts.length - 1] : 0;
-    const eventMs = 2600;
-    const loopPauseMs = 3200;
-    const linearSpanMs = (maxGraphIndex + 1) * eventMs;
-    const loopMs = linearSpanMs + loopPauseMs;
-    const t = loopMs > 0 ? nowMs % loopMs : 0;
-    const globalCursor = t >= linearSpanMs ? maxGraphIndex : Math.floor(t / eventMs);
+    const activeSegment = (segments || []).find(
+      (seg) => loopOffset >= Number(seg?.startMs || 0) && loopOffset < Number(seg?.endMs || 0)
+    ) || null;
+
+    const activeThread = activeSegment ? threadsById?.[activeSegment.threadId] : null;
+    const threadOffset = activeSegment ? Math.max(0, loopOffset - Number(activeSegment.startMs || 0)) : 0;
+
+    let activeEvent = null;
+    if (activeThread && Array.isArray(activeThread?.events)) {
+      let cursor = 0;
+      for (const evt of activeThread.events) {
+        const dur = Number(evt?.durationMs || 0);
+        if (threadOffset >= cursor && threadOffset < cursor + dur) {
+          activeEvent = evt;
+          break;
+        }
+        cursor += dur;
+      }
+      if (!activeEvent) activeEvent = activeThread.events[activeThread.events.length - 1] || null;
+    }
+
+    const activeParticipantIds = new Set(Array.isArray(activeSegment?.participantIds) ? activeSegment.participantIds.map((v) => Number(v)) : []);
 
     return (npcs || []).map((n) => {
-      const list = (Array.isArray(n?.casts) ? n.casts : [])
-        .filter((c) => Number.isFinite(Number(c?.graphIndex)) && Number(c?.graphIndex) >= 0 && Number(c?.graphIndex) < Number.MAX_SAFE_INTEGER)
-        .sort((a, b) => Number(a.graphIndex) - Number(b.graphIndex));
+      const fid = Number(n?.id || n?.fid || 0);
+      const inActiveThread = activeParticipantIds.has(fid);
+      const idleEvents = Array.isArray(n?.idleEvents) ? n.idleEvents : [];
+      const idleEvent = idleEvents.length
+        ? idleEvents[Math.floor((loopOffset / 5000) % idleEvents.length)]
+        : null;
 
-      const publicOffer = list.find((c) => c?.isPublicSwapOffer) || null;
-      if (!list.length) return { ...n, currentCast: null, lastCastShown: null, publicOfferCast: publicOffer };
+      const currentCast = inActiveThread && activeEvent && Number(activeEvent?.speakerId || 0) === fid
+        ? {
+            castHash: activeEvent.castHash,
+            castUrl: activeEvent.castUrl || activeEvent.permalink,
+            permalink: activeEvent.permalink,
+            text: activeEvent.text,
+            timestamp: Number(activeEvent.timestamp || 0),
+            isPublicSwapOffer: Boolean(activeEvent.isPublicSwapOffer),
+          }
+        : (!inActiveThread && idleEvent
+          ? {
+              castHash: idleEvent.castHash,
+              castUrl: idleEvent.castUrl || idleEvent.permalink,
+              permalink: idleEvent.permalink,
+              text: idleEvent.text,
+              timestamp: Number(idleEvent.timestamp || 0),
+              isPublicSwapOffer: Boolean(idleEvent.isPublicSwapOffer),
+            }
+          : null);
 
-      // Global ordering projection: latest cast for this user that has appeared in global sequence.
-      let shownCast = null;
-      for (let i = 0; i < list.length; i += 1) {
-        const gi = Number(list[i].graphIndex);
-        if (gi <= globalCursor) shownCast = list[i];
-        else break;
-      }
-      if (!shownCast) shownCast = list[0];
+      const lastCastShown = inActiveThread && activeThread
+        ? (activeThread.events || []).findLast?.((evt) => Number(evt?.speakerId || 0) === fid) || (activeThread.events || []).filter((evt) => Number(evt?.speakerId || 0) === fid).slice(-1)[0] || null
+        : idleEvent;
 
-      // Hold valid public offers on screen for at least 6s after their global appearance.
-      const validHoldMs = 6000;
-      const heldOffer = list
-        .filter((c) => Boolean(c?.isPublicSwapOffer || c?.publicOfferViable))
-        .filter((c) => {
-          const gi = Number(c?.graphIndex);
-          if (!Number.isFinite(gi) || gi < 0) return false;
-          const start = gi * eventMs;
-          return t >= start && t < start + validHoldMs;
-        })
-        .sort((a, b) => Number(b.graphIndex) - Number(a.graphIndex))[0] || null;
-      if (heldOffer) shownCast = heldOffer;
-
-      // Keep independent per-tile blink/blank rhythm on top of globally-selected cast.
-      const key = String(n?.fid || n?.username || 'npc');
-      const isValidPublicOffer = Boolean(shownCast?.isPublicSwapOffer || shownCast?.publicOfferViable);
-      const castDurationMs = isValidPublicOffer
-        ? 6000
-        : (3200 + Math.floor(hashToUnit(`${key}:dur`) * 2800)); // valid offers pinned >=6s; others 3.2s..6s
-      const blankDurationMs = isValidPublicOffer ? 0 : Math.floor(castDurationMs * 0.5);
-      const tileCycle = castDurationMs + blankDurationMs;
-      const tileOffset = Math.floor(hashToUnit(`${key}:phase`) * tileCycle);
-      const tilePhase = (nowMs + tileOffset) % tileCycle;
-      const showText = tilePhase < castDurationMs;
+      const publicOfferCast = activeThread
+        ? ((activeThread.events || []).find((evt) => Number(evt?.speakerId || 0) === fid && Boolean(evt?.isPublicSwapOffer)) || null)
+        : (idleEvent?.isPublicSwapOffer ? idleEvent : null);
 
       return {
         ...n,
-        currentCast: showText ? shownCast : null,
-        lastCastShown: shownCast,
-        publicOfferCast: publicOffer,
+        currentCast,
+        lastCastShown,
+        publicOfferCast,
+        activeThreadId: activeThread?.id || null,
       };
     });
-  }, [npcs, nowMs]);
+  }, [npcs, nowMs, schedule, segments, threadsById]);
 
   const byCell = useMemo(() => {
     const placed = new Map();
     if (!npcsWithCurrentCast.length) return placed;
 
-    const users = npcsWithCurrentCast.map((n, idx) => ({
-      ...n,
-      _idx: idx,
-      _key: String(n.fid || n.username || idx),
-      _score: Number(n.topScore || n.currentCast?.engagementScore || 0),
-    }));
+    const loopStartsAt = Number(schedule?.loopStartsAt || 0);
+    const loopDurationMs = Number(schedule?.loopDurationMs || 0);
+    const serverNow = Number(schedule?.serverNow || 0);
+    const syncedAt = Number(schedule?.syncedAt || serverNow || 0);
+    const syncedNow = schedule ? (serverNow + Math.max(0, nowMs - syncedAt)) : nowMs;
+    const loopOffset = loopDurationMs > 0
+      ? ((((syncedNow - loopStartsAt) % loopDurationMs) + loopDurationMs) % loopDurationMs)
+      : 0;
 
-    const castOwner = new Map();
-    for (const u of users) {
-      const list = Array.isArray(u.casts) ? u.casts : [];
-      for (const c of list) castOwner.set(String(c.castHash), u._key);
+    const staticBlocked = new Set();
+    for (let i = 0; i < size; i += 1) {
+      staticBlocked.add(cellKey(i, 0));
+      staticBlocked.add(cellKey(i, size - 1));
+      staticBlocked.add(cellKey(0, i));
+      staticBlocked.add(cellKey(size - 1, i));
     }
+    staticBlocked.add(cellKey(center, center));
+    staticBlocked.add(cellKey(bankCell.x, bankCell.y));
 
-    const edges = new Map();
-    const bump = (a, b, w = 1) => {
-      if (!a || !b || a === b) return;
-      const x = a < b ? `${a}|${b}` : `${b}|${a}`;
-      edges.set(x, (edges.get(x) || 0) + w);
+    const getNpcSegmentTimeline = (fid) => {
+      const fidNum = Number(fid || 0);
+      return (segments || [])
+        .map((seg) => {
+          const slot = Array.isArray(seg?.slots) ? seg.slots.find((s) => Number(s?.npcId || 0) === fidNum) : null;
+          if (!slot) return null;
+          return {
+            segment: seg,
+            cell: { x: Number(slot.x), y: Number(slot.y) },
+            startMs: Number(seg?.startMs || 0),
+            endMs: Number(seg?.endMs || 0),
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.startMs - b.startMs);
     };
-    for (const u of users) {
-      const list = Array.isArray(u.casts) ? u.casts : [];
-      for (const c of list) {
-        const parentOwner = castOwner.get(String(c.parentHash || ''));
-        if (parentOwner) bump(u._key, parentOwner, 1);
-      }
-    }
 
-    const nbr = new Map(users.map((u) => [u._key, []]));
-    for (const [k, w] of edges.entries()) {
-      const [a, b] = k.split('|');
-      nbr.get(a)?.push({ to: b, w });
-      nbr.get(b)?.push({ to: a, w });
-    }
+    for (const npc of npcsWithCurrentCast) {
+      const fid = Number(npc?.id || npc?.fid || 0);
+      if (!fid) continue;
+      const idleCell = npc?.idleCell && Number.isFinite(Number(npc.idleCell.x)) && Number.isFinite(Number(npc.idleCell.y))
+        ? { x: Number(npc.idleCell.x), y: Number(npc.idleCell.y) }
+        : { x: 1, y: 1 };
 
-    const seen = new Set();
-    const components = [];
-    for (const u of users) {
-      if (seen.has(u._key)) continue;
-      const stack = [u._key];
-      seen.add(u._key);
-      const comp = [];
-      while (stack.length) {
-        const cur = stack.pop();
-        comp.push(cur);
-        for (const n of nbr.get(cur) || []) {
-          if (seen.has(n.to)) continue;
-          seen.add(n.to);
-          stack.push(n.to);
+      const timeline = getNpcSegmentTimeline(fid);
+      const activeEntry = timeline.find((entry) => loopOffset >= entry.startMs && loopOffset < entry.endMs) || null;
+
+      let pos = idleCell;
+      if (activeEntry) {
+        pos = activeEntry.cell;
+      } else if (timeline.length) {
+        let previousEntry = null;
+        let nextEntry = null;
+        for (let i = 0; i < timeline.length; i += 1) {
+          const entry = timeline[i];
+          if (entry.endMs <= loopOffset) previousEntry = entry;
+          if (!nextEntry && entry.startMs > loopOffset) nextEntry = entry;
+        }
+
+        if (!nextEntry && timeline.length) {
+          const wrapEntry = timeline[0];
+          const moveStepMs = Number(wrapEntry.segment?.movement?.stepMs || motionConfig.stepMs || 350);
+          const fromCell = previousEntry?.cell || idleCell;
+          const path = findPath({ size, blocked: staticBlocked, start: fromCell, goal: idleCell });
+          const steps = Math.max(0, path.length - 1);
+          const travelMs = steps * moveStepMs;
+          const moveStart = Math.max(0, loopDurationMs - travelMs);
+          if (loopOffset >= moveStart && path.length) {
+            const elapsed = loopOffset - moveStart;
+            const stepIndex = Math.max(0, Math.min(steps, Math.floor(elapsed / moveStepMs)));
+            pos = path[stepIndex] || idleCell;
+          } else {
+            pos = fromCell;
+          }
+        } else if (nextEntry) {
+          const moveStepMs = Number(nextEntry.segment?.movement?.stepMs || motionConfig.stepMs || 350);
+          const fromCell = previousEntry?.cell || idleCell;
+          const path = findPath({ size, blocked: staticBlocked, start: fromCell, goal: nextEntry.cell });
+          const steps = Math.max(0, path.length - 1);
+          const travelMs = steps * moveStepMs;
+          const moveStart = Math.max(previousEntry?.endMs || 0, nextEntry.startMs - travelMs);
+          if (loopOffset >= moveStart && path.length) {
+            const elapsed = loopOffset - moveStart;
+            const stepIndex = Math.max(0, Math.min(steps, Math.floor(elapsed / moveStepMs)));
+            pos = path[stepIndex] || nextEntry.cell;
+          } else {
+            pos = fromCell;
+          }
         }
       }
-      components.push(comp);
-    }
 
-    const keyToUser = new Map(users.map((u) => [u._key, u]));
-    const maxScore = Math.max(1, ...users.map((u) => u._score));
-    const minClusterRadius = Math.max(4, Math.floor(size * 0.22));
-    const maxClusterRadius = Math.max(minClusterRadius + 2, Math.floor(size * 0.46));
-
-    const compSorted = components
-      .map((comp) => ({
-        keys: comp,
-        score: comp.reduce((s, k) => s + (keyToUser.get(k)?._score || 0), 0),
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    const targets = [];
-    for (let ci = 0; ci < compSorted.length; ci += 1) {
-      const comp = compSorted[ci];
-      const clusterAngle = (2 * Math.PI * ci) / Math.max(1, compSorted.length);
-      const clusterScoreNorm = Math.min(1, comp.score / Math.max(1, comp.keys.length * maxScore));
-      const radialJitter = hashToUnit(`cluster:${ci}:r`);
-      const spreadBias = 0.35 + 0.65 * radialJitter;
-      const clusterR = Math.round(
-        minClusterRadius + (maxClusterRadius - minClusterRadius) * (1 - 0.45 * clusterScoreNorm) * spreadBias
-      );
-      const cx = center + Math.cos(clusterAngle) * clusterR;
-      const cy = center + Math.sin(clusterAngle) * clusterR;
-
-      const keys = [...comp.keys].sort((a, b) => {
-        const aw = (nbr.get(a) || []).reduce((s, x) => s + x.w, 0);
-        const bw = (nbr.get(b) || []).reduce((s, x) => s + x.w, 0);
-        if (bw !== aw) return bw - aw;
-        return (keyToUser.get(b)?._score || 0) - (keyToUser.get(a)?._score || 0);
+      placed.set(cellKey(pos.x, pos.y), {
+        ...npc,
+        _key: String(fid),
+        _pos: pos,
       });
-
-      for (let i = 0; i < keys.length; i += 1) {
-        const k = keys[i];
-        const u = keyToUser.get(k);
-        if (!u) continue;
-        const linkedWeight = (nbr.get(k) || []).reduce((s, x) => s + x.w, 0);
-        const scoreNorm = Math.min(1, u._score / maxScore);
-
-        const localR = Math.max(1.4, 3.8 - Math.min(2.3, linkedWeight * 0.22) - scoreNorm * 1.1);
-        const localAngle = (2 * Math.PI * i) / Math.max(1, keys.length) + hashToUnit(`${k}:jitter`) * 0.7;
-        const tx = cx + Math.cos(localAngle) * localR;
-        const ty = cy + Math.sin(localAngle) * localR;
-        targets.push({ u, tx, ty, scoreNorm });
-      }
-    }
-
-    targets.sort((a, b) => b.scoreNorm - a.scoreNorm);
-
-    const bankKey = `${bankCell.x}-${bankCell.y}`;
-
-    for (const t of targets) {
-      let x = Math.max(1, Math.min(size - 2, Math.round(t.tx)));
-      let y = Math.max(1, Math.min(size - 2, Math.round(t.ty)));
-      if (x === center && y === center) x = Math.min(size - 2, x + 1);
-
-      let tries = 0;
-      let r = 1;
-      while ((x === center && y === center) || `${x}-${y}` === bankKey || placed.has(`${x}-${y}`)) {
-        const a = hashToUnit(`${t.u._key}:${tries}:a`) * 2 * Math.PI;
-        const nx = Math.round(t.tx + Math.cos(a) * r);
-        const ny = Math.round(t.ty + Math.sin(a) * r);
-        x = Math.max(1, Math.min(size - 2, nx));
-        y = Math.max(1, Math.min(size - 2, ny));
-        tries += 1;
-        if (tries % 8 === 0) r += 1;
-        if (tries > size * size) break;
-      }
-      if (x === center && y === center) continue;
-      placed.set(`${x}-${y}`, t.u);
     }
 
     return placed;
-  }, [npcsWithCurrentCast]);
+  }, [npcsWithCurrentCast, schedule, nowMs, segments, motionConfig, size, center, bankCell.x, bankCell.y]);
 
   const nearbyRemoteByCell = useMemo(() => {
     const out = new Map();
