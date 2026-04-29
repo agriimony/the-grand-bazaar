@@ -981,32 +981,42 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
       ? ((((syncedNow - loopStartsAt) % loopDurationMs) + loopDurationMs) % loopDurationMs)
       : 0;
 
-    const activeSegment = (segments || []).find(
+    const activeSegments = (segments || []).filter(
       (seg) => loopOffset >= Number(seg?.startMs || 0) && loopOffset < Number(seg?.endMs || 0)
-    ) || null;
+    );
 
-    const activeThread = activeSegment ? threadsById?.[activeSegment.threadId] : null;
-    const threadOffset = activeSegment ? Math.max(0, loopOffset - Number(activeSegment.startMs || 0)) : 0;
+    const activeByParticipant = new Map();
+    for (const activeSegment of activeSegments) {
+      const activeThread = threadsById?.[activeSegment.threadId] || null;
+      const threadOffset = Math.max(0, loopOffset - Number(activeSegment.startMs || 0));
 
-    let activeEvent = null;
-    if (activeThread && Array.isArray(activeThread?.events)) {
-      let cursor = 0;
-      for (const evt of activeThread.events) {
-        const dur = Number(evt?.durationMs || 0);
-        if (threadOffset >= cursor && threadOffset < cursor + dur) {
-          activeEvent = evt;
-          break;
+      let activeEvent = null;
+      if (activeThread && Array.isArray(activeThread?.events)) {
+        let cursor = 0;
+        for (const evt of activeThread.events) {
+          const dur = Number(evt?.durationMs || 0);
+          if (threadOffset >= cursor && threadOffset < cursor + dur) {
+            activeEvent = evt;
+            break;
+          }
+          cursor += dur;
         }
-        cursor += dur;
+        if (!activeEvent) activeEvent = activeThread.events[activeThread.events.length - 1] || null;
       }
-      if (!activeEvent) activeEvent = activeThread.events[activeThread.events.length - 1] || null;
-    }
 
-    const activeParticipantIds = new Set(Array.isArray(activeSegment?.participantIds) ? activeSegment.participantIds.map((v) => Number(v)) : []);
+      for (const rawFid of Array.isArray(activeSegment?.participantIds) ? activeSegment.participantIds : []) {
+        const fid = Number(rawFid);
+        if (!fid || activeByParticipant.has(fid)) continue;
+        activeByParticipant.set(fid, { activeSegment, activeThread, activeEvent });
+      }
+    }
 
     return (npcs || []).map((n) => {
       const fid = Number(n?.id || n?.fid || 0);
-      const inActiveThread = activeParticipantIds.has(fid);
+      const activeState = activeByParticipant.get(fid) || null;
+      const activeThread = activeState?.activeThread || null;
+      const activeEvent = activeState?.activeEvent || null;
+      const inActiveThread = Boolean(activeState);
       const idleEvents = Array.isArray(n?.idleEvents) ? n.idleEvents : [];
       const idleEvent = idleEvents.length
         ? idleEvents[Math.floor((loopOffset / 5000) % idleEvents.length)]
@@ -1046,6 +1056,7 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         lastCastShown,
         publicOfferCast,
         activeThreadId: activeThread?.id || null,
+        activeSegmentId: activeState?.activeSegment?.id || null,
       };
     });
   }, [npcs, nowMs, schedule, segments, threadsById]);
@@ -1072,6 +1083,29 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
     }
     staticBlocked.add(cellKey(center, center));
     staticBlocked.add(cellKey(bankCell.x, bankCell.y));
+
+    const findNearestOpenCell = (cell) => {
+      const start = cell && Number.isFinite(Number(cell.x)) && Number.isFinite(Number(cell.y))
+        ? { x: Number(cell.x), y: Number(cell.y) }
+        : { x: 1, y: 1 };
+      const q = [start];
+      const seen = new Set([cellKey(start.x, start.y)]);
+      const dirs = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+      while (q.length) {
+        const cur = q.shift();
+        const k = cellKey(cur.x, cur.y);
+        if (!staticBlocked.has(k) && !placed.has(k)) return cur;
+        for (const [dx, dy] of dirs) {
+          const nx = cur.x + dx;
+          const ny = cur.y + dy;
+          const nk = cellKey(nx, ny);
+          if (nx < 1 || ny < 1 || nx > size - 2 || ny > size - 2 || seen.has(nk)) continue;
+          seen.add(nk);
+          q.push({ x: nx, y: ny });
+        }
+      }
+      return start;
+    };
 
     const getNpcSegmentTimeline = (fid) => {
       const fidNum = Number(fid || 0);
@@ -1144,10 +1178,11 @@ export default function HigherWorldClient({ worldName = 'higher', apiPath = '/ap
         }
       }
 
-      placed.set(cellKey(pos.x, pos.y), {
+      const renderPos = findNearestOpenCell(pos);
+      placed.set(cellKey(renderPos.x, renderPos.y), {
         ...npc,
         _key: String(fid),
-        _pos: pos,
+        _pos: renderPos,
       });
     }
 
