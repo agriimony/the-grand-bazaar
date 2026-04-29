@@ -3,9 +3,10 @@ import { getWorldNpcs } from '../../../../../lib/world-npcs';
 
 export const revalidate = 3600;
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const result = await getWorldNpcs({ world: 'degen', channelId: 'degen' });
+    const debug = request?.nextUrl?.searchParams?.get('debug') === '1';
+    const result = await getWorldNpcs({ world: 'degen', channelId: 'degen', debug });
     if (!result?.ok) {
       return NextResponse.json({ ok: false, error: result?.error || 'failed' }, { status: result?.status || 500 });
     }
